@@ -41,12 +41,21 @@ export async function verifySessionToken(token) {
   return payload;
 }
 
+function cookieSecure() {
+  if (process.env.COOKIE_SECURE === "true") return true;
+  if (process.env.COOKIE_SECURE === "false") return false;
+  const appUrl = process.env.APP_URL || "";
+  if (appUrl.startsWith("https://")) return true;
+  if (appUrl.startsWith("http://")) return false;
+  return process.env.NODE_ENV === "production";
+}
+
 export async function setSessionCookie(token) {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     path: "/",
     maxAge: SESSION_MAX_AGE,
   });

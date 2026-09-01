@@ -60,7 +60,8 @@ Veja `.env.example`:
 
 - `DATABASE_URL` — conexão MySQL (`mysql://usuario:senha@host:3306/eletro_stock`)
 - `AUTH_SECRET` — chave JWT da sessão
-- `APP_URL` — URL pública
+- `APP_URL` — URL pública (`http://10.8.6.11:3000` na rede interna, `https://...` com certificado)
+- `COOKIE_SECURE` — `false` em HTTP; `true` somente com HTTPS
 - `UPLOAD_DIR` — pasta de imagens/anexos
 - `MAX_UPLOAD_MB` — tamanho máximo por arquivo
 
@@ -90,6 +91,15 @@ Dashboard, estoque, entrada, saída, detalhes do produto, movimentações, relat
 ## Produção em Linux
 
 Este guia assume Ubuntu 22.04/24.04 (ou Debian 12) com acesso SSH de root/sudo.
+
+**Não use `npm run dev` em produção.** O modo de desenvolvimento bloqueia o JavaScript quando o acesso vem pelo IP da rede (`10.8.6.11`), e o botão Entrar só recarrega `/login?`. Use `npm run build` e `npm start`.
+
+Se for acessar pela rede interna **sem HTTPS**, no `.env` use:
+
+```env
+APP_URL="http://10.8.6.11:3000"
+COOKIE_SECURE="false"
+```
 
 ### 1. Pacotes do servidor
 
