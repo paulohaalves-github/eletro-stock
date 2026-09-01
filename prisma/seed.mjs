@@ -18,7 +18,7 @@ async function main() {
     data: {
       name: "TI",
       email: "ti@multifix.com.br",
-      passwordHash: await bcrypt.hash("Grupoti2019@", 12),
+      passwordHash: await bcrypt.hash("GrupoTi2019@", 12),
       role: "ADMINISTRADOR",
     },
   });
