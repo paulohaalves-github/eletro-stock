@@ -9,8 +9,8 @@ import { Button, Input, Label } from "@/components/ui";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const [email, setEmail] = useState("admin@eletromall.com");
-  const [password, setPassword] = useState("Admin@123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(event) {
@@ -43,17 +43,16 @@ function LoginForm() {
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
             <Label>E-mail</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
           </div>
           <div>
             <Label>Senha</Label>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
           </div>
           <Button className="w-full" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
           </Button>
         </form>
-        <p className="mt-6 text-xs text-muted">Demonstração: admin@eletromall.com · Admin@123</p>
       </div>
     </div>
   );

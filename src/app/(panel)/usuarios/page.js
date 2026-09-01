@@ -43,7 +43,7 @@ export default function UsuariosPage() {
 
   return (
     <div>
-      <PageHeader title="Usuários" subtitle="Administrador, Estoque e Consulta." />
+      <PageHeader title="Usuários" subtitle="Administrador, Gestor, Estoque e Consulta." />
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <Card>
           <form onSubmit={create} className="space-y-3">

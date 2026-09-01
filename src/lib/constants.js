@@ -1,11 +1,13 @@
 export const ROLES = {
   ADMIN: "ADMINISTRADOR",
+  GESTOR: "GESTOR",
   STOCK: "ESTOQUE",
   VIEWER: "CONSULTA",
 };
 
 export const ROLE_LABELS = {
   ADMINISTRADOR: "Administrador",
+  GESTOR: "Gestor",
   ESTOQUE: "Estoque",
   CONSULTA: "Consulta",
 };

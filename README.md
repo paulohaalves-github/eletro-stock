@@ -44,15 +44,15 @@ npm run dev
 
 Abra [http://localhost:3000](http://localhost:3000).
 
-O seed deixa o banco **zerado** (sem produtos, categorias, linhas ou movimentações) e cria só os usuários padrão.
+O seed deixa o banco **zerado** (sem produtos, categorias, linhas ou movimentações) e cria só o administrador.
 
-### Usuários padrão
+### Usuário inicial
 
-| Perfil | E-mail | Senha |
-| --- | --- | --- |
-| Administrador | admin@eletromall.com | Admin@123 |
-| Estoque | estoque@eletromall.com | Estoque@123 |
-| Consulta | consulta@eletromall.com | Consulta@123 |
+| Perfil | E-mail |
+| --- | --- |
+| Administrador | ti@multifix.com.br |
+
+Perfis disponíveis: **Administrador** (acesso total, inclusive usuários), **Gestor** (mesmo acesso do administrador, sem criar/editar/excluir usuários), **Estoque** e **Consulta**.
 
 ## Variáveis de ambiente
 
@@ -71,7 +71,7 @@ Veja `.env.example`:
 - `npm run dev` — ambiente de desenvolvimento
 - `npm run build` / `npm start` — produção
 - `npm run db:migrate` — migrations
-- `npm run db:seed` — zera o banco e cria só os usuários padrão
+- `npm run db:seed` — zera o banco e cria só o administrador
 - `npm run db:reset` — recria o banco e executa o seed
 
 ## Arquitetura
@@ -179,7 +179,7 @@ npm run build
 mkdir -p uploads
 ```
 
-O seed deixa o estoque vazio e cria só os três usuários padrão. Rode **apenas na primeira instalação** — se rodar de novo, apaga produtos e histórico. Troque as senhas no primeiro acesso.
+O seed deixa o estoque vazio e cria só o administrador `ti@multifix.com.br`. Rode **apenas na primeira instalação** — se rodar de novo, apaga produtos e histórico.
 
 ### 4. Serviço systemd
 
@@ -296,5 +296,5 @@ Agende os dois no `cron` (diário).
 - [ ] Nginx com `client_max_body_size 20M` (upload de fotos/planilha)
 - [ ] Certificado HTTPS
 - [ ] Pasta `uploads` gravável e incluída no backup
-- [ ] Senhas padrão do seed alteradas
+- [ ] Senha inicial do administrador alterada, se necessário
 

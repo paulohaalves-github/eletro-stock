@@ -21,6 +21,7 @@ export const PERMISSIONS = {
 
 const ROLE_PERMISSIONS = {
   [ROLES.ADMIN]: Object.values(PERMISSIONS),
+  [ROLES.GESTOR]: Object.values(PERMISSIONS).filter((permission) => permission !== PERMISSIONS.USER_MANAGE),
   [ROLES.STOCK]: [
     PERMISSIONS.PRODUCT_CREATE,
     PERMISSIONS.PRODUCT_VIEW,
