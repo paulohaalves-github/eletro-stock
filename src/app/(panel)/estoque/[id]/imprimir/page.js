@@ -1,7 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { getProduct } from "@/lib/services/products";
 import { CONDITION_LABELS, STATUS_LABELS } from "@/lib/constants";
-import { formatCurrency, formatDateTime, formatProductId } from "@/lib/format";
+import { formatCurrency, formatProductId } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 import { redirect } from "next/navigation";
 
@@ -36,7 +36,6 @@ export default async function PrintPage({ params }) {
           <Item label="Categoria" value={product.category?.name} />
           <Item label="Condição" value={CONDITION_LABELS[product.condition]} />
           <Item label="Status" value={STATUS_LABELS[product.status]} />
-          <Item label="Data de entrada" value={formatDateTime(product.entryDate)} />
           <Item label="Capacidade" value={product.capacitySizeType} />
         </dl>
       </div>
