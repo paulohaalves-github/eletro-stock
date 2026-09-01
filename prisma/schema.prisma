@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(120)
+  email        String   @unique @db.VarChar(190)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  role         String   @db.VarChar(40)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  productsCreated Product[]      @relation("ProductCreatedBy")
+  imagesUploaded  ProductImage[] @relation("ImageUploadedBy")
+  filesUploaded   ProductFile[]  @relation("FileUploadedBy")
+  movements       StockMovement[]
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(120)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Line {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(120)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("lines")
+}
+
+model CatalogModel {
+  id                Int      @id @default(autoincrement())
+  supplierModelCode String   @unique @map("supplier_model_code") @db.VarChar(120)
+  commercialName    String   @map("commercial_name") @db.VarChar(190)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("catalog_models")
+}
+
+model Product {
+  id                Int      @id @default(autoincrement())
+  serialOnyx        String   @unique @map("serial_onyx") @db.VarChar(120)
+  supplierModelCode String?  @map("supplier_model_code") @db.VarChar(120)
+  catalogModelId    Int?     @map("catalog_model_id")
+  ean               String?  @db.VarChar(32)
+  lineId            Int?     @map("line_id")
+  categoryId        Int      @map("category_id")
+  capacitySizeType  String?  @map("capacity_size_type") @db.VarChar(120)
+  condition         String   @db.VarChar(40)
+  damageDescription String?  @map("damage_description") @db.Text
+  description       String?  @db.Text
+  installmentPrice  Float    @default(0) @map("installment_price")
+  cashPrice         Float    @default(0) @map("cash_price")
+  marketPrice       Float    @default(0) @map("market_price")
+  status            String   @default("DISPONIVEL") @db.VarChar(40)
+  origin            String?  @db.VarChar(255)
+  entryDate         DateTime @default(now()) @map("entry_date")
+  createdById       Int      @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  line         Line?         @relation(fields: [lineId], references: [id])
+  category     Category      @relation(fields: [categoryId], references: [id])
+  catalogModel CatalogModel? @relation(fields: [catalogModelId], references: [id])
+  createdBy    User          @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  images       ProductImage[]
+  files        ProductFile[]
+  movements    StockMovement[]
+
+  @@index([ean])
+  @@index([supplierModelCode])
+  @@index([catalogModelId])
+  @@index([status])
+  @@index([condition])
+  @@index([categoryId])
+  @@index([lineId])
+  @@index([entryDate])
+  @@map("products")
+}
+
+model ProductImage {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  fileUrl      String   @map("file_url") @db.VarChar(500)
+  fileName     String   @map("file_name") @db.VarChar(255)
+  mimeType     String?  @map("mime_type") @db.VarChar(120)
+  fileSize     Int?     @map("file_size")
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  uploadedById Int      @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation("ImageUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model ProductFile {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  fileUrl      String   @map("file_url") @db.VarChar(500)
+  fileName     String   @map("file_name") @db.VarChar(255)
+  mimeType     String?  @map("mime_type") @db.VarChar(120)
+  fileSize     Int?     @map("file_size")
+  uploadedById Int      @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation("FileUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([productId])
+  @@map("product_files")
+}
+
+model StockMovement {
+  id             Int      @id @default(autoincrement())
+  productId      Int      @map("product_id")
+  type           String   @db.VarChar(40)
+  reason         String?  @db.VarChar(40)
+  previousStatus String?  @map("previous_status") @db.VarChar(40)
+  newStatus      String?  @map("new_status") @db.VarChar(40)
+  observation    String?  @db.Text
+  origin         String?  @db.VarChar(255)
+  userId         Int      @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([userId])
+  @@map("stock_movements")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  action    String   @db.VarChar(80)
+  entity    String   @db.VarChar(80)
+  entityId  Int      @map("entity_id")
+  oldData   String?  @map("old_data") @db.LongText
+  newData   String?  @map("new_data") @db.LongText
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("audit_logs")
+}
