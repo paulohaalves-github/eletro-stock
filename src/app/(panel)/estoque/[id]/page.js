@@ -54,6 +54,7 @@ export default function ProductDetailPage() {
           <>
             {canEdit ? <Link href={`/estoque/${product.id}/editar`}><Button variant="secondary">Editar</Button></Link> : null}
             <Link href={`/estoque/${product.id}/imprimir`} target="_blank"><Button variant="secondary">Imprimir ficha</Button></Link>
+            <Link href={`/estoque/${product.id}/etiqueta`} target="_blank"><Button variant="secondary">Imprimir etiqueta</Button></Link>
             {canMutate && product.status === STATUSES.AVAILABLE ? <Button variant="secondary" onClick={() => runReserve()}>Reservar</Button> : null}
             {canMutate && product.status === STATUSES.RESERVED ? <Button variant="secondary" onClick={() => runReserve("unreserve")}>Liberar reserva</Button> : null}
             {canMutate && !closed ? <Link href={`/saida?id=${product.id}`}><Button>Dar baixa</Button></Link> : null}

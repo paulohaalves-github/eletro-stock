@@ -167,6 +167,18 @@ export async function getProduct(id) {
   return serializeProduct(product);
 }
 
+export async function getProductsByIds(ids) {
+  const unique = [...new Set((ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 200);
+  if (!unique.length) return [];
+
+  const items = await prisma.product.findMany({
+    where: { id: { in: unique } },
+    include: { catalogModel: true },
+  });
+  const byId = new Map(items.map((item) => [item.id, serializeProduct(item)]));
+  return unique.map((id) => byId.get(id)).filter(Boolean);
+}
+
 export async function createProduct(payload, user) {
   const data = validateProductPayload(payload);
   const commercialName = data.commercialName;

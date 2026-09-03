@@ -16,6 +16,7 @@ function EstoqueContent() {
   const [view, setView] = useState("table");
   const [data, setData] = useState({ items: [], total: 0 });
   const [categories, setCategories] = useState([]);
+  const [selected, setSelected] = useState(() => new Set());
   const [q, setQ] = useState(params.get("q") || "");
   const [filters, setFilters] = useState({
     categoryId: "",
@@ -46,6 +47,33 @@ function EstoqueContent() {
     return () => clearTimeout(timeout);
   }, [query]);
 
+  const allVisibleSelected = data.items.length > 0 && data.items.every((item) => selected.has(item.id));
+
+  function toggleSelected(id, checked) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleVisible(checked) {
+    setSelected((current) => {
+      const next = new Set(current);
+      data.items.forEach((item) => {
+        if (checked) next.add(item.id);
+        else next.delete(item.id);
+      });
+      return next;
+    });
+  }
+
+  function printLabels(ids) {
+    if (!ids.length) return;
+    window.open(`/estoque/etiquetas?ids=${ids.join(",")}`, "_blank");
+  }
+
   return (
     <div>
       <PageHeader
@@ -53,6 +81,13 @@ function EstoqueContent() {
         subtitle={`${data.total} unidade(s) rastreadas`}
         actions={
           <>
+            <Button
+              variant="secondary"
+              disabled={!selected.size}
+              onClick={() => printLabels([...selected])}
+            >
+              Imprimir etiquetas{selected.size ? ` (${selected.size})` : ""}
+            </Button>
             <Button variant="secondary" onClick={() => setView(view === "table" ? "cards" : "table")}>
               {view === "table" ? "Ver cards" : "Ver tabela"}
             </Button>
@@ -96,26 +131,40 @@ function EstoqueContent() {
           <Input placeholder="Preço máx." value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
           <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
         </div>
+        {data.items.length ? (
+          <button type="button" className="text-sm text-accent" onClick={() => toggleVisible(!allVisibleSelected)}>
+            {allVisibleSelected ? "Limpar seleção visível" : "Selecionar visíveis"}
+          </button>
+        ) : null}
       </Card>
 
       {view === "cards" ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data.items.map((item) => (
-            <Link key={item.id} href={`/estoque/${item.id}`} className="card overflow-hidden hover:border-accent/50">
-              <img src={item.primaryImage?.fileUrl || "/logo.svg"} alt="" className="h-40 w-full object-cover bg-surface-2" />
-              <div className="space-y-2 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-mono text-sm text-accent">{formatProductId(item.id)}</p>
-                  <StatusBadge status={item.status} />
+            <div key={item.id} className="card relative overflow-hidden hover:border-accent/50">
+              <label className="absolute top-3 left-3 z-10 rounded-md bg-black/50 p-1.5" onClick={(event) => event.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.id)}
+                  onChange={(event) => toggleSelected(item.id, event.target.checked)}
+                />
+              </label>
+              <Link href={`/estoque/${item.id}`} className="block">
+                <img src={item.primaryImage?.fileUrl || "/logo.svg"} alt="" className="h-40 w-full object-cover bg-surface-2" />
+                <div className="space-y-2 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-mono text-sm text-accent">{formatProductId(item.id)}</p>
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <p className="font-medium">{item.commercialName || item.supplierModelCode || item.category?.name}</p>
+                  <p className="text-xs text-muted">{item.serialOnyx} · {item.category?.name}</p>
+                  <div className="flex items-center justify-between">
+                    <ConditionBadge condition={item.condition} />
+                    <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
+                  </div>
                 </div>
-                <p className="font-medium">{item.commercialName || item.supplierModelCode || item.category?.name}</p>
-                <p className="text-xs text-muted">{item.serialOnyx} · {item.category?.name}</p>
-                <div className="flex items-center justify-between">
-                  <ConditionBadge condition={item.condition} />
-                  <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
-                </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       ) : (
@@ -123,6 +172,14 @@ function EstoqueContent() {
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="text-xs uppercase text-muted">
               <tr>
+                <th className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(event) => toggleVisible(event.target.checked)}
+                    aria-label="Selecionar visíveis"
+                  />
+                </th>
                 {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Model Code", "EAN", "Capacidade", "Condição", "À vista", "Parcelado", "Status", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
@@ -131,6 +188,13 @@ function EstoqueContent() {
             <tbody>
               {data.items.map((item) => (
                 <tr key={item.id} className="cursor-pointer border-t border-border hover:bg-surface-2" onClick={() => router.push(`/estoque/${item.id}`)}>
+                  <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(item.id)}
+                      onChange={(event) => toggleSelected(item.id, event.target.checked)}
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     <img src={item.primaryImage?.fileUrl || "/logo.svg"} alt="" className="h-10 w-10 rounded-lg object-cover" />
                   </td>
