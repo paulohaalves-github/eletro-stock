@@ -62,6 +62,36 @@ model CatalogModel {
   @@map("catalog_models")
 }
 
+model LocationType {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(120)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  locations Location[]
+
+  @@map("location_types")
+}
+
+model Location {
+  id             Int      @id @default(autoincrement())
+  locationTypeId Int      @map("location_type_id")
+  name           String   @db.VarChar(120)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  locationType  LocationType    @relation(fields: [locationTypeId], references: [id])
+  products      Product[]
+  movementsFrom StockMovement[] @relation("MovementFromLocation")
+  movementsTo   StockMovement[] @relation("MovementToLocation")
+
+  @@unique([locationTypeId, name])
+  @@index([locationTypeId])
+  @@map("locations")
+}
+
 model Product {
   id                Int      @id @default(autoincrement())
   serialOnyx        String   @unique @map("serial_onyx") @db.VarChar(120)
@@ -80,6 +110,7 @@ model Product {
   status            String   @default("DISPONIVEL") @db.VarChar(40)
   origin            String?  @db.VarChar(255)
   entryDate         DateTime @default(now()) @map("entry_date")
+  locationId        Int?     @map("location_id")
   createdById       Int      @map("created_by")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
@@ -88,6 +119,7 @@ model Product {
   category     Category      @relation(fields: [categoryId], references: [id])
   catalogModel CatalogModel? @relation(fields: [catalogModelId], references: [id])
   createdBy    User          @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  location     Location?     @relation(fields: [locationId], references: [id])
   images       ProductImage[]
   files        ProductFile[]
   movements    StockMovement[]
@@ -100,6 +132,7 @@ model Product {
   @@index([categoryId])
   @@index([lineId])
   @@index([entryDate])
+  @@index([locationId])
   @@map("products")
 }
 
@@ -147,11 +180,15 @@ model StockMovement {
   newStatus      String?  @map("new_status") @db.VarChar(40)
   observation    String?  @db.Text
   origin         String?  @db.VarChar(255)
+  previousLocationId Int? @map("previous_location_id")
+  newLocationId      Int? @map("new_location_id")
   userId         Int      @map("user_id")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  product Product @relation(fields: [productId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
+  product          Product   @relation(fields: [productId], references: [id])
+  user             User      @relation(fields: [userId], references: [id])
+  previousLocation Location? @relation("MovementFromLocation", fields: [previousLocationId], references: [id], onDelete: SetNull)
+  newLocation      Location? @relation("MovementToLocation", fields: [newLocationId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([createdAt])

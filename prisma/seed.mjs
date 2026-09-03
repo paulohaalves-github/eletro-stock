@@ -9,6 +9,8 @@ async function main() {
   await prisma.productImage.deleteMany();
   await prisma.productFile.deleteMany();
   await prisma.product.deleteMany();
+  await prisma.location.deleteMany();
+  await prisma.locationType.deleteMany();
   await prisma.catalogModel.deleteMany();
   await prisma.category.deleteMany();
   await prisma.line.deleteMany();

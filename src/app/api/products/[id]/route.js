@@ -19,7 +19,9 @@ export const PATCH = apiHandler(
     if (body.condition && body.condition !== current.condition) {
       assertCan(session.role, PERMISSIONS.CONDITION_CHANGE);
     }
-    assertCan(session.role, PERMISSIONS.PRODUCT_EDIT);
+    const keys = Object.keys(body || {});
+    const locationOnly = keys.length > 0 && keys.every((key) => key === "locationId" || key === "locationTypeId");
+    assertCan(session.role, locationOnly ? PERMISSIONS.LOCATION_ASSIGN : PERMISSIONS.PRODUCT_EDIT);
     const product = await updateProduct(current.id, body, session);
     return { product, message: "Produto atualizado com sucesso." };
   },

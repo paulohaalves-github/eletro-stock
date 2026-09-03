@@ -168,6 +168,8 @@ export async function listMovements(filters = {}) {
             images: { where: { isPrimary: true }, take: 1 },
           },
         },
+        previousLocation: { include: { locationType: true } },
+        newLocation: { include: { locationType: true } },
       },
       orderBy: { createdAt: "desc" },
       skip,

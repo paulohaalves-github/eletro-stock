@@ -10,6 +10,7 @@ import { SpreadsheetImport } from "@/components/spreadsheet-import";
 import { CONDITIONS, CONDITION_LABELS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
+import { LocationPickers } from "@/components/location-pickers";
 
 const STEPS = ["Identificação", "Preços e detalhes", "Condição e fotos", "Confirmar"];
 
@@ -27,6 +28,8 @@ const empty = {
   installmentPrice: "",
   cashPrice: "",
   marketPrice: "",
+  locationTypeId: "",
+  locationId: "",
   origin: "",
   observation: "",
 };
@@ -38,15 +41,25 @@ export default function EntradaPage() {
   const [files, setFiles] = useState([]);
   const [categories, setCategories] = useState([]);
   const [lines, setLines] = useState([]);
+  const [locationTypes, setLocationTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [me, setMe] = useState(null);
   const [mode, setMode] = useState("unidade");
 
   useEffect(() => {
-    Promise.all([api("/api/categories"), api("/api/lines"), api("/api/auth/me")]).then(([c, l, auth]) => {
+    Promise.all([
+      api("/api/categories"),
+      api("/api/lines"),
+      api("/api/location-types?active=true"),
+      api("/api/locations?active=true"),
+      api("/api/auth/me"),
+    ]).then(([c, l, types, locs, auth]) => {
       setCategories((c.items || []).filter((item) => item.active));
       setLines((l.items || []).filter((item) => item.active));
+      setLocationTypes(types.items || []);
+      setLocations(locs.items || []);
       setMe(auth.user);
     });
   }, []);
@@ -196,6 +209,13 @@ export default function EntradaPage() {
             <Field label="Origem">
               <Input value={form.origin} onChange={(e) => set("origin", e.target.value)} placeholder="Fornecedor, devolução, vitrine..." />
             </Field>
+            <LocationPickers
+              typeId={form.locationTypeId}
+              locationId={form.locationId}
+              types={locationTypes}
+              locations={locations}
+              onChange={({ locationTypeId, locationId }) => setForm((current) => ({ ...current, locationTypeId, locationId }))}
+            />
           </div>
         ) : null}
 
@@ -255,6 +275,7 @@ export default function EntradaPage() {
             <p><strong>Nome comercial:</strong> {form.commercialName || "—"}</p>
             <p><strong>Condição:</strong> {CONDITION_LABELS[form.condition]}</p>
             <p><strong>À vista:</strong> {formatCurrency(form.cashPrice || 0)}</p>
+            <p><strong>Localização:</strong> {locationTypes.find((item) => String(item.id) === String(form.locationTypeId))?.name || "—"} {form.locationId ? `→ ${locations.find((item) => String(item.id) === String(form.locationId))?.name || ""}` : ""}</p>
             <p><strong>Fotos:</strong> {files.length}</p>
             <Field label="Observação da entrada">
               <Input value={form.observation} onChange={(e) => set("observation", e.target.value)} />

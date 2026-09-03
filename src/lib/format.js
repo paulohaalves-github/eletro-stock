@@ -30,6 +30,13 @@ export function formatProductId(id) {
   return `#${String(id).padStart(5, "0")}`;
 }
 
+export function formatLocationPath(location) {
+  if (!location) return null;
+  const typeName = location.locationType?.name;
+  if (!typeName) return location.name || null;
+  return `${typeName} → ${location.name}`;
+}
+
 export function formatFileSize(bytes) {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB"];

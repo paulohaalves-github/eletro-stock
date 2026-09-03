@@ -13,6 +13,7 @@ import {
   BarChart3,
   Tags,
   Layers3,
+  MapPin,
   Users,
   ScrollText,
   LogOut,
@@ -36,6 +37,7 @@ const NAV = [
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, permission: PERMISSIONS.REPORT_VIEW },
   { href: "/categorias", label: "Categorias", icon: Tags, permission: PERMISSIONS.CATEGORY_MANAGE },
   { href: "/linhas", label: "Linhas", icon: Layers3, permission: PERMISSIONS.LINE_MANAGE },
+  { href: "/localizacoes", label: "Localizações", icon: MapPin, permission: PERMISSIONS.LOCATION_MANAGE },
   { href: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSIONS.USER_MANAGE },
   { href: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
 ];

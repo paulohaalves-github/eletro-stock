@@ -83,8 +83,8 @@ export function Field({ label, required, children, hint }) {
   );
 }
 
-export function Card({ className, children }) {
-  return <div className={cn("card p-5", className)}>{children}</div>;
+export function Card({ className, children, ...props }) {
+  return <div className={cn("card p-5", className)} {...props}>{children}</div>;
 }
 
 export function PageHeader({ title, subtitle, actions }) {

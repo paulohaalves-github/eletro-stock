@@ -21,9 +21,11 @@ export async function writeMovement({
   newStatus,
   observation,
   origin,
+  previousLocationId,
+  newLocationId,
   userId,
-}) {
-  return prisma.stockMovement.create({
+}, db = prisma) {
+  return db.stockMovement.create({
     data: {
       productId,
       type,
@@ -32,6 +34,8 @@ export async function writeMovement({
       newStatus: newStatus || null,
       observation: observation || null,
       origin: origin || null,
+      previousLocationId: previousLocationId ?? null,
+      newLocationId: newLocationId ?? null,
       userId,
     },
     include: {

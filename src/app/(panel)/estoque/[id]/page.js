@@ -9,6 +9,7 @@ import { Button, Card, PageHeader } from "@/components/ui";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { RemoteGallery } from "@/components/images";
 import { Timeline } from "@/components/timeline";
+import { LocationPickers } from "@/components/location-pickers";
 import { CLOSED_STATUSES, STATUSES } from "@/lib/constants";
 import { formatCurrency, formatDateTime, formatProductId } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
@@ -17,11 +18,25 @@ export default function ProductDetailPage() {
   const { id } = useParams();
   const [product, setProduct] = useState(null);
   const [me, setMe] = useState(null);
+  const [locationTypes, setLocationTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [locationForm, setLocationForm] = useState({ locationTypeId: "", locationId: "" });
 
   const load = useCallback(async () => {
-    const [{ product: item }, { user }] = await Promise.all([api(`/api/products/${id}`), api("/api/auth/me")]);
+    const [{ product: item }, { user }, types, locs] = await Promise.all([
+      api(`/api/products/${id}`),
+      api("/api/auth/me"),
+      api("/api/location-types"),
+      api("/api/locations"),
+    ]);
     setProduct(item);
     setMe(user);
+    setLocationTypes(types.items || []);
+    setLocations(locs.items || []);
+    setLocationForm({
+      locationTypeId: item.location?.locationTypeId || "",
+      locationId: item.locationId || "",
+    });
   }, [id]);
 
   useEffect(() => {
@@ -32,8 +47,22 @@ export default function ProductDetailPage() {
 
   const canMutate = can(me.role, PERMISSIONS.STOCK_EXIT);
   const canEdit = can(me.role, PERMISSIONS.PRODUCT_EDIT);
+  const canAssignLocation = can(me.role, PERMISSIONS.LOCATION_ASSIGN);
   const canPhoto = can(me.role, PERMISSIONS.PHOTO_UPLOAD);
   const closed = CLOSED_STATUSES.includes(product.status);
+
+  async function saveLocation() {
+    try {
+      const data = await api(`/api/products/${product.id}`, {
+        method: "PATCH",
+        json: { locationTypeId: locationForm.locationTypeId, locationId: locationForm.locationId || null },
+      });
+      toast.success(data.message);
+      load();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  }
 
   async function runReserve(action) {
     try {
@@ -78,8 +107,24 @@ export default function ProductDetailPage() {
           <Info label="Categoria" value={product.category?.name} />
           <Info label="Linha" value={product.line?.name} />
           <Info label="Capacidade / Tamanho / Tipo" value={product.capacitySizeType} />
+          <Info label="Tipo de localização" value={product.location?.locationType?.name} />
+          <Info label="Localização" value={product.location?.name} />
           <Info label="Entrada" value={formatDateTime(product.entryDate)} />
           <Info label="Cadastrado por" value={product.createdBy?.name} />
+          {canAssignLocation ? (
+            <div className="grid gap-3 pt-2 sm:grid-cols-2">
+              <LocationPickers
+                typeId={locationForm.locationTypeId}
+                locationId={locationForm.locationId}
+                types={locationTypes}
+                locations={locations}
+                onChange={setLocationForm}
+              />
+              <div className="sm:col-span-2">
+                <Button type="button" variant="secondary" onClick={saveLocation}>Salvar localização</Button>
+              </div>
+            </div>
+          ) : null}
         </Card>
       </div>
 

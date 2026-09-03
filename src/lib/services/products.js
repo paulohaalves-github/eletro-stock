@@ -4,6 +4,9 @@ import { writeAudit, writeMovement } from "../audit";
 import { CONDITIONS, MOVEMENT_TYPES, STATUSES } from "../constants";
 import { emptyToNull, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
+import { formatLocationPath, resolveProductLocation } from "./locations";
+
+const locationInclude = { locationType: true };
 
 function serializeProduct(product) {
   if (!product) return null;
@@ -12,6 +15,7 @@ function serializeProduct(product) {
     ...product,
     commercialName: product.catalogModel?.commercialName || null,
     primaryImage: primary,
+    locationPath: formatLocationPath(product.location),
   };
 }
 
@@ -62,6 +66,8 @@ function buildSearchWhere(query) {
         { line: { name: { contains: variant } } },
         { catalogModel: { commercialName: { contains: variant } } },
         { catalogModel: { supplierModelCode: { contains: variant } } },
+        { location: { name: { contains: variant } } },
+        { location: { locationType: { name: { contains: variant } } } },
       ]);
       const numeric = Number(token.replace(/^#/, ""));
       if (Number.isInteger(numeric) && numeric > 0) {
@@ -83,6 +89,8 @@ export async function listProducts(filters = {}) {
     maxPrice,
     from,
     to,
+    locationId,
+    locationTypeId,
     page = 1,
     pageSize = 24,
     view = "table",
@@ -110,6 +118,11 @@ export async function listProducts(filters = {}) {
       where.entryDate.lte = end;
     }
   }
+  if (locationId) {
+    where.locationId = Number(locationId);
+  } else if (locationTypeId) {
+    where.location = { locationTypeId: Number(locationTypeId) };
+  }
 
   const take = Math.min(Number(pageSize) || 24, 100);
   const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
@@ -122,6 +135,7 @@ export async function listProducts(filters = {}) {
         category: true,
         line: true,
         catalogModel: true,
+        location: { include: locationInclude },
         images: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
         createdBy: { select: { id: true, name: true } },
       },
@@ -147,6 +161,7 @@ export async function getProduct(id) {
       category: true,
       line: true,
       catalogModel: true,
+      location: { include: locationInclude },
       createdBy: { select: { id: true, name: true, email: true } },
       images: {
         include: { uploadedBy: { select: { id: true, name: true } } },
@@ -157,7 +172,11 @@ export async function getProduct(id) {
         orderBy: { createdAt: "desc" },
       },
       movements: {
-        include: { user: { select: { id: true, name: true } } },
+        include: {
+          user: { select: { id: true, name: true } },
+          previousLocation: { include: locationInclude },
+          newLocation: { include: locationInclude },
+        },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -173,7 +192,7 @@ export async function getProductsByIds(ids) {
 
   const items = await prisma.product.findMany({
     where: { id: { in: unique } },
-    include: { catalogModel: true },
+    include: { catalogModel: true, location: { include: locationInclude } },
   });
   const byId = new Map(items.map((item) => [item.id, serializeProduct(item)]));
   return unique.map((id) => byId.get(id)).filter(Boolean);
@@ -195,31 +214,45 @@ export async function createProduct(payload, user) {
   }
 
   const catalog = await resolveCatalogModel(data.supplierModelCode, commercialName);
+  const location = await resolveProductLocation(payload);
 
-  const product = await prisma.product.create({
-    data: {
-      ...data,
-      catalogModelId: catalog.catalogModelId,
-      supplierModelCode: catalog.supplierModelCode,
-      status: STATUSES.AVAILABLE,
-      createdById: user.id,
-    },
-    include: {
-      category: true,
-      line: true,
-      catalogModel: true,
-      images: true,
-    },
-  });
+  const product = await prisma.$transaction(async (tx) => {
+    const created = await tx.product.create({
+      data: {
+        ...data,
+        catalogModelId: catalog.catalogModelId,
+        supplierModelCode: catalog.supplierModelCode,
+        locationId: location?.id ?? null,
+        status: STATUSES.AVAILABLE,
+        createdById: user.id,
+      },
+      include: {
+        category: true,
+        line: true,
+        catalogModel: true,
+        location: { include: locationInclude },
+        images: true,
+      },
+    });
 
-  await writeMovement({
-    productId: product.id,
-    type: MOVEMENT_TYPES.ENTRY,
-    previousStatus: null,
-    newStatus: STATUSES.AVAILABLE,
-    observation: payload.observation || "Entrada de estoque",
-    origin: data.origin,
-    userId: user.id,
+    const locationNote = formatLocationPath(location);
+    await writeMovement(
+      {
+        productId: created.id,
+        type: MOVEMENT_TYPES.ENTRY,
+        previousStatus: null,
+        newStatus: STATUSES.AVAILABLE,
+        observation: [payload.observation || "Entrada de estoque", locationNote ? `Localização: ${locationNote}` : null]
+          .filter(Boolean)
+          .join(" · "),
+        origin: data.origin,
+        newLocationId: location?.id ?? null,
+        userId: user.id,
+      },
+      tx,
+    );
+
+    return created;
   });
 
   await writeAudit({
@@ -257,56 +290,93 @@ export async function updateProduct(id, payload, user) {
     data.supplierModelCode = catalog.supplierModelCode;
   }
 
-  const updated = await prisma.product.update({
-    where: { id: current.id },
-    data,
-    include: {
-      category: true,
-      line: true,
-      catalogModel: true,
-      images: true,
-    },
+  const location = await resolveProductLocation(payload, { currentLocationId: current.locationId });
+  if (location !== undefined) data.locationId = location?.id ?? null;
+
+  const locationChanged =
+    location !== undefined && (location?.id ?? null) !== (current.locationId ?? null);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const saved = await tx.product.update({
+      where: { id: current.id },
+      data,
+      include: {
+        category: true,
+        line: true,
+        catalogModel: true,
+        location: { include: locationInclude },
+        images: true,
+      },
+    });
+
+    if (locationChanged) {
+      const fromPath = formatLocationPath(current.location) || "sem localização";
+      const toPath = formatLocationPath(location) || "sem localização";
+      await writeMovement(
+        {
+          productId: current.id,
+          type: MOVEMENT_TYPES.LOCATION_CHANGE,
+          previousStatus: current.status,
+          newStatus: current.status,
+          observation: `${fromPath} → ${toPath}`,
+          previousLocationId: current.locationId,
+          newLocationId: location?.id ?? null,
+          userId: user.id,
+        },
+        tx,
+      );
+    }
+
+    if (data.condition && data.condition !== current.condition) {
+      await writeMovement(
+        {
+          productId: current.id,
+          type: MOVEMENT_TYPES.CONDITION_CHANGE,
+          previousStatus: current.status,
+          newStatus: current.status,
+          observation: `Condição: ${current.condition} → ${data.condition}`,
+          userId: user.id,
+        },
+        tx,
+      );
+    }
+
+    const priceFields = ["cashPrice", "installmentPrice", "marketPrice"];
+    const priceChanged = priceFields.some(
+      (field) => data[field] !== undefined && Number(data[field]) !== Number(current[field]),
+    );
+    if (priceChanged) {
+      await writeMovement(
+        {
+          productId: current.id,
+          type: MOVEMENT_TYPES.PRICE_CHANGE,
+          previousStatus: current.status,
+          newStatus: current.status,
+          observation: "Preços atualizados",
+          userId: user.id,
+        },
+        tx,
+      );
+    }
+
+    const conditionChanged = Boolean(data.condition && data.condition !== current.condition);
+    const otherFieldsChanged = Object.keys(data).some((key) => key !== "locationId");
+    if (!priceChanged && !conditionChanged && !locationChanged && otherFieldsChanged) {
+      await writeMovement(
+        {
+          productId: current.id,
+          type: MOVEMENT_TYPES.UPDATE,
+          previousStatus: current.status,
+          newStatus: current.status,
+          observation: payload.observation || "Produto atualizado",
+          userId: user.id,
+        },
+        tx,
+      );
+    }
+
+    return saved;
   });
-
-  const changes = [];
-  if (data.condition && data.condition !== current.condition) {
-    changes.push("condição");
-    await writeMovement({
-      productId: current.id,
-      type: MOVEMENT_TYPES.CONDITION_CHANGE,
-      previousStatus: current.status,
-      newStatus: current.status,
-      observation: `Condição: ${current.condition} → ${data.condition}`,
-      userId: user.id,
-    });
-  }
-
-  const priceFields = ["cashPrice", "installmentPrice", "marketPrice"];
-  const priceChanged = priceFields.some(
-    (field) => data[field] !== undefined && Number(data[field]) !== Number(current[field]),
-  );
-  if (priceChanged) {
-    changes.push("preço");
-    await writeMovement({
-      productId: current.id,
-      type: MOVEMENT_TYPES.PRICE_CHANGE,
-      previousStatus: current.status,
-      newStatus: current.status,
-      observation: "Preços atualizados",
-      userId: user.id,
-    });
-  }
-
-  if (!priceChanged && !(data.condition && data.condition !== current.condition)) {
-    await writeMovement({
-      productId: current.id,
-      type: MOVEMENT_TYPES.UPDATE,
-      previousStatus: current.status,
-      newStatus: current.status,
-      observation: payload.observation || "Produto atualizado",
-      userId: user.id,
-    });
-  }
 
   await writeAudit({
     userId: user.id,

@@ -16,6 +16,8 @@ function EstoqueContent() {
   const [view, setView] = useState("table");
   const [data, setData] = useState({ items: [], total: 0 });
   const [categories, setCategories] = useState([]);
+  const [locationTypes, setLocationTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
   const [q, setQ] = useState(params.get("q") || "");
   const [filters, setFilters] = useState({
@@ -26,18 +28,25 @@ function EstoqueContent() {
     maxPrice: "",
     from: "",
     to: "",
+    locationTypeId: "",
+    locationId: "",
   });
 
   const query = useMemo(() => {
-    const search = new URLSearchParams({ q, view, pageSize: "40", ...filters });
-    for (const [key, value] of search.entries()) {
-      if (!value) search.delete(key);
+    const search = new URLSearchParams({ view, pageSize: "40" });
+    if (q) search.set("q", q);
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) search.set(key, value);
     }
     return search.toString();
   }, [q, view, filters]);
 
   useEffect(() => {
-    api("/api/categories").then((res) => setCategories(res.items || []));
+    Promise.all([api("/api/categories"), api("/api/location-types"), api("/api/locations")]).then(([c, types, locs]) => {
+      setCategories(c.items || []);
+      setLocationTypes(types.items || []);
+      setLocations(locs.items || []);
+    });
   }, []);
 
   useEffect(() => {
@@ -130,6 +139,27 @@ function EstoqueContent() {
           <Input placeholder="Preço mín." value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} />
           <Input placeholder="Preço máx." value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
           <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
+          <Select
+            value={filters.locationTypeId}
+            onChange={(e) => setFilters({ ...filters, locationTypeId: e.target.value, locationId: "" })}
+          >
+            <option value="">Tipo de localização</option>
+            {locationTypes.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </Select>
+          <Select
+            value={filters.locationId}
+            onChange={(e) => setFilters({ ...filters, locationId: e.target.value })}
+            disabled={!filters.locationTypeId}
+          >
+            <option value="">{filters.locationTypeId ? "Todas as localizações" : "Selecione o tipo"}</option>
+            {locations
+              .filter((item) => String(item.locationTypeId) === String(filters.locationTypeId))
+              .map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+          </Select>
         </div>
         {data.items.length ? (
           <button type="button" className="text-sm text-accent" onClick={() => toggleVisible(!allVisibleSelected)}>
@@ -157,7 +187,7 @@ function EstoqueContent() {
                     <StatusBadge status={item.status} />
                   </div>
                   <p className="font-medium">{item.commercialName || item.supplierModelCode || item.category?.name}</p>
-                  <p className="text-xs text-muted">{item.serialOnyx} · {item.category?.name}</p>
+                  <p className="text-xs text-muted">{item.serialOnyx} · {item.category?.name}{item.locationPath ? ` · ${item.locationPath}` : ""}</p>
                   <div className="flex items-center justify-between">
                     <ConditionBadge condition={item.condition} />
                     <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
@@ -180,7 +210,7 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Model Code", "EAN", "Capacidade", "Condição", "À vista", "Parcelado", "Status", "Entrada"].map((col) => (
+                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Condição", "À vista", "Parcelado", "Status", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
               </tr>
@@ -202,6 +232,8 @@ function EstoqueContent() {
                   <td className="px-3 py-2">{item.serialOnyx || "—"}</td>
                   <td className="px-3 py-2">{item.commercialName || "—"}</td>
                   <td className="px-3 py-2">{item.category?.name}</td>
+                  <td className="px-3 py-2">{item.location?.locationType?.name || "—"}</td>
+                  <td className="px-3 py-2">{item.location?.name || "—"}</td>
                   <td className="px-3 py-2">{item.supplierModelCode || "—"}</td>
                   <td className="px-3 py-2">{item.ean || "—"}</td>
                   <td className="px-3 py-2">{item.capacitySizeType || "—"}</td>

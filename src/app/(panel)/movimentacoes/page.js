@@ -6,7 +6,7 @@ import { api } from "@/lib/api-client";
 import { Card, Input, PageHeader, Select } from "@/components/ui";
 import { StatusBadge } from "@/components/badges";
 import { MOVEMENT_TYPE_LABELS, STATUS_LABELS } from "@/lib/constants";
-import { formatDateTime, formatProductId } from "@/lib/format";
+import { formatDateTime, formatLocationPath, formatProductId } from "@/lib/format";
 
 export default function MovimentacoesPage() {
   const [q, setQ] = useState("");
@@ -45,9 +45,11 @@ export default function MovimentacoesPage() {
                 {formatDateTime(item.createdAt)} · {item.user?.name} · {formatProductId(item.productId)}
               </p>
               <p className="mt-1 text-xs text-muted">
-                {STATUS_LABELS[item.previousStatus] || item.previousStatus || "—"} → {STATUS_LABELS[item.newStatus] || item.newStatus || "—"}
+                {item.type === "ALTERACAO_LOCALIZACAO"
+                  ? `${formatLocationPath(item.previousLocation) || "sem localização"} → ${formatLocationPath(item.newLocation) || "sem localização"}`
+                  : `${STATUS_LABELS[item.previousStatus] || item.previousStatus || "—"} → ${STATUS_LABELS[item.newStatus] || item.newStatus || "—"}`}
               </p>
-              {item.observation ? <p className="mt-1 text-sm">{item.observation}</p> : null}
+              {item.observation && item.type !== "ALTERACAO_LOCALIZACAO" ? <p className="mt-1 text-sm">{item.observation}</p> : null}
             </div>
             {item.product ? <StatusBadge status={item.product.status} /> : null}
           </Link>

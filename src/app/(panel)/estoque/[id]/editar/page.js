@@ -7,6 +7,7 @@ import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { CONDITIONS, CONDITION_LABELS } from "@/lib/constants";
 import { can, PERMISSIONS } from "@/lib/permissions";
+import { LocationPickers } from "@/components/location-pickers";
 
 export default function EditarProdutoPage() {
   const { id } = useParams();
@@ -14,15 +15,25 @@ export default function EditarProdutoPage() {
   const [form, setForm] = useState(null);
   const [categories, setCategories] = useState([]);
   const [lines, setLines] = useState([]);
+  const [locationTypes, setLocationTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [me, setMe] = useState(null);
 
   useEffect(() => {
-    Promise.all([api(`/api/products/${id}`), api("/api/categories"), api("/api/lines"), api("/api/auth/me")]).then(
-      ([p, c, l, auth]) => {
+    Promise.all([
+      api(`/api/products/${id}`),
+      api("/api/categories"),
+      api("/api/lines"),
+      api("/api/location-types"),
+      api("/api/locations"),
+      api("/api/auth/me"),
+    ]).then(([p, c, l, types, locs, auth]) => {
         const product = p.product;
         setMe(auth.user);
         setCategories(c.items || []);
         setLines(l.items || []);
+        setLocationTypes(types.items || []);
+        setLocations(locs.items || []);
         setForm({
           serialOnyx: product.serialOnyx || "",
           supplierModelCode: product.supplierModelCode || "",
@@ -37,6 +48,8 @@ export default function EditarProdutoPage() {
           installmentPrice: product.installmentPrice,
           cashPrice: product.cashPrice,
           marketPrice: product.marketPrice,
+          locationTypeId: product.location?.locationTypeId || "",
+          locationId: product.locationId || "",
         });
       },
     );
@@ -106,6 +119,13 @@ export default function EditarProdutoPage() {
               {lines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </Select>
           </Field>
+          <LocationPickers
+            typeId={form.locationTypeId}
+            locationId={form.locationId}
+            types={locationTypes}
+            locations={locations}
+            onChange={({ locationTypeId, locationId }) => setForm((current) => ({ ...current, locationTypeId, locationId }))}
+          />
           <Field label="Capacidade / Tamanho / Tipo"><Input value={form.capacitySizeType} onChange={(e) => set("capacitySizeType", e.target.value)} /></Field>
           <Field label="Condição">
             <Select value={form.condition} disabled={!canCondition} onChange={(e) => set("condition", e.target.value)}>

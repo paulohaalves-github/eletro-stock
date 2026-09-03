@@ -55,6 +55,7 @@ export const MOVEMENT_TYPES = {
   PHOTO_REMOVE: "FOTO_REMOVIDA",
   FILE_ADD: "ANEXO_ADICIONADO",
   FILE_REMOVE: "ANEXO_REMOVIDO",
+  LOCATION_CHANGE: "ALTERACAO_LOCALIZACAO",
 };
 
 export const MOVEMENT_TYPE_LABELS = {
@@ -70,6 +71,7 @@ export const MOVEMENT_TYPE_LABELS = {
   FOTO_REMOVIDA: "Foto removida",
   ANEXO_ADICIONADO: "Anexo adicionado",
   ANEXO_REMOVIDO: "Anexo removido",
+  ALTERACAO_LOCALIZACAO: "Localização alterada",
 };
 
 export const EXIT_REASONS = {
