@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
-import { CONDITION_LABELS, STATUS_LABELS } from "@/lib/constants";
+import { CONDITION_LABELS, STATUS_LABELS, STATUSES } from "@/lib/constants";
 import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
+import { can, PERMISSIONS } from "@/lib/permissions";
 
 function EstoqueContent() {
   const params = useSearchParams();
@@ -19,6 +21,7 @@ function EstoqueContent() {
   const [locationTypes, setLocationTypes] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
+  const [me, setMe] = useState(null);
   const [q, setQ] = useState(params.get("q") || "");
   const [filters, setFilters] = useState({
     categoryId: "",
@@ -42,7 +45,8 @@ function EstoqueContent() {
   }, [q, view, filters]);
 
   useEffect(() => {
-    Promise.all([api("/api/categories"), api("/api/location-types"), api("/api/locations")]).then(([c, types, locs]) => {
+    Promise.all([api("/api/auth/me"), api("/api/categories"), api("/api/location-types"), api("/api/locations")]).then(([auth, c, types, locs]) => {
+      setMe(auth.user);
       setCategories(c.items || []);
       setLocationTypes(types.items || []);
       setLocations(locs.items || []);
@@ -83,13 +87,38 @@ function EstoqueContent() {
     window.open(`/estoque/etiquetas?ids=${ids.join(",")}`, "_blank");
   }
 
+  function transferSelected() {
+    const ids = data.items
+      .filter((item) => selected.has(item.id) && item.status === STATUSES.AVAILABLE)
+      .map((item) => item.id);
+    if (!ids.length) {
+      toast.error("Selecione produtos disponíveis para transferir.");
+      return;
+    }
+    if (ids.length < selected.size) {
+      toast.message(`${ids.length} disponível(is) no lote. Os demais não podem ser transferidos.`);
+    }
+    router.push(`/transferencias?ids=${ids.join(",")}`);
+  }
+
+  const canTransfer = me ? can(me.role, PERMISSIONS.STOCK_TRANSFER) : false;
+
   return (
     <div>
       <PageHeader
         title="Estoque"
-        subtitle={`${data.total} unidade(s) rastreadas`}
+        subtitle={`${data.total} aparelho(s) nesta unidade`}
         actions={
           <>
+            {canTransfer ? (
+              <Button
+                variant="secondary"
+                disabled={!selected.size}
+                onClick={transferSelected}
+              >
+                Transferir lote{selected.size ? ` (${selected.size})` : ""}
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               disabled={!selected.size}

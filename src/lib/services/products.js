@@ -5,8 +5,27 @@ import { CONDITIONS, MOVEMENT_TYPES, STATUSES } from "../constants";
 import { emptyToNull, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
+import {
+  assertCanViewProduct,
+  assertProductWritable,
+  canViewProduct,
+  productUnitWhere,
+  requireActiveUnit,
+  unitSelect,
+} from "../units";
 
 const locationInclude = { locationType: true };
+
+const productListInclude = {
+  category: true,
+  line: true,
+  catalogModel: true,
+  location: { include: locationInclude },
+  unit: { select: unitSelect },
+  transferToUnit: { select: unitSelect },
+  images: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
+  createdBy: { select: { id: true, name: true } },
+};
 
 function serializeProduct(product) {
   if (!product) return null;
@@ -16,6 +35,13 @@ function serializeProduct(product) {
     commercialName: product.catalogModel?.commercialName || null,
     primaryImage: primary,
     locationPath: formatLocationPath(product.location),
+  };
+}
+
+export function movementUnitFields(product, { previousUnitId, newUnitId } = {}) {
+  return {
+    previousUnitId: previousUnitId ?? product?.unitId ?? null,
+    newUnitId: newUnitId ?? product?.unitId ?? null,
   };
 }
 
@@ -78,7 +104,7 @@ function buildSearchWhere(query) {
   };
 }
 
-export async function listProducts(filters = {}) {
+export async function listProducts(filters = {}, session) {
   const {
     q,
     categoryId,
@@ -91,14 +117,23 @@ export async function listProducts(filters = {}) {
     to,
     locationId,
     locationTypeId,
+    ids,
     page = 1,
     pageSize = 24,
     view = "table",
   } = filters;
 
+  const idList = String(ids || "")
+    .split(/[,\s]+/)
+    .map(Number)
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, 200);
+
   const where = {
+    ...productUnitWhere(session),
     ...buildSearchWhere(q),
   };
+  if (idList.length) where.id = { in: idList };
 
   if (categoryId) where.categoryId = Number(categoryId);
   if (lineId) where.lineId = Number(lineId);
@@ -124,29 +159,26 @@ export async function listProducts(filters = {}) {
     where.location = { locationTypeId: Number(locationTypeId) };
   }
 
-  const take = Math.min(Number(pageSize) || 24, 100);
-  const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
+  const take = idList.length ? Math.min(idList.length, 200) : Math.min(Number(pageSize) || 24, 100);
+  const skip = idList.length ? 0 : (Math.max(Number(page) || 1, 1) - 1) * take;
 
-  const [total, items] = await Promise.all([
+  const [total, rows] = await Promise.all([
     prisma.product.count({ where }),
     prisma.product.findMany({
       where,
-      include: {
-        category: true,
-        line: true,
-        catalogModel: true,
-        location: { include: locationInclude },
-        images: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
-        createdBy: { select: { id: true, name: true } },
-      },
+      include: productListInclude,
       orderBy: { createdAt: "desc" },
       skip,
       take,
     }),
   ]);
 
+  const serialized = rows.map(serializeProduct);
+  const byId = new Map(serialized.map((item) => [item.id, item]));
+  const items = idList.length ? idList.map((id) => byId.get(id)).filter(Boolean) : serialized;
+
   return {
-    items: items.map(serializeProduct),
+    items,
     total,
     page: Math.max(Number(page) || 1, 1),
     pageSize: take,
@@ -163,6 +195,8 @@ export async function getProduct(id) {
       catalogModel: true,
       location: { include: locationInclude },
       createdBy: { select: { id: true, name: true, email: true } },
+      unit: { select: unitSelect },
+      transferToUnit: { select: unitSelect },
       images: {
         include: { uploadedBy: { select: { id: true, name: true } } },
         orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
@@ -176,6 +210,8 @@ export async function getProduct(id) {
           user: { select: { id: true, name: true } },
           previousLocation: { include: locationInclude },
           newLocation: { include: locationInclude },
+          previousUnit: { select: unitSelect },
+          newUnit: { select: unitSelect },
         },
         orderBy: { createdAt: "desc" },
       },
@@ -186,19 +222,26 @@ export async function getProduct(id) {
   return serializeProduct(product);
 }
 
-export async function getProductsByIds(ids) {
+export async function getProductsByIds(ids, session) {
   const unique = [...new Set((ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 200);
   if (!unique.length) return [];
 
   const items = await prisma.product.findMany({
     where: { id: { in: unique } },
-    include: { catalogModel: true, location: { include: locationInclude } },
+    include: {
+      catalogModel: true,
+      location: { include: locationInclude },
+      unit: { select: unitSelect },
+      transferToUnit: { select: unitSelect },
+    },
   });
-  const byId = new Map(items.map((item) => [item.id, serializeProduct(item)]));
+  const visible = session ? items.filter((item) => canViewProduct(session, item)) : items;
+  const byId = new Map(visible.map((item) => [item.id, serializeProduct(item)]));
   return unique.map((id) => byId.get(id)).filter(Boolean);
 }
 
 export async function createProduct(payload, user) {
+  const unitId = requireActiveUnit(user);
   const data = validateProductPayload(payload);
   const commercialName = data.commercialName;
   delete data.commercialName;
@@ -214,12 +257,13 @@ export async function createProduct(payload, user) {
   }
 
   const catalog = await resolveCatalogModel(data.supplierModelCode, commercialName);
-  const location = await resolveProductLocation(payload);
+  const location = await resolveProductLocation(payload, { unitId });
 
   const product = await prisma.$transaction(async (tx) => {
     const created = await tx.product.create({
       data: {
         ...data,
+        unitId,
         catalogModelId: catalog.catalogModelId,
         supplierModelCode: catalog.supplierModelCode,
         locationId: location?.id ?? null,
@@ -231,6 +275,8 @@ export async function createProduct(payload, user) {
         line: true,
         catalogModel: true,
         location: { include: locationInclude },
+        unit: { select: unitSelect },
+        transferToUnit: { select: unitSelect },
         images: true,
       },
     });
@@ -247,6 +293,8 @@ export async function createProduct(payload, user) {
           .join(" · "),
         origin: data.origin,
         newLocationId: location?.id ?? null,
+        previousUnitId: null,
+        newUnitId: unitId,
         userId: user.id,
       },
       tx,
@@ -268,6 +316,7 @@ export async function createProduct(payload, user) {
 
 export async function updateProduct(id, payload, user) {
   const current = await getProduct(id);
+  assertProductWritable(user, current);
   const data = validateProductPayload(payload, { partial: true });
   const commercialName = data.commercialName;
   delete data.commercialName;
@@ -290,7 +339,10 @@ export async function updateProduct(id, payload, user) {
     data.supplierModelCode = catalog.supplierModelCode;
   }
 
-  const location = await resolveProductLocation(payload, { currentLocationId: current.locationId });
+  const location = await resolveProductLocation(payload, {
+    currentLocationId: current.locationId,
+    unitId: current.unitId,
+  });
   if (location !== undefined) data.locationId = location?.id ?? null;
 
   const locationChanged =
@@ -305,9 +357,13 @@ export async function updateProduct(id, payload, user) {
         line: true,
         catalogModel: true,
         location: { include: locationInclude },
+        unit: { select: unitSelect },
+        transferToUnit: { select: unitSelect },
         images: true,
       },
     });
+
+    const unitFields = movementUnitFields(current);
 
     if (locationChanged) {
       const fromPath = formatLocationPath(current.location) || "sem localização";
@@ -321,6 +377,7 @@ export async function updateProduct(id, payload, user) {
           observation: `${fromPath} → ${toPath}`,
           previousLocationId: current.locationId,
           newLocationId: location?.id ?? null,
+          ...unitFields,
           userId: user.id,
         },
         tx,
@@ -335,6 +392,7 @@ export async function updateProduct(id, payload, user) {
           previousStatus: current.status,
           newStatus: current.status,
           observation: `Condição: ${current.condition} → ${data.condition}`,
+          ...unitFields,
           userId: user.id,
         },
         tx,
@@ -353,6 +411,7 @@ export async function updateProduct(id, payload, user) {
           previousStatus: current.status,
           newStatus: current.status,
           observation: "Preços atualizados",
+          ...unitFields,
           userId: user.id,
         },
         tx,
@@ -369,6 +428,7 @@ export async function updateProduct(id, payload, user) {
           previousStatus: current.status,
           newStatus: current.status,
           observation: payload.observation || "Produto atualizado",
+          ...unitFields,
           userId: user.id,
         },
         tx,
@@ -390,8 +450,10 @@ export async function updateProduct(id, payload, user) {
   return serializeProduct(updated);
 }
 
-export async function searchProducts(query, limit = 8) {
+export async function searchProducts(query, limit = 8, session) {
   if (!String(query || "").trim()) return [];
-  const result = await listProducts({ q: query, pageSize: limit, page: 1 });
+  const result = await listProducts({ q: query, pageSize: limit, page: 1 }, session);
   return result.items;
 }
+
+export { assertCanViewProduct };

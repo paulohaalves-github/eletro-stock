@@ -9,11 +9,13 @@ import {
   Boxes,
   ArrowDownToLine,
   ArrowUpFromLine,
+  ArrowRightLeft,
   History,
   BarChart3,
   Tags,
   Layers3,
   MapPin,
+  Store,
   Users,
   ScrollText,
   LogOut,
@@ -22,22 +24,25 @@ import {
   Sun,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { cn } from "@/lib/format";
 import { GlobalSearch } from "./global-search";
-import { ROLE_LABELS } from "@/lib/constants";
+import { ROLE_LABELS, UNIT_TYPE_LABELS } from "@/lib/constants";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD_VIEW },
   { href: "/estoque", label: "Estoque", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
   { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
   { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
+  { href: "/transferencias", label: "Transferências", icon: ArrowRightLeft, permission: PERMISSIONS.STOCK_TRANSFER },
   { href: "/movimentacoes", label: "Movimentações", icon: History, permission: PERMISSIONS.HISTORY_VIEW },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, permission: PERMISSIONS.REPORT_VIEW },
   { href: "/categorias", label: "Categorias", icon: Tags, permission: PERMISSIONS.CATEGORY_MANAGE },
   { href: "/linhas", label: "Linhas", icon: Layers3, permission: PERMISSIONS.LINE_MANAGE },
   { href: "/localizacoes", label: "Localizações", icon: MapPin, permission: PERMISSIONS.LOCATION_MANAGE },
+  { href: "/unidades", label: "Unidades", icon: Store, permission: PERMISSIONS.UNIT_MANAGE },
   { href: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSIONS.USER_MANAGE },
   { href: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
 ];
@@ -47,13 +52,50 @@ export function AppShell({ user, children }) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const items = NAV.filter((item) => can(user.role, item.permission));
+  const units = user.units || [];
+  const activeUnit = user.activeUnit;
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
     router.replace("/login");
     router.refresh();
   }
+
+  async function switchUnit(unitId) {
+    if (Number(unitId) === Number(user.activeUnitId) || switching) return;
+    setSwitching(true);
+    try {
+      const data = await api("/api/auth/unit", { method: "POST", json: { unitId: Number(unitId) } });
+      toast.success(data.message);
+      router.refresh();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  const unitPicker = units.length ? (
+    <select
+      value={activeUnit?.id || ""}
+      disabled={switching || units.length === 1}
+      onChange={(event) => switchUnit(event.target.value)}
+      className="w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+      aria-label="Unidade ativa"
+    >
+      {units.map((unit) => (
+        <option key={unit.id} value={unit.id}>
+          {unit.name} ({UNIT_TYPE_LABELS[unit.type] || unit.type})
+        </option>
+      ))}
+    </select>
+  ) : (
+    <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+      Nenhuma unidade vinculada
+    </p>
+  );
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-1">
@@ -81,13 +123,14 @@ export function AppShell({ user, children }) {
   return (
     <div className="relative z-10 min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
       <aside className="no-print hidden border-r border-border bg-surface/80 p-4 backdrop-blur lg:flex lg:flex-col">
-        <Link href="/" className="mb-8 flex items-center gap-3 px-2">
+        <Link href="/" className="mb-6 flex items-center gap-3 px-2">
           <img src="/logo.svg" alt="Eletro-Stock" className="h-10 w-10" />
           <div>
             <p className="text-sm font-semibold tracking-wide">ELETRO-STOCK</p>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted">Eletromall</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted">{activeUnit?.name || "Selecione a unidade"}</p>
           </div>
         </Link>
+        <div className="mb-4">{unitPicker}</div>
         {nav}
         <div className="mt-auto rounded-xl border border-border p-3 text-xs">
           <p className="font-medium">{user.name}</p>
@@ -105,6 +148,7 @@ export function AppShell({ user, children }) {
                 <X size={18} />
               </button>
             </div>
+            <div className="mb-4">{unitPicker}</div>
             {nav}
           </aside>
         </div>
@@ -116,6 +160,7 @@ export function AppShell({ user, children }) {
             <Menu size={18} />
           </button>
           <GlobalSearch />
+          <div className="hidden min-w-48 sm:block lg:hidden">{unitPicker}</div>
           <button
             className="ml-auto rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-text"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -127,14 +172,17 @@ export function AppShell({ user, children }) {
             <LogOut size={18} />
           </button>
         </header>
-        <main className="flex-1 p-4 pb-24 sm:p-6 lg:p-8">{children}</main>
-        <nav className="no-print fixed bottom-0 left-0 right-0 z-20 grid grid-cols-4 border-t border-border bg-surface/95 p-2 lg:hidden">
+        <main key={user.activeUnitId || "none"} className="flex-1 p-4 pb-24 sm:p-6 lg:p-8">
+          {children}
+        </main>
+        <nav className="no-print fixed bottom-0 left-0 right-0 z-20 grid grid-cols-5 border-t border-border bg-surface/95 p-2 lg:hidden">
           {[
-            { href: "/", label: "Home", icon: LayoutDashboard },
-            { href: "/estoque", label: "Estoque", icon: Boxes },
-            { href: "/entrada", label: "Entrada", icon: ArrowDownToLine },
-            { href: "/saida", label: "Saída", icon: ArrowUpFromLine },
-          ].map((item) => {
+            { href: "/", label: "Home", icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD_VIEW },
+            { href: "/estoque", label: "Estoque", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
+            { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
+            { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
+            { href: "/transferencias", label: "Troca", icon: ArrowRightLeft, permission: PERMISSIONS.STOCK_TRANSFER },
+          ].filter((item) => can(user.role, item.permission)).map((item) => {
             const Icon = item.icon;
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (

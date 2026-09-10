@@ -2,9 +2,10 @@ import ExcelJS from "exceljs";
 import { prisma } from "../db";
 import { CONDITION_LABELS, MOVEMENT_TYPE_LABELS, STATUS_LABELS } from "../constants";
 import { formatCurrency, formatDateTime } from "../format";
+import { movementUnitWhere, requireActiveUnit } from "../units";
 
-function productWhere(filters = {}) {
-  const where = {};
+function productWhere(filters = {}, unitId) {
+  const where = { unitId };
   if (filters.status) where.status = filters.status;
   if (filters.condition) where.condition = filters.condition;
   if (filters.categoryId) where.categoryId = Number(filters.categoryId);
@@ -20,35 +21,45 @@ function productWhere(filters = {}) {
   return where;
 }
 
-export async function buildReport(type, filters = {}) {
+function dateRangeWhere(filters) {
+  if (!filters.from && !filters.to) return {};
+  const createdAt = {};
+  if (filters.from) createdAt.gte = new Date(filters.from);
+  if (filters.to) {
+    const end = new Date(filters.to);
+    end.setHours(23, 59, 59, 999);
+    createdAt.lte = end;
+  }
+  return { createdAt };
+}
+
+export async function buildReport(type, filters = {}, session) {
+  const unitId = requireActiveUnit(session);
   if (type === "movements") {
-    const where = {};
-    if (filters.from || filters.to) {
-      where.createdAt = {};
-      if (filters.from) where.createdAt.gte = new Date(filters.from);
-      if (filters.to) {
-        const end = new Date(filters.to);
-        end.setHours(23, 59, 59, 999);
-        where.createdAt.lte = end;
-      }
-    }
-    if (filters.movementType) where.type = filters.movementType;
+    const where = {
+      AND: [movementUnitWhere(unitId), dateRangeWhere(filters)],
+    };
+    if (filters.movementType) where.AND.push({ type: filters.movementType });
     const items = await prisma.stockMovement.findMany({
       where,
       include: {
         user: { select: { name: true } },
         product: { include: { category: true } },
+        previousUnit: { select: { name: true } },
+        newUnit: { select: { name: true } },
       },
       orderBy: { createdAt: "desc" },
     });
     return {
       title: "Histórico de movimentações",
-      columns: ["Data", "Produto", "Serial", "Tipo", "Motivo", "Status anterior", "Status novo", "Usuário", "Observação"],
+      columns: ["Data", "Produto", "Serial", "Tipo", "Origem", "Destino", "Motivo", "Status anterior", "Status novo", "Usuário", "Observação"],
       rows: items.map((item) => [
         formatDateTime(item.createdAt),
         item.product ? `#${item.product.id}` : "—",
         item.product?.serialOnyx || "—",
         MOVEMENT_TYPE_LABELS[item.type] || item.type,
+        item.previousUnit?.name || "—",
+        item.newUnit?.name || "—",
         item.reason || "—",
         STATUS_LABELS[item.previousStatus] || item.previousStatus || "—",
         STATUS_LABELS[item.newStatus] || item.newStatus || "—",
@@ -58,21 +69,13 @@ export async function buildReport(type, filters = {}) {
     };
   }
 
-  const where = productWhere(filters);
+  const where = productWhere(filters, unitId);
   if (type === "entries") {
     const items = await prisma.stockMovement.findMany({
       where: {
-        type: "ENTRADA",
-        ...(filters.from || filters.to
-          ? {
-              createdAt: {
-                ...(filters.from ? { gte: new Date(filters.from) } : {}),
-                ...(filters.to
-                  ? { lte: (() => { const end = new Date(filters.to); end.setHours(23, 59, 59, 999); return end; })() }
-                  : {}),
-              },
-            }
-          : {}),
+        type: { in: ["ENTRADA", "TRANSFERENCIA_RECEBIMENTO"] },
+        newUnitId: unitId,
+        ...dateRangeWhere(filters),
       },
       include: { product: { include: { category: true, line: true } }, user: true },
       orderBy: { createdAt: "desc" },
@@ -96,17 +99,9 @@ export async function buildReport(type, filters = {}) {
   if (type === "exits") {
     const items = await prisma.stockMovement.findMany({
       where: {
-        type: { in: ["SAIDA", "TRANSFERENCIA"] },
-        ...(filters.from || filters.to
-          ? {
-              createdAt: {
-                ...(filters.from ? { gte: new Date(filters.from) } : {}),
-                ...(filters.to
-                  ? { lte: (() => { const end = new Date(filters.to); end.setHours(23, 59, 59, 999); return end; })() }
-                  : {}),
-              },
-            }
-          : {}),
+        type: { in: ["SAIDA", "TRANSFERENCIA", "TRANSFERENCIA_ENVIO"] },
+        previousUnitId: unitId,
+        ...dateRangeWhere(filters),
       },
       include: { product: { include: { category: true } }, user: true },
       orderBy: { createdAt: "desc" },
@@ -118,7 +113,7 @@ export async function buildReport(type, filters = {}) {
         formatDateTime(item.createdAt),
         item.product?.id,
         item.product?.serialOnyx || "—",
-        item.reason || "—",
+        item.reason || MOVEMENT_TYPE_LABELS[item.type] || item.type,
         STATUS_LABELS[item.newStatus] || item.newStatus,
         item.user?.name,
         item.observation || "—",
@@ -135,7 +130,7 @@ export async function buildReport(type, filters = {}) {
 
   const products = await prisma.product.findMany({
     where: extraWhere,
-    include: { category: true, line: true, catalogModel: true },
+    include: { category: true, line: true, catalogModel: true, unit: true },
     orderBy: { id: "asc" },
   });
 
@@ -151,6 +146,7 @@ export async function buildReport(type, filters = {}) {
     title: titles[type] || "Relatório de produtos",
     columns: [
       "ID",
+      "Unidade",
       "Serial Onyx",
       "Categoria",
       "Linha",
@@ -167,6 +163,7 @@ export async function buildReport(type, filters = {}) {
     ],
     rows: products.map((item) => [
       item.id,
+      item.unit?.name || "—",
       item.serialOnyx || "—",
       item.category?.name || "—",
       item.line?.name || "—",

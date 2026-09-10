@@ -5,12 +5,12 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, PageHeader } from "@/components/ui";
+import { Button, Card, PageHeader, Select, Textarea } from "@/components/ui";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { RemoteGallery } from "@/components/images";
 import { Timeline } from "@/components/timeline";
 import { LocationPickers } from "@/components/location-pickers";
-import { CLOSED_STATUSES, STATUSES } from "@/lib/constants";
+import { CLOSED_STATUSES, STATUSES, UNIT_TYPE_LABELS, canOperateStock } from "@/lib/constants";
 import { formatCurrency, formatDateTime, formatProductId } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
 
@@ -21,18 +21,24 @@ export default function ProductDetailPage() {
   const [locationTypes, setLocationTypes] = useState([]);
   const [locations, setLocations] = useState([]);
   const [locationForm, setLocationForm] = useState({ locationTypeId: "", locationId: "" });
+  const [units, setUnits] = useState([]);
+  const [toUnitId, setToUnitId] = useState("");
+  const [transferNote, setTransferNote] = useState("");
+  const [receiveForm, setReceiveForm] = useState({ locationTypeId: "", locationId: "" });
 
   const load = useCallback(async () => {
-    const [{ product: item }, { user }, types, locs] = await Promise.all([
+    const [{ product: item }, { user }, types, locs, unitData] = await Promise.all([
       api(`/api/products/${id}`),
       api("/api/auth/me"),
       api("/api/location-types"),
       api("/api/locations"),
+      api("/api/units"),
     ]);
     setProduct(item);
     setMe(user);
     setLocationTypes(types.items || []);
     setLocations(locs.items || []);
+    setUnits(unitData.items || []);
     setLocationForm({
       locationTypeId: item.location?.locationTypeId || "",
       locationId: item.locationId || "",
@@ -49,7 +55,25 @@ export default function ProductDetailPage() {
   const canEdit = can(me.role, PERMISSIONS.PRODUCT_EDIT);
   const canAssignLocation = can(me.role, PERMISSIONS.LOCATION_ASSIGN);
   const canPhoto = can(me.role, PERMISSIONS.PHOTO_UPLOAD);
+  const canTransfer = can(me.role, PERMISSIONS.STOCK_TRANSFER);
   const closed = CLOSED_STATUSES.includes(product.status);
+  const inActiveUnit = Number(me.activeUnitId) === Number(product.unitId);
+  const incomingHere = product.status === STATUSES.IN_TRANSIT && Number(product.transferToUnitId) === Number(me.activeUnitId);
+  const operable = canOperateStock(product.status) && inActiveUnit;
+  const destinations = units.filter((unit) => String(unit.id) !== String(product.unitId));
+
+  async function runTransfer(action, extra = {}) {
+    try {
+      const data = await api("/api/stock/transfer", {
+        method: "POST",
+        json: { action, productId: product.id, ...extra },
+      });
+      toast.success(data.message);
+      load();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  }
 
   async function saveLocation() {
     try {
@@ -81,12 +105,15 @@ export default function ProductDetailPage() {
         subtitle={product.commercialName || product.supplierModelCode || product.serialOnyx}
         actions={
           <>
-            {canEdit ? <Link href={`/estoque/${product.id}/editar`}><Button variant="secondary">Editar</Button></Link> : null}
+            {canEdit && operable ? <Link href={`/estoque/${product.id}/editar`}><Button variant="secondary">Editar</Button></Link> : null}
             <Link href={`/estoque/${product.id}/imprimir`} target="_blank"><Button variant="secondary">Imprimir ficha</Button></Link>
             <Link href={`/estoque/${product.id}/etiqueta`} target="_blank"><Button variant="secondary">Imprimir etiqueta</Button></Link>
-            {canMutate && product.status === STATUSES.AVAILABLE ? <Button variant="secondary" onClick={() => runReserve()}>Reservar</Button> : null}
-            {canMutate && product.status === STATUSES.RESERVED ? <Button variant="secondary" onClick={() => runReserve("unreserve")}>Liberar reserva</Button> : null}
-            {canMutate && !closed ? <Link href={`/saida?id=${product.id}`}><Button>Dar baixa</Button></Link> : null}
+            {canMutate && operable && product.status === STATUSES.AVAILABLE ? <Button variant="secondary" onClick={() => runReserve()}>Reservar</Button> : null}
+            {canMutate && operable && product.status === STATUSES.RESERVED ? <Button variant="secondary" onClick={() => runReserve("unreserve")}>Liberar reserva</Button> : null}
+            {canMutate && operable && !closed ? <Link href={`/saida?id=${product.id}`}><Button>Dar baixa</Button></Link> : null}
+            {canTransfer && inActiveUnit && product.status === STATUSES.AVAILABLE ? (
+              <Link href={`/transferencias?id=${product.id}`}><Button variant="secondary">Transferir</Button></Link>
+            ) : null}
           </>
         }
       />
@@ -100,6 +127,10 @@ export default function ProductDetailPage() {
             <ConditionBadge condition={product.condition} />
             <StatusBadge status={product.status} />
           </div>
+          <Info label="Unidade" value={product.unit ? `${product.unit.name} (${UNIT_TYPE_LABELS[product.unit.type] || product.unit.type})` : "—"} />
+          {product.status === STATUSES.IN_TRANSIT ? (
+            <Info label="Em trânsito para" value={product.transferToUnit?.name} />
+          ) : null}
           <Info label="Serial Onyx" value={product.serialOnyx} />
           <Info label="Nome comercial" value={product.commercialName} />
           <Info label="Model Code" value={product.supplierModelCode} />
@@ -111,7 +142,7 @@ export default function ProductDetailPage() {
           <Info label="Localização" value={product.location?.name} />
           <Info label="Entrada" value={formatDateTime(product.entryDate)} />
           <Info label="Cadastrado por" value={product.createdBy?.name} />
-          {canAssignLocation ? (
+          {canAssignLocation && operable ? (
             <div className="grid gap-3 pt-2 sm:grid-cols-2">
               <LocationPickers
                 typeId={locationForm.locationTypeId}
@@ -124,6 +155,47 @@ export default function ProductDetailPage() {
                 <Button type="button" variant="secondary" onClick={saveLocation}>Salvar localização</Button>
               </div>
             </div>
+          ) : null}
+          {canTransfer && inActiveUnit && product.status === STATUSES.AVAILABLE ? (
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs uppercase tracking-wide text-muted">Enviar para outra unidade</p>
+              <Select value={toUnitId} onChange={(e) => setToUnitId(e.target.value)}>
+                <option value="">Selecione o destino</option>
+                {destinations.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name} ({UNIT_TYPE_LABELS[unit.type] || unit.type})
+                  </option>
+                ))}
+              </Select>
+              <Textarea value={transferNote} onChange={(e) => setTransferNote(e.target.value)} placeholder="Observação (opcional)" />
+              <Button type="button" variant="secondary" disabled={!toUnitId} onClick={() => runTransfer("send", { toUnitId: Number(toUnitId), observation: transferNote })}>
+                Enviar
+              </Button>
+            </div>
+          ) : null}
+          {canTransfer && inActiveUnit && product.status === STATUSES.IN_TRANSIT ? (
+            <Button type="button" variant="secondary" onClick={() => runTransfer("cancel")}>Cancelar envio</Button>
+          ) : null}
+          {canTransfer && incomingHere ? (
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs uppercase tracking-wide text-muted">Confirmar recebimento</p>
+              <LocationPickers
+                typeId={receiveForm.locationTypeId}
+                locationId={receiveForm.locationId}
+                types={locationTypes}
+                locations={locations}
+                onChange={setReceiveForm}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={() => runTransfer("receive", receiveForm)}>Receber nesta unidade</Button>
+                <Button type="button" variant="secondary" onClick={() => runTransfer("refuse")}>Recusar</Button>
+              </div>
+            </div>
+          ) : null}
+          {!inActiveUnit && !incomingHere ? (
+            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              Este produto está em {product.unit?.name}. Troque o seletor de unidade para operar nele.
+            </p>
           ) : null}
         </Card>
       </div>
@@ -164,13 +236,13 @@ export default function ProductDetailPage() {
         <h2 className="mb-3 font-semibold">Galeria</h2>
         <RemoteGallery
           product={product}
-          canEdit={canPhoto}
+          canEdit={canPhoto && operable}
           onChanged={async () => {
             toast.success("Imagem atualizada.");
             load();
           }}
         />
-        {canPhoto ? (
+        {canPhoto && operable ? (
           <div className="mt-4">
             <p className="mb-2 text-sm text-muted">Documentos / anexos</p>
             <input

@@ -3,11 +3,12 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { createLocationType, listLocationTypes } from "@/lib/services/locations";
 
 export const GET = apiHandler(
-  async (request) => {
+  async (request, { session }) => {
     const { searchParams } = new URL(request.url);
     const items = await listLocationTypes({
       active: searchParams.get("active"),
       includeCounts: searchParams.get("includeCounts") === "true",
+      session,
     });
     return { items };
   },

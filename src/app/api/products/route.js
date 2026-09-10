@@ -3,9 +3,9 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { createProduct, listProducts } from "@/lib/services/products";
 
 export const GET = apiHandler(
-  async (request) => {
+  async (request, { session }) => {
     const { searchParams } = new URL(request.url);
-    return listProducts(Object.fromEntries(searchParams.entries()));
+    return listProducts(Object.fromEntries(searchParams.entries()), session);
   },
   { permission: PERMISSIONS.PRODUCT_VIEW },
 );

@@ -21,6 +21,22 @@ export function parseId(value) {
   return id;
 }
 
+export const MAX_TRANSFER_BATCH = 100;
+
+export function parseProductIds(payload) {
+  const raw = Array.isArray(payload?.productIds)
+    ? payload.productIds
+    : payload?.productId != null && payload.productId !== ""
+      ? [payload.productId]
+      : [];
+  const ids = [...new Set(raw.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!ids.length) throw validationError("Informe o produto.");
+  if (ids.length > MAX_TRANSFER_BATCH) {
+    throw validationError(`Selecione no máximo ${MAX_TRANSFER_BATCH} produtos por lote.`);
+  }
+  return ids;
+}
+
 export function validateProductPayload(payload, { partial = false } = {}) {
   const data = {};
 

@@ -1,16 +1,18 @@
 import Link from "next/link";
+import { getSession } from "@/lib/auth";
 import { getProductsByIds } from "@/lib/services/products";
 import { PrintButton } from "@/components/print-button";
 import { PriceTagSheet } from "@/components/price-tag";
 
 export default async function BatchLabelsPage({ searchParams }) {
+  const session = await getSession();
   const params = await searchParams;
   const ids = String(params.ids || "")
     .split(",")
     .map((value) => Number(value.trim()))
     .filter((id) => Number.isInteger(id) && id > 0);
 
-  const products = await getProductsByIds(ids);
+  const products = await getProductsByIds(ids, session);
   const printedAt = new Date();
 
   if (!products.length) {

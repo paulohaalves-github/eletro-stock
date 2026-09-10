@@ -124,7 +124,7 @@ export default function LocalizacoesPage() {
     <div>
       <PageHeader
         title="Localizações"
-        subtitle="Tipo de localização → Localização → Produto. O mesmo código pode existir em tipos diferentes."
+        subtitle="Tipo de localização é compartilhado. As prateleiras pertencem à unidade selecionada no menu."
       />
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <div className="space-y-4">

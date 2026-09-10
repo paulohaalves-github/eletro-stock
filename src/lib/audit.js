@@ -23,6 +23,8 @@ export async function writeMovement({
   origin,
   previousLocationId,
   newLocationId,
+  previousUnitId,
+  newUnitId,
   userId,
 }, db = prisma) {
   return db.stockMovement.create({
@@ -36,6 +38,8 @@ export async function writeMovement({
       origin: origin || null,
       previousLocationId: previousLocationId ?? null,
       newLocationId: newLocationId ?? null,
+      previousUnitId: previousUnitId ?? null,
+      newUnitId: newUnitId ?? null,
       userId,
     },
     include: {

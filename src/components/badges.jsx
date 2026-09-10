@@ -4,6 +4,7 @@ import { cn } from "@/lib/format";
 const STATUS_STYLES = {
   DISPONIVEL: "bg-emerald-500/15 text-emerald-400 ring-emerald-500/30",
   RESERVADO: "bg-amber-500/15 text-amber-400 ring-amber-500/30",
+  EM_TRANSITO: "bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/30",
   VENDIDO: "bg-sky-500/15 text-sky-400 ring-sky-500/30",
   TRANSFERIDO: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
   DEVOLVIDO: "bg-slate-500/20 text-slate-300 ring-slate-500/30",

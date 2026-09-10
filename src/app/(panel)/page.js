@@ -32,6 +32,8 @@ export default function DashboardPage() {
   const cards = [
     ["Disponíveis", data.cards.available],
     ["Reservados", data.cards.reserved],
+    ["Em trânsito (enviados)", data.cards.inTransit],
+    ["A receber", data.cards.incoming],
     ["Vendidos", data.cards.sold],
     ["Em estoque", data.cards.inStock],
     ["Valor à vista", formatCurrency(data.cards.cash)],
@@ -44,7 +46,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Visão imediata do estoque individual do Outlet Eletromall."
+        subtitle={data.unit ? `Visão do estoque de ${data.unit.name}.` : "Visão imediata do estoque."}
         actions={
           <div className="flex flex-wrap gap-2">
             <Select value={period} onChange={(e) => setPeriod(e.target.value)}>

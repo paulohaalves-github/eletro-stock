@@ -56,9 +56,8 @@ function SaidaContent() {
     }
   }
 
-  const blocked = product && CLOSED_STATUSES.includes(product.status) && product.status !== "DEVOLVIDO"
-    ? true
-    : product && ["VENDIDO", "TRANSFERIDO", "DESCARTADO"].includes(product.status);
+  const blocked = product && (["VENDIDO", "TRANSFERIDO", "DESCARTADO", "EM_TRANSITO"].includes(product.status)
+    || (CLOSED_STATUSES.includes(product.status) && product.status !== "DEVOLVIDO"));
 
   return (
     <div>

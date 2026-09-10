@@ -22,8 +22,40 @@ model User {
   filesUploaded   ProductFile[]  @relation("FileUploadedBy")
   movements       StockMovement[]
   auditLogs       AuditLog[]
+  units           UserUnit[]
 
   @@map("users")
+}
+
+model Unit {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(120)
+  slug      String   @unique @db.VarChar(80)
+  type      String   @db.VarChar(40)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users            UserUnit[]
+  products         Product[]        @relation("ProductUnit")
+  incomingProducts Product[]        @relation("ProductTransferTo")
+  locations        Location[]
+  movementsFrom    StockMovement[]  @relation("MovementFromUnit")
+  movementsTo      StockMovement[]  @relation("MovementToUnit")
+
+  @@map("units")
+}
+
+model UserUnit {
+  userId Int @map("user_id")
+  unitId Int @map("unit_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@id([userId, unitId])
+  @@index([unitId])
+  @@map("user_units")
 }
 
 model Category {
@@ -76,19 +108,22 @@ model LocationType {
 
 model Location {
   id             Int      @id @default(autoincrement())
+  unitId         Int      @map("unit_id")
   locationTypeId Int      @map("location_type_id")
   name           String   @db.VarChar(120)
   active         Boolean  @default(true)
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
+  unit          Unit            @relation(fields: [unitId], references: [id])
   locationType  LocationType    @relation(fields: [locationTypeId], references: [id])
   products      Product[]
   movementsFrom StockMovement[] @relation("MovementFromLocation")
   movementsTo   StockMovement[] @relation("MovementToLocation")
 
-  @@unique([locationTypeId, name])
+  @@unique([unitId, locationTypeId, name])
   @@index([locationTypeId])
+  @@index([unitId])
   @@map("locations")
 }
 
@@ -110,19 +145,23 @@ model Product {
   status            String   @default("DISPONIVEL") @db.VarChar(40)
   origin            String?  @db.VarChar(255)
   entryDate         DateTime @default(now()) @map("entry_date")
+  unitId            Int      @map("unit_id")
+  transferToUnitId  Int?     @map("transfer_to_unit_id")
   locationId        Int?     @map("location_id")
   createdById       Int      @map("created_by")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  line         Line?         @relation(fields: [lineId], references: [id])
-  category     Category      @relation(fields: [categoryId], references: [id])
-  catalogModel CatalogModel? @relation(fields: [catalogModelId], references: [id])
-  createdBy    User          @relation("ProductCreatedBy", fields: [createdById], references: [id])
-  location     Location?     @relation(fields: [locationId], references: [id])
-  images       ProductImage[]
-  files        ProductFile[]
-  movements    StockMovement[]
+  line           Line?         @relation(fields: [lineId], references: [id])
+  category       Category      @relation(fields: [categoryId], references: [id])
+  catalogModel   CatalogModel? @relation(fields: [catalogModelId], references: [id])
+  createdBy      User          @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  unit           Unit          @relation("ProductUnit", fields: [unitId], references: [id])
+  transferToUnit Unit?         @relation("ProductTransferTo", fields: [transferToUnitId], references: [id], onDelete: SetNull)
+  location       Location?     @relation(fields: [locationId], references: [id])
+  images         ProductImage[]
+  files          ProductFile[]
+  movements      StockMovement[]
 
   @@index([ean])
   @@index([supplierModelCode])
@@ -133,6 +172,8 @@ model Product {
   @@index([lineId])
   @@index([entryDate])
   @@index([locationId])
+  @@index([unitId])
+  @@index([transferToUnitId])
   @@map("products")
 }
 
@@ -172,28 +213,34 @@ model ProductFile {
 }
 
 model StockMovement {
-  id             Int      @id @default(autoincrement())
-  productId      Int      @map("product_id")
-  type           String   @db.VarChar(40)
-  reason         String?  @db.VarChar(40)
-  previousStatus String?  @map("previous_status") @db.VarChar(40)
-  newStatus      String?  @map("new_status") @db.VarChar(40)
-  observation    String?  @db.Text
-  origin         String?  @db.VarChar(255)
-  previousLocationId Int? @map("previous_location_id")
-  newLocationId      Int? @map("new_location_id")
-  userId         Int      @map("user_id")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id                 Int      @id @default(autoincrement())
+  productId          Int      @map("product_id")
+  type               String   @db.VarChar(40)
+  reason             String?  @db.VarChar(40)
+  previousStatus     String?  @map("previous_status") @db.VarChar(40)
+  newStatus          String?  @map("new_status") @db.VarChar(40)
+  observation        String?  @db.Text
+  origin             String?  @db.VarChar(255)
+  previousLocationId Int?     @map("previous_location_id")
+  newLocationId      Int?     @map("new_location_id")
+  previousUnitId     Int?     @map("previous_unit_id")
+  newUnitId          Int?     @map("new_unit_id")
+  userId             Int      @map("user_id")
+  createdAt          DateTime @default(now()) @map("created_at")
 
   product          Product   @relation(fields: [productId], references: [id])
   user             User      @relation(fields: [userId], references: [id])
   previousLocation Location? @relation("MovementFromLocation", fields: [previousLocationId], references: [id], onDelete: SetNull)
   newLocation      Location? @relation("MovementToLocation", fields: [newLocationId], references: [id], onDelete: SetNull)
+  previousUnit     Unit?     @relation("MovementFromUnit", fields: [previousUnitId], references: [id], onDelete: SetNull)
+  newUnit          Unit?     @relation("MovementToUnit", fields: [newUnitId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([createdAt])
   @@index([type])
   @@index([userId])
+  @@index([previousUnitId])
+  @@index([newUnitId])
   @@map("stock_movements")
 }
 

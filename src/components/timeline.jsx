@@ -17,6 +17,11 @@ export function Timeline({ items = [] }) {
             <p className="mt-1 text-xs text-muted">
               {formatLocationPath(item.previousLocation) || "sem localização"} → {formatLocationPath(item.newLocation) || "sem localização"}
             </p>
+          ) : ["TRANSFERENCIA_ENVIO", "TRANSFERENCIA_RECEBIMENTO", "TRANSFERENCIA_CANCELADA", "TRANSFERENCIA_RECUSADA"].includes(item.type) ? (
+            <p className="mt-1 text-xs text-muted">
+              {item.previousUnit?.name || "—"} → {item.newUnit?.name || "—"}
+              {` · ${STATUS_LABELS[item.previousStatus] || item.previousStatus || "—"} → ${STATUS_LABELS[item.newStatus] || item.newStatus || "—"}`}
+            </p>
           ) : item.type === "ENTRADA" && item.newLocation ? (
             <p className="mt-1 text-xs text-muted">{formatLocationPath(item.newLocation)}</p>
           ) : item.previousStatus || item.newStatus ? (

@@ -1,5 +1,5 @@
 import { getSession } from "@/lib/auth";
-import { getProduct } from "@/lib/services/products";
+import { assertCanViewProduct, getProduct } from "@/lib/services/products";
 import { CONDITION_LABELS, STATUS_LABELS } from "@/lib/constants";
 import { formatCurrency, formatProductId } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
@@ -10,6 +10,7 @@ export default async function PrintPage({ params }) {
   if (!session) redirect("/login");
   const { id } = await params;
   const product = await getProduct(id);
+  assertCanViewProduct(session, product);
 
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-slate-900 print:p-0">
@@ -29,6 +30,7 @@ export default async function PrintPage({ params }) {
       <div className="mt-6 grid grid-cols-[180px_1fr] gap-6">
         <img src={product.primaryImage?.fileUrl || "/logo.svg"} alt="" className="h-44 w-full rounded-lg object-cover border" />
         <dl className="grid grid-cols-2 gap-3 text-sm">
+          <Item label="Unidade" value={product.unit?.name} />
           <Item label="Serial Onyx" value={product.serialOnyx} />
           <Item label="Nome comercial" value={product.commercialName} />
           <Item label="Model Code" value={product.supplierModelCode} />

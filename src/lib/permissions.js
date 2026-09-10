@@ -6,11 +6,13 @@ export const PERMISSIONS = {
   PRODUCT_VIEW: "product:view",
   STOCK_ENTRY: "stock:entry",
   STOCK_EXIT: "stock:exit",
+  STOCK_TRANSFER: "stock:transfer",
   STOCK_RESERVE: "stock:reserve",
   CONDITION_CHANGE: "product:condition",
   PHOTO_UPLOAD: "photo:upload",
   PHOTO_DELETE: "photo:delete",
   USER_MANAGE: "user:manage",
+  UNIT_MANAGE: "unit:manage",
   CATEGORY_MANAGE: "category:manage",
   LINE_MANAGE: "line:manage",
   LOCATION_MANAGE: "location:manage",
@@ -23,12 +25,15 @@ export const PERMISSIONS = {
 
 const ROLE_PERMISSIONS = {
   [ROLES.ADMIN]: Object.values(PERMISSIONS),
-  [ROLES.GESTOR]: Object.values(PERMISSIONS).filter((permission) => permission !== PERMISSIONS.USER_MANAGE),
+  [ROLES.GESTOR]: Object.values(PERMISSIONS).filter(
+    (permission) => permission !== PERMISSIONS.USER_MANAGE && permission !== PERMISSIONS.UNIT_MANAGE,
+  ),
   [ROLES.STOCK]: [
     PERMISSIONS.PRODUCT_CREATE,
     PERMISSIONS.PRODUCT_VIEW,
     PERMISSIONS.STOCK_ENTRY,
     PERMISSIONS.STOCK_EXIT,
+    PERMISSIONS.STOCK_TRANSFER,
     PERMISSIONS.STOCK_RESERVE,
     PERMISSIONS.PHOTO_UPLOAD,
     PERMISSIONS.PHOTO_DELETE,

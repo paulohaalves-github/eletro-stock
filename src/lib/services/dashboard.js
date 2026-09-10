@@ -1,38 +1,47 @@
 import { prisma } from "../db";
 import { PRICE_RANGES, STATUSES } from "../constants";
 import { periodRange } from "../format";
+import { requireActiveUnit, serializeUnit } from "../units";
 
 const IN_STOCK = [STATUSES.AVAILABLE, STATUSES.RESERVED];
+const ENTRY_TYPES = ["ENTRADA", "TRANSFERENCIA_RECEBIMENTO"];
+const EXIT_TYPES = ["SAIDA", "TRANSFERENCIA", "TRANSFERENCIA_ENVIO"];
 
-export async function getDashboard(period = "30d", from, to) {
+export async function getDashboard(period = "30d", from, to, session) {
   const range = periodRange(period, from, to);
+  const unitId = requireActiveUnit(session);
+  const unitWhere = { unitId };
 
   const [
     byStatus,
     byCategory,
     byCondition,
     inStockProducts,
+    incomingCount,
     recentEntries,
     recentExits,
     movements,
   ] = await Promise.all([
-    prisma.product.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.product.groupBy({ by: ["status"], where: unitWhere, _count: { _all: true } }),
     prisma.product.groupBy({
       by: ["categoryId"],
-      where: { status: { in: IN_STOCK } },
+      where: { ...unitWhere, status: { in: IN_STOCK } },
       _count: { _all: true },
     }),
     prisma.product.groupBy({
       by: ["condition"],
-      where: { status: { in: IN_STOCK } },
+      where: { ...unitWhere, status: { in: IN_STOCK } },
       _count: { _all: true },
     }),
     prisma.product.findMany({
-      where: { status: { in: IN_STOCK } },
+      where: { ...unitWhere, status: { in: IN_STOCK } },
       select: { cashPrice: true, installmentPrice: true, marketPrice: true, status: true },
     }),
+    prisma.product.count({
+      where: { transferToUnitId: unitId, status: STATUSES.IN_TRANSIT },
+    }),
     prisma.stockMovement.findMany({
-      where: { type: "ENTRADA" },
+      where: { type: { in: ENTRY_TYPES }, newUnitId: unitId },
       include: {
         product: { include: { category: true, images: { where: { isPrimary: true }, take: 1 } } },
         user: { select: { name: true } },
@@ -41,7 +50,7 @@ export async function getDashboard(period = "30d", from, to) {
       take: 8,
     }),
     prisma.stockMovement.findMany({
-      where: { type: { in: ["SAIDA", "TRANSFERENCIA"] } },
+      where: { type: { in: EXIT_TYPES }, previousUnitId: unitId },
       include: {
         product: { include: { category: true, images: { where: { isPrimary: true }, take: 1 } } },
         user: { select: { name: true } },
@@ -52,9 +61,10 @@ export async function getDashboard(period = "30d", from, to) {
     prisma.stockMovement.findMany({
       where: {
         createdAt: { gte: range.start, lte: range.end },
-        type: { in: ["ENTRADA", "SAIDA", "TRANSFERENCIA"] },
+        type: { in: [...ENTRY_TYPES, ...EXIT_TYPES] },
+        OR: [{ previousUnitId: unitId }, { newUnitId: unitId }],
       },
-      select: { type: true, createdAt: true },
+      select: { type: true, createdAt: true, previousUnitId: true, newUnitId: true },
     }),
   ]);
 
@@ -62,6 +72,7 @@ export async function getDashboard(period = "30d", from, to) {
   const available = statusMap.DISPONIVEL || 0;
   const reserved = statusMap.RESERVADO || 0;
   const sold = statusMap.VENDIDO || 0;
+  const inTransit = statusMap.EM_TRANSITO || 0;
   const inStock = available + reserved;
 
   const totals = inStockProducts.reduce(
@@ -97,8 +108,8 @@ export async function getDashboard(period = "30d", from, to) {
   for (const movement of movements) {
     const key = movement.createdAt.toISOString().slice(0, 10);
     if (!dayMap[key]) continue;
-    if (movement.type === "ENTRADA") dayMap[key].entradas += 1;
-    else dayMap[key].saidas += 1;
+    if (ENTRY_TYPES.includes(movement.type) && movement.newUnitId === unitId) dayMap[key].entradas += 1;
+    if (EXIT_TYPES.includes(movement.type) && movement.previousUnitId === unitId) dayMap[key].saidas += 1;
   }
 
   const priceBands = PRICE_RANGES.map((band) => ({
@@ -111,11 +122,14 @@ export async function getDashboard(period = "30d", from, to) {
   }));
 
   return {
+    unit: serializeUnit(session.activeUnit),
     cards: {
       available,
       reserved,
       sold,
       inStock,
+      inTransit,
+      incoming: incomingCount,
       cash: totals.cash,
       installment: totals.installment,
       market: totals.market,

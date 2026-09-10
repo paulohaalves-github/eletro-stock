@@ -14,7 +14,16 @@ async function main() {
   await prisma.catalogModel.deleteMany();
   await prisma.category.deleteMany();
   await prisma.line.deleteMany();
+  await prisma.userUnit.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.unit.deleteMany();
+
+  await prisma.unit.createMany({
+    data: [
+      { name: "Onyx Outlet", slug: "onyx", type: "MATRIZ", active: true },
+      { name: "Eletromall Outlet", slug: "eletromall", type: "FILIAL", active: true },
+    ],
+  });
 
   await prisma.user.create({
     data: {
@@ -25,7 +34,8 @@ async function main() {
     },
   });
 
-  console.log("Seed concluído: banco zerado, somente o administrador.");
+  console.log("Seed concluído: banco zerado, unidades e administrador.");
+  console.log("  Unidades: Onyx Outlet (Matriz), Eletromall Outlet (Filial)");
   console.log("  ti@multifix.com.br");
 }
 

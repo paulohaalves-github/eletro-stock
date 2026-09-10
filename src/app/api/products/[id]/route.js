@@ -1,12 +1,14 @@
 import { apiHandler, readJson } from "@/lib/api";
 import { PERMISSIONS, assertCan } from "@/lib/permissions";
-import { getProduct, updateProduct } from "@/lib/services/products";
+import { getProduct, updateProduct, assertCanViewProduct } from "@/lib/services/products";
 import { parseId } from "@/lib/validations";
 
 export const GET = apiHandler(
-  async (_request, { params }) => {
+  async (_request, { params, session }) => {
     const { id } = await params;
-    return { product: await getProduct(parseId(id)) };
+    const product = await getProduct(parseId(id));
+    assertCanViewProduct(session, product);
+    return { product };
   },
   { permission: PERMISSIONS.PRODUCT_VIEW },
 );
@@ -16,6 +18,7 @@ export const PATCH = apiHandler(
     const { id } = await params;
     const body = await readJson(request);
     const current = await getProduct(parseId(id));
+    assertCanViewProduct(session, current);
     if (body.condition && body.condition !== current.condition) {
       assertCan(session.role, PERMISSIONS.CONDITION_CHANGE);
     }

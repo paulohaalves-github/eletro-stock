@@ -3,9 +3,10 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
-import { SESSION_COOKIE, SESSION_MAX_AGE } from "./constants";
+import { SESSION_COOKIE, SESSION_MAX_AGE, UNIT_COOKIE } from "./constants";
 import { unauthorized, forbidden } from "./errors";
 import { can } from "./permissions";
+import { resolveAllowedUnits, serializeUnit } from "./units";
 
 function getSecret() {
   const secret = process.env.AUTH_SECRET;
@@ -50,20 +51,30 @@ function cookieSecure() {
   return process.env.NODE_ENV === "production";
 }
 
-export async function setSessionCookie(token) {
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, token, {
+function cookieOptions() {
+  return {
     httpOnly: true,
     sameSite: "lax",
     secure: cookieSecure(),
     path: "/",
     maxAge: SESSION_MAX_AGE,
-  });
+  };
+}
+
+export async function setSessionCookie(token) {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, token, cookieOptions());
+}
+
+export async function setActiveUnitCookie(unitId) {
+  const cookieStore = await cookies();
+  cookieStore.set(UNIT_COOKIE, String(unitId), cookieOptions());
 }
 
 export async function clearSessionCookie() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete(UNIT_COOKIE);
 }
 
 export const getSession = cache(async () => {
@@ -81,11 +92,26 @@ export const getSession = cache(async () => {
         email: true,
         role: true,
         active: true,
+        units: { include: { unit: { select: { id: true, name: true, slug: true, type: true, active: true } } } },
       },
     });
 
     if (!user || !user.active) return null;
-    return user;
+
+    const units = await resolveAllowedUnits(user);
+    const requestedId = Number(cookieStore.get(UNIT_COOKIE)?.value);
+    const activeUnit = units.find((unit) => unit.id === requestedId) || units[0] || null;
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      active: user.active,
+      units,
+      activeUnit,
+      activeUnitId: activeUnit?.id ?? null,
+    };
   } catch {
     return null;
   }
@@ -110,5 +136,8 @@ export function publicUser(user) {
     email: user.email,
     role: user.role,
     active: user.active !== false,
+    units: (user.units || []).map(serializeUnit),
+    activeUnit: serializeUnit(user.activeUnit),
+    activeUnitId: user.activeUnitId ?? user.activeUnit?.id ?? null,
   };
 }

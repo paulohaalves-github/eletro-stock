@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { conflict, notFound, validationError } from "../errors";
 import { writeAudit } from "../audit";
 import { formatLocationPath } from "../format";
+import { requireActiveUnit } from "../units";
 
 export { formatLocationPath };
 
@@ -17,10 +18,12 @@ const locationInclude = {
   locationType: { select: locationTypeSelect },
 };
 
-export async function listLocationTypes({ active, includeCounts = false } = {}) {
+export async function listLocationTypes({ active, includeCounts = false, session } = {}) {
   const where = {};
   if (active === true || active === "true") where.active = true;
   if (active === false || active === "false") where.active = false;
+
+  const unitId = session ? requireActiveUnit(session) : null;
 
   const items = await prisma.locationType.findMany({
     where,
@@ -28,8 +31,10 @@ export async function listLocationTypes({ active, includeCounts = false } = {}) 
     ...(includeCounts
       ? {
           include: {
-            _count: { select: { locations: true } },
-            locations: { select: { id: true } },
+            locations: {
+              where: unitId ? { unitId } : {},
+              select: { id: true },
+            },
           },
         }
       : {}),
@@ -41,7 +46,10 @@ export async function listLocationTypes({ active, includeCounts = false } = {}) 
   const productCounts = typeIds.length
     ? await prisma.product.groupBy({
         by: ["locationId"],
-        where: { location: { locationTypeId: { in: typeIds } } },
+        where: {
+          ...(unitId ? { unitId } : {}),
+          location: { locationTypeId: { in: typeIds } },
+        },
         _count: { _all: true },
       })
     : [];
@@ -56,7 +64,7 @@ export async function listLocationTypes({ active, includeCounts = false } = {}) 
       active: item.active,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-      locationCount: item._count.locations,
+      locationCount: item.locations.length,
       productCount,
     };
   });
@@ -137,8 +145,8 @@ export async function deleteLocationType(id, actor) {
   });
 }
 
-export async function listLocations({ locationTypeId, active, includeCounts = false } = {}) {
-  const where = {};
+export async function listLocations({ locationTypeId, active, includeCounts = false, session } = {}) {
+  const where = { unitId: requireActiveUnit(session) };
   if (locationTypeId) where.locationTypeId = Number(locationTypeId);
   if (active === true || active === "true") where.active = true;
   if (active === false || active === "false") where.active = false;
@@ -158,6 +166,7 @@ export async function listLocations({ locationTypeId, active, includeCounts = fa
 }
 
 export async function createLocation(payload, actor) {
+  const unitId = requireActiveUnit(actor);
   const name = String(payload.name || "").trim();
   const locationTypeId = Number(payload.locationTypeId);
   if (!name) throw validationError("Informe o nome ou código da localização.");
@@ -169,14 +178,15 @@ export async function createLocation(payload, actor) {
   if (!type) throw notFound("Tipo de localização não encontrado.");
 
   const exists = await prisma.location.findFirst({
-    where: { locationTypeId, name },
+    where: { unitId, locationTypeId, name },
   });
-  if (exists) throw conflict("Já existe uma localização com este nome neste tipo.");
+  if (exists) throw conflict("Já existe uma localização com este nome neste tipo nesta unidade.");
 
   const item = await prisma.location.create({
     data: {
       name,
       locationTypeId,
+      unitId,
       active: payload.active !== false,
     },
     include: locationInclude,
@@ -194,11 +204,12 @@ export async function createLocation(payload, actor) {
 }
 
 export async function updateLocation(id, payload, actor) {
+  const unitId = requireActiveUnit(actor);
   const current = await prisma.location.findUnique({
     where: { id: Number(id) },
     include: locationInclude,
   });
-  if (!current) throw notFound("Localização não encontrada.");
+  if (!current || current.unitId !== unitId) throw notFound("Localização não encontrada.");
 
   const data = {};
   if (payload.locationTypeId !== undefined) {
@@ -221,12 +232,13 @@ export async function updateLocation(id, payload, actor) {
   const nextName = data.name ?? current.name;
   const exists = await prisma.location.findFirst({
     where: {
+      unitId: current.unitId,
       locationTypeId: nextTypeId,
       name: nextName,
       id: { not: current.id },
     },
   });
-  if (exists) throw conflict("Já existe uma localização com este nome neste tipo.");
+  if (exists) throw conflict("Já existe uma localização com este nome neste tipo nesta unidade.");
 
   const item = await prisma.location.update({
     where: { id: current.id },
@@ -247,6 +259,7 @@ export async function updateLocation(id, payload, actor) {
 }
 
 export async function deleteLocation(id, actor) {
+  const unitId = requireActiveUnit(actor);
   const current = await prisma.location.findUnique({
     where: { id: Number(id) },
     include: {
@@ -254,7 +267,7 @@ export async function deleteLocation(id, actor) {
       _count: { select: { products: true, movementsFrom: true, movementsTo: true } },
     },
   });
-  if (!current) throw notFound("Localização não encontrada.");
+  if (!current || current.unitId !== unitId) throw notFound("Localização não encontrada.");
   if (current._count.products > 0) {
     throw conflict("Não é possível excluir uma localização com produtos vinculados. Inative-a.");
   }
@@ -272,7 +285,7 @@ export async function deleteLocation(id, actor) {
   });
 }
 
-export async function resolveProductLocation(payload, { currentLocationId = null } = {}) {
+export async function resolveProductLocation(payload, { currentLocationId = null, unitId = null } = {}) {
   const sentId = payload.locationId;
   const sentTypeId = payload.locationTypeId;
 
@@ -295,6 +308,9 @@ export async function resolveProductLocation(payload, { currentLocationId = null
     include: locationInclude,
   });
   if (!location) throw validationError("Localização inválida.");
+  if (unitId && location.unitId !== Number(unitId)) {
+    throw validationError("A localização selecionada não pertence a esta unidade.");
+  }
 
   if (sentTypeId !== undefined && sentTypeId !== "" && sentTypeId !== null) {
     const typeId = Number(sentTypeId);

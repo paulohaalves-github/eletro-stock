@@ -3,12 +3,12 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { buildReport, toCsv, toExcelBuffer } from "@/lib/services/reports";
 
 export const GET = apiHandler(
-  async (request) => {
+  async (request, { session }) => {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "stock";
     const format = searchParams.get("format") || "json";
     const filters = Object.fromEntries(searchParams.entries());
-    const report = await buildReport(type, filters);
+    const report = await buildReport(type, filters, session);
 
     if (format === "csv") {
       const csv = `\uFEFF${toCsv(report)}`;

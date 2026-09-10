@@ -5,6 +5,16 @@ export const ROLES = {
   VIEWER: "CONSULTA",
 };
 
+export const UNIT_TYPES = {
+  HQ: "MATRIZ",
+  BRANCH: "FILIAL",
+};
+
+export const UNIT_TYPE_LABELS = {
+  MATRIZ: "Matriz",
+  FILIAL: "Filial",
+};
+
 export const ROLE_LABELS = {
   ADMINISTRADOR: "Administrador",
   GESTOR: "Gestor",
@@ -27,6 +37,7 @@ export const CONDITION_LABELS = {
 export const STATUSES = {
   AVAILABLE: "DISPONIVEL",
   RESERVED: "RESERVADO",
+  IN_TRANSIT: "EM_TRANSITO",
   SOLD: "VENDIDO",
   TRANSFERRED: "TRANSFERIDO",
   RETURNED: "DEVOLVIDO",
@@ -36,6 +47,7 @@ export const STATUSES = {
 export const STATUS_LABELS = {
   DISPONIVEL: "Disponível",
   RESERVADO: "Reservado",
+  EM_TRANSITO: "Em trânsito",
   VENDIDO: "Vendido",
   TRANSFERIDO: "Transferido",
   DEVOLVIDO: "Devolvido",
@@ -48,6 +60,10 @@ export const MOVEMENT_TYPES = {
   RESERVE: "RESERVA",
   UNRESERVE: "LIBERACAO_RESERVA",
   TRANSFER: "TRANSFERENCIA",
+  TRANSFER_SEND: "TRANSFERENCIA_ENVIO",
+  TRANSFER_RECEIVE: "TRANSFERENCIA_RECEBIMENTO",
+  TRANSFER_CANCEL: "TRANSFERENCIA_CANCELADA",
+  TRANSFER_REFUSE: "TRANSFERENCIA_RECUSADA",
   CONDITION_CHANGE: "ALTERACAO_CONDICAO",
   PRICE_CHANGE: "ALTERACAO_PRECO",
   UPDATE: "ALTERACAO",
@@ -64,6 +80,10 @@ export const MOVEMENT_TYPE_LABELS = {
   RESERVA: "Produto reservado",
   LIBERACAO_RESERVA: "Reserva liberada",
   TRANSFERENCIA: "Produto transferido",
+  TRANSFERENCIA_ENVIO: "Enviado para outra unidade",
+  TRANSFERENCIA_RECEBIMENTO: "Recebido de outra unidade",
+  TRANSFERENCIA_CANCELADA: "Transferência cancelada",
+  TRANSFERENCIA_RECUSADA: "Transferência recusada",
   ALTERACAO_CONDICAO: "Condição alterada",
   ALTERACAO_PRECO: "Preço alterado",
   ALTERACAO: "Produto alterado",
@@ -85,7 +105,7 @@ export const EXIT_REASONS = {
 
 export const EXIT_REASON_LABELS = {
   VENDA: "Venda",
-  TRANSFERENCIA: "Transferência",
+  TRANSFERENCIA: "Transferência externa",
   DEVOLUCAO: "Devolução",
   AVARIA: "Avaria",
   DESCARTE: "Descarte",
@@ -102,6 +122,14 @@ export const EXIT_REASON_TO_STATUS = {
 };
 
 export const CLOSED_STATUSES = ["VENDIDO", "TRANSFERIDO", "DESCARTADO", "DEVOLVIDO"];
+
+export function isInTransit(status) {
+  return status === STATUSES.IN_TRANSIT;
+}
+
+export function canOperateStock(status) {
+  return !CLOSED_STATUSES.includes(status) && !isInTransit(status);
+}
 
 export const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
@@ -132,4 +160,5 @@ export const DASHBOARD_PERIODS = {
 };
 
 export const SESSION_COOKIE = "eletro_stock_session";
+export const UNIT_COOKIE = "eletro_stock_unit";
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;

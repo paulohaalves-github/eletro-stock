@@ -3,20 +3,60 @@ import { conflict, notFound, validationError } from "../errors";
 import { writeAudit } from "../audit";
 import { ROLES } from "../constants";
 import { hashPassword } from "../auth";
+import { unitSelect } from "../units";
+
+const userSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  active: true,
+  createdAt: true,
+  updatedAt: true,
+  units: { include: { unit: { select: unitSelect } } },
+};
+
+function serializeUser(user) {
+  const units = (user.units || []).map((item) => item.unit).filter(Boolean);
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    active: user.active,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    units,
+    unitIds: units.map((unit) => unit.id),
+  };
+}
+
+async function resolveUnitIds(payload, role) {
+  const raw = Array.isArray(payload.unitIds)
+    ? [...new Set(payload.unitIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))]
+    : [];
+  if (role === ROLES.ADMIN) return raw;
+  if (!raw.length) throw validationError("Vincule ao menos uma unidade para este perfil.");
+  const found = await prisma.unit.findMany({ where: { id: { in: raw }, active: true }, select: { id: true } });
+  if (found.length !== raw.length) throw validationError("Uma ou mais unidades são inválidas.");
+  return raw;
+}
+
+async function replaceUserUnits(userId, unitIds) {
+  await prisma.userUnit.deleteMany({ where: { userId } });
+  if (unitIds.length) {
+    await prisma.userUnit.createMany({
+      data: unitIds.map((unitId) => ({ userId, unitId })),
+    });
+  }
+}
 
 export async function listUsers() {
-  return prisma.user.findMany({
+  const items = await prisma.user.findMany({
     orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      active: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    select: userSelect,
   });
+  return items.map(serializeUser);
 }
 
 export async function createUser(payload, actor) {
@@ -33,7 +73,9 @@ export async function createUser(payload, actor) {
   const exists = await prisma.user.findUnique({ where: { email } });
   if (exists) throw conflict("Já existe um usuário com este e-mail.");
 
-  const user = await prisma.user.create({
+  const unitIds = await resolveUnitIds(payload, role);
+
+  const created = await prisma.user.create({
     data: {
       name,
       email,
@@ -41,8 +83,11 @@ export async function createUser(payload, actor) {
       role,
       active: payload.active !== false,
     },
-    select: { id: true, name: true, email: true, role: true, active: true, createdAt: true },
+    select: { id: true },
   });
+
+  await replaceUserUnits(created.id, unitIds);
+  const user = serializeUser(await prisma.user.findUnique({ where: { id: created.id }, select: userSelect }));
 
   await writeAudit({
     userId: actor.id,
@@ -56,7 +101,10 @@ export async function createUser(payload, actor) {
 }
 
 export async function updateUser(id, payload, actor) {
-  const user = await prisma.user.findUnique({ where: { id: Number(id) } });
+  const user = await prisma.user.findUnique({
+    where: { id: Number(id) },
+    include: { units: true },
+  });
   if (!user) throw notFound("Usuário não encontrado.");
 
   const data = {};
@@ -78,11 +126,21 @@ export async function updateUser(id, payload, actor) {
     throw validationError("Você não pode desativar o próprio usuário.");
   }
 
-  const updated = await prisma.user.update({
+  const nextRole = data.role || user.role;
+  if (payload.unitIds !== undefined || (data.role && data.role !== user.role && nextRole !== ROLES.ADMIN)) {
+    const unitIds = await resolveUnitIds(
+      payload.unitIds !== undefined ? payload : { unitIds: user.units.map((item) => item.unitId) },
+      nextRole,
+    );
+    await replaceUserUnits(user.id, unitIds);
+  }
+
+  await prisma.user.update({
     where: { id: user.id },
     data,
-    select: { id: true, name: true, email: true, role: true, active: true, updatedAt: true },
   });
+
+  const updated = serializeUser(await prisma.user.findUnique({ where: { id: user.id }, select: userSelect }));
 
   await writeAudit({
     userId: actor.id,

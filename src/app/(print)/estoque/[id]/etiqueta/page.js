@@ -1,13 +1,17 @@
 import { notFound } from "next/navigation";
-import { getProduct } from "@/lib/services/products";
+import { getSession } from "@/lib/auth";
+import { assertCanViewProduct, getProduct } from "@/lib/services/products";
 import { PrintButton } from "@/components/print-button";
 import { PriceTagSheet } from "@/components/price-tag";
 
 export default async function ProductLabelPage({ params }) {
+  const session = await getSession();
+  if (!session) notFound();
   const { id } = await params;
   let product;
   try {
     product = await getProduct(id);
+    assertCanViewProduct(session, product);
   } catch {
     notFound();
   }

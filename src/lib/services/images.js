@@ -14,7 +14,8 @@ import {
   MAX_UPLOAD_BYTES,
   MOVEMENT_TYPES,
 } from "../constants";
-import { getProduct } from "./products";
+import { getProduct, movementUnitFields } from "./products";
+import { assertProductWritable } from "../units";
 
 function uploadRoot() {
   return path.join(process.cwd(), process.env.UPLOAD_DIR || "uploads");
@@ -55,6 +56,7 @@ async function saveBuffer(relativeDir, filename, buffer) {
 
 export async function addProductImages(productId, files, user, { setPrimary = false } = {}) {
   const product = await getProduct(productId);
+  assertProductWritable(user, product);
   const currentCount = product.images.length;
   if (currentCount + files.length > MAX_IMAGES_PER_PRODUCT) {
     throw validationError(`Limite de ${MAX_IMAGES_PER_PRODUCT} imagens por produto.`);
@@ -106,6 +108,7 @@ export async function addProductImages(productId, files, user, { setPrimary = fa
     previousStatus: product.status,
     newStatus: product.status,
     observation: `${created.length} foto(s) adicionada(s)`,
+    ...movementUnitFields(product),
     userId: user.id,
   });
 
@@ -121,6 +124,8 @@ export async function addProductImages(productId, files, user, { setPrimary = fa
 }
 
 export async function setPrimaryImage(productId, imageId, user) {
+  const product = await getProduct(productId);
+  assertProductWritable(user, product);
   const image = await prisma.productImage.findFirst({
     where: { id: Number(imageId), productId: Number(productId) },
   });
@@ -149,6 +154,8 @@ export async function setPrimaryImage(productId, imageId, user) {
 }
 
 export async function deleteProductImage(productId, imageId, user) {
+  const current = await getProduct(productId);
+  assertProductWritable(user, current);
   const image = await prisma.productImage.findFirst({
     where: { id: Number(imageId), productId: Number(productId) },
   });
@@ -180,6 +187,7 @@ export async function deleteProductImage(productId, imageId, user) {
     previousStatus: product.status,
     newStatus: product.status,
     observation: `Imagem removida: ${image.fileName}`,
+    ...movementUnitFields(product),
     userId: user.id,
   });
   await writeAudit({
@@ -195,6 +203,7 @@ export async function deleteProductImage(productId, imageId, user) {
 
 export async function addProductFile(productId, file, user) {
   const product = await getProduct(productId);
+  assertProductWritable(user, product);
   if (file.size > MAX_UPLOAD_BYTES) {
     throw validationError("Arquivo excede o tamanho máximo permitido.");
   }
@@ -220,6 +229,7 @@ export async function addProductFile(productId, file, user) {
     previousStatus: product.status,
     newStatus: product.status,
     observation: `Anexo: ${created.fileName}`,
+    ...movementUnitFields(product),
     userId: user.id,
   });
 
@@ -227,6 +237,8 @@ export async function addProductFile(productId, file, user) {
 }
 
 export async function deleteProductFile(productId, fileId, user) {
+  const product = await getProduct(productId);
+  assertProductWritable(user, product);
   const file = await prisma.productFile.findFirst({
     where: { id: Number(fileId), productId: Number(productId) },
   });
