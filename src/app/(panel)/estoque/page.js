@@ -106,7 +106,7 @@ function EstoqueContent() {
   return (
     <div>
       <PageHeader
-        title="Estoque"
+        title="Produtos"
         subtitle={`${data.total} aparelho(s) nesta unidade`}
         actions={
           <>
