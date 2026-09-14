@@ -318,7 +318,7 @@ export const LABEL_MODEL_OPTIONS = [
   {
     id: LABEL_MODELS.PRECOS_02,
     label: "Modelo de Preços 02",
-    description: "Etiqueta 5 × 2,5 cm (50 × 25 mm)",
+    description: "Rolo 2 colunas · 5 × 2,5 cm (gap 0,3 cm)",
   },
 ];
 

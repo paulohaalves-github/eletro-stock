@@ -203,21 +203,47 @@
   white-space: nowrap;
 }
 
-/* Modelo de Preços 02 — 50 × 25 mm */
+/* Modelo de Preços 02 — rolo 2 colunas: 50×25 mm + gap 3 mm */
+.price-tag-sheet--modelo-2 {
+  gap: 12px;
+}
+
+.price-tag-row {
+  display: grid;
+  grid-template-columns: 50mm 50mm;
+  column-gap: 3mm;
+  width: 103mm;
+  height: 25mm;
+  box-sizing: border-box;
+}
+
 .price-tag--modelo-2 {
   width: 50mm;
   height: 25mm;
   background: #fff;
   color: #111;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 1.1mm 1.4mm 1mm;
   box-sizing: border-box;
   overflow: hidden;
   font-family: Arial, Helvetica, sans-serif;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  transform: rotate(180deg);
+  transform-origin: center center;
+}
+
+.price-tag--modelo-2.price-tag--empty {
+  background: transparent;
+  transform: none;
+}
+
+.price-tag-m2-inner {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0.9mm 1.2mm 0.7mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .price-tag-m2-header {
@@ -225,18 +251,19 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 1mm;
+  flex-shrink: 0;
 }
 
 .price-tag-m2-id {
   display: flex;
   align-items: flex-start;
-  gap: 1mm;
+  gap: 0.8mm;
   min-width: 0;
 }
 
 .price-tag-m2-logo {
-  width: 4.8mm;
-  height: 4.8mm;
+  width: 4.2mm;
+  height: 4.2mm;
   object-fit: cover;
   flex-shrink: 0;
   background: #000;
@@ -251,14 +278,14 @@
 }
 
 .price-tag-m2-id p {
-  font-size: 4.1pt;
-  line-height: 1.2;
+  font-size: 3.8pt;
+  line-height: 1.15;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 
 .price-tag-m2-serial {
-  font-size: 5pt;
+  font-size: 4.6pt;
   font-weight: 800;
   line-height: 1.1;
   flex-shrink: 0;
@@ -268,12 +295,16 @@
   text-align: center;
   min-height: 0;
   overflow: hidden;
-  padding: 0.2mm 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.15mm 0;
 }
 
 .price-tag-m2-product h1 {
   margin: 0;
-  font-size: 7.2pt;
+  font-size: 6.4pt;
   font-weight: 800;
   line-height: 1.05;
   letter-spacing: 0.01em;
@@ -285,24 +316,25 @@
 }
 
 .price-tag-m2-product p {
-  margin-top: 0.2mm;
-  font-size: 5.4pt;
+  margin-top: 0.15mm;
+  font-size: 4.8pt;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .price-tag-m2-cash {
   background: #111;
   color: #fff;
   text-align: center;
-  padding: 0.55mm 1mm 0.45mm;
+  padding: 0.4mm 0.8mm 0.35mm;
+  flex-shrink: 0;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
 .price-tag-m2-discount {
   display: block;
-  font-size: 3.8pt;
+  font-size: 3.4pt;
   font-weight: 800;
   letter-spacing: 0.08em;
   line-height: 1;
@@ -310,8 +342,8 @@
 
 .price-tag-m2-avista {
   display: block;
-  margin-top: 0.15mm;
-  font-size: 7.4pt;
+  margin-top: 0.1mm;
+  font-size: 6.6pt;
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -320,9 +352,10 @@
 
 .price-tag-m2-valor {
   text-align: center;
-  font-size: 5.2pt;
+  font-size: 4.6pt;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.05;
+  flex-shrink: 0;
 }
 
 @media print {
@@ -350,14 +383,44 @@
     align-items: stretch;
   }
 
-  .price-tag {
+  .price-tag-sheet--modelo-1 .price-tag {
     box-shadow: none;
     page-break-after: always;
     break-after: page;
   }
 
-  .price-tag:last-child {
+  .price-tag-sheet--modelo-1 .price-tag:last-child {
     page-break-after: auto;
     break-after: auto;
+  }
+
+  .price-tag-sheet--modelo-2 {
+    width: 103mm;
+  }
+
+  .price-tag-row {
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .price-tag-row:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .price-tag--modelo-2 {
+    box-shadow: none;
+    page-break-after: auto;
+    break-after: auto;
+    transform: rotate(180deg);
+    transform-origin: center center;
+    -webkit-transform: rotate(180deg);
+  }
+
+  .price-tag--modelo-2.price-tag--empty {
+    transform: none;
+    -webkit-transform: none;
   }
 }
