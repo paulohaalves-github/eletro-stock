@@ -4,12 +4,20 @@ const currency = new Intl.NumberFormat("pt-BR", {
 });
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
-  timeStyle: "short",
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
 });
 
 const dateOnly = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
 });
 
 export function formatCurrency(value) {

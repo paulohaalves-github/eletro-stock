@@ -190,7 +190,7 @@ function TransferenciasContent() {
         subtitle={me?.activeUnit ? `Operando em ${me.activeUnit.name}. Monte um lote, envie e o destino confirma.` : "Selecione uma unidade no menu."}
       />
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="w-full space-y-4">
         <Card>
           <h2 className="mb-3 font-semibold">Enviar lote da unidade atual</h2>
           <Field label="Localizar e adicionar produto disponível">
@@ -372,11 +372,10 @@ function TransferenciasContent() {
             <p className="text-sm text-muted">Nenhum aparelho a caminho desta unidade.</p>
           )}
         </Card>
-      </div>
 
-      <Card className="mt-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Enviados e aguardando conferência</h2>
+        <Card>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold">Enviados e aguardando conferência</h2>
           {outgoing.length ? (
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" className="text-sm text-accent" onClick={() => toggleAll(setSelectedOutgoing, outgoing, !allOutgoingSelected)}>
@@ -419,6 +418,7 @@ function TransferenciasContent() {
           <p className="text-sm text-muted">Nenhum envio pendente nesta unidade.</p>
         )}
       </Card>
+      </div>
 
       <ConfirmDialog
         open={Boolean(pending)}

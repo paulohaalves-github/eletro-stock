@@ -4,12 +4,13 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { ConfirmDialog } from "@/components/modal";
 import { ScanField } from "@/components/scan-field";
-import { CLOSED_STATUSES, EXIT_REASON_LABELS, EXIT_REASONS } from "@/lib/constants";
+import { CLOSED_STATUSES, EXIT_REASON_LABELS, EXIT_REASONS, WARRANTY_MONTHS } from "@/lib/constants";
 import { formatCurrency, formatProductId } from "@/lib/format";
+import { CustomerPicker } from "@/components/customer-picker";
 
 function SaidaContent() {
   const params = useSearchParams();
@@ -19,6 +20,9 @@ function SaidaContent() {
   const [product, setProduct] = useState(null);
   const [reason, setReason] = useState(EXIT_REASONS.SALE);
   const [observation, setObservation] = useState("");
+  const [customer, setCustomer] = useState(null);
+  const [warrantyMonths, setWarrantyMonths] = useState("3");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -44,7 +48,14 @@ function SaidaContent() {
     try {
       const data = await api("/api/stock/exit", {
         method: "POST",
-        json: { productId: product.id, reason, observation },
+        json: {
+          productId: product.id,
+          reason,
+          observation,
+          ...(reason === EXIT_REASONS.SALE
+            ? { customerId: customer?.id, warrantyMonths: Number(warrantyMonths), invoiceNumber }
+            : {}),
+        },
       });
       toast.success(data.message);
       setConfirmOpen(false);
@@ -56,15 +67,16 @@ function SaidaContent() {
     }
   }
 
-  const blocked = product && (["VENDIDO", "TRANSFERIDO", "DESCARTADO", "EM_TRANSITO"].includes(product.status)
+  const blocked = product && (["VENDIDO", "TRANSFERIDO", "DESCARTADO", "EM_TRANSITO", "EM_REPARO"].includes(product.status)
     || (CLOSED_STATUSES.includes(product.status) && product.status !== "DEVOLVIDO"));
+  const saleIncomplete = reason === EXIT_REASONS.SALE && (!customer || !invoiceNumber.trim());
 
   return (
     <div>
       <PageHeader title="Saída de estoque" subtitle="Localize a unidade e confirme a baixa sem apagar o histórico." />
       <Card className="mb-4">
         <Field label="Localizar produto">
-          <ScanField value={query} onChange={setQuery} onScan={(parsed) => setQuery(parsed.query)} />
+          <ScanField value={query} onChange={setQuery} onScan={(parsed) => setQuery(parsed.query ?? parsed.raw ?? "")} />
         </Field>
         {results.length ? (
           <div className="mt-3 divide-y divide-border rounded-xl border border-border">
@@ -120,10 +132,27 @@ function SaidaContent() {
                   ))}
                 </Select>
               </Field>
+              {reason === EXIT_REASONS.SALE ? (
+                <>
+                  <Field label="Cliente" required>
+                    <CustomerPicker value={customer} onChange={setCustomer} />
+                  </Field>
+                  <Field label="Número NF" required hint="Número da nota fiscal da venda.">
+                    <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="Ex.: 123456" />
+                  </Field>
+                  <Field label="Garantia" required hint="Prazo escolhido na venda, de 1 a 12 meses.">
+                    <Select value={warrantyMonths} onChange={(e) => setWarrantyMonths(e.target.value)}>
+                      {WARRANTY_MONTHS.map((months) => (
+                        <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </>
+              ) : null}
               <Field label="Observação" required={reason === EXIT_REASONS.OTHER}>
                 <Textarea value={observation} onChange={(e) => setObservation(e.target.value)} />
               </Field>
-              <Button onClick={() => setConfirmOpen(true)}>Confirmar baixa</Button>
+              <Button disabled={saleIncomplete} onClick={() => setConfirmOpen(true)}>Confirmar baixa</Button>
             </>
           )}
         </Card>

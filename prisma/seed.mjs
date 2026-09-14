@@ -4,6 +4,16 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.workOrderEvent.deleteMany();
+  await prisma.workOrderImage.deleteMany();
+  await prisma.workOrderPart.deleteMany();
+  await prisma.partMovement.deleteMany();
+  await prisma.partTransfer.deleteMany();
+  await prisma.workOrder.deleteMany();
+  await prisma.sale.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.partStock.deleteMany();
+  await prisma.part.deleteMany();
   await prisma.stockMovement.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.productImage.deleteMany();
@@ -22,6 +32,7 @@ async function main() {
     data: [
       { name: "Onyx Outlet", slug: "onyx", type: "MATRIZ", active: true },
       { name: "Eletromall Outlet", slug: "eletromall", type: "FILIAL", active: true },
+      { name: "Laboratório Central", slug: "laboratorio", type: "LABORATORIO", active: true },
     ],
   });
 
@@ -35,7 +46,7 @@ async function main() {
   });
 
   console.log("Seed concluído: banco zerado, unidades e administrador.");
-  console.log("  Unidades: Onyx Outlet (Matriz), Eletromall Outlet (Filial)");
+  console.log("  Unidades: Onyx Outlet (Matriz), Eletromall Outlet (Filial), Laboratório Central");
   console.log("  ti@multifix.com.br");
 }
 

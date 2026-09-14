@@ -23,6 +23,18 @@ model User {
   movements       StockMovement[]
   auditLogs       AuditLog[]
   units           UserUnit[]
+  customersCreated Customer[]         @relation("CustomerCreatedBy")
+  salesCreated     Sale[]             @relation("SaleCreatedBy")
+  workOrdersCreated WorkOrder[]       @relation("WorkOrderCreatedBy")
+  workOrdersAsTechnician WorkOrder[]  @relation("WorkOrderTechnician")
+  workOrderEvents  WorkOrderEvent[]
+  workOrderImages  WorkOrderImage[]   @relation("WorkOrderImageUploadedBy")
+  workOrderPartsRequested WorkOrderPart[] @relation("WorkOrderPartRequestedBy")
+  workOrderPartsFulfilled WorkOrderPart[] @relation("WorkOrderPartFulfilledBy")
+  partsCreated     Part[]             @relation("PartCreatedBy")
+  partMovements    PartMovement[]
+  partTransfersSent PartTransfer[]    @relation("PartTransferCreatedBy")
+  partTransfersReceived PartTransfer[] @relation("PartTransferReceivedBy")
 
   @@map("users")
 }
@@ -42,6 +54,14 @@ model Unit {
   locations        Location[]
   movementsFrom    StockMovement[]  @relation("MovementFromUnit")
   movementsTo      StockMovement[]  @relation("MovementToUnit")
+  sales            Sale[]
+  workOrders       WorkOrder[]      @relation("WorkOrderUnit")
+  workOrdersLab    WorkOrder[]      @relation("WorkOrderLabUnit")
+  partStocks       PartStock[]
+  partMovements    PartMovement[]   @relation("PartMovementUnit")
+  partMovementsTo  PartMovement[]   @relation("PartMovementToUnit")
+  partTransfersFrom PartTransfer[]  @relation("PartTransferFromUnit")
+  partTransfersTo   PartTransfer[]  @relation("PartTransferToUnit")
 
   @@map("units")
 }
@@ -120,6 +140,11 @@ model Location {
   products      Product[]
   movementsFrom StockMovement[] @relation("MovementFromLocation")
   movementsTo   StockMovement[] @relation("MovementToLocation")
+  partStocks    PartStock[]
+  partMovementsFrom PartMovement[] @relation("PartMovementFromLocation")
+  partMovementsTo   PartMovement[] @relation("PartMovementToLocation")
+  partTransfersFrom PartTransfer[] @relation("PartTransferFromLocation")
+  partTransfersTo   PartTransfer[] @relation("PartTransferToLocation")
 
   @@unique([unitId, locationTypeId, name])
   @@index([locationTypeId])
@@ -162,6 +187,8 @@ model Product {
   images         ProductImage[]
   files          ProductFile[]
   movements      StockMovement[]
+  sales          Sale[]
+  workOrders     WorkOrder[]
 
   @@index([ean])
   @@index([supplierModelCode])
@@ -260,4 +287,256 @@ model AuditLog {
   @@index([createdAt])
   @@index([userId])
   @@map("audit_logs")
+}
+
+model Customer {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(190)
+  phone       String   @db.VarChar(40)
+  document    String?  @db.VarChar(20)
+  email       String?  @db.VarChar(190)
+  address     String?  @db.VarChar(255)
+  notes       String?  @db.Text
+  createdById Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy  User        @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  sales      Sale[]
+  workOrders WorkOrder[]
+
+  @@index([name])
+  @@index([phone])
+  @@index([document])
+  @@map("customers")
+}
+
+model Sale {
+  id             Int      @id @default(autoincrement())
+  productId      Int      @map("product_id")
+  customerId     Int      @map("customer_id")
+  unitId         Int      @map("unit_id")
+  soldAt         DateTime @map("sold_at")
+  warrantyMonths Int      @map("warranty_months")
+  invoiceNumber  String?  @map("invoice_number") @db.VarChar(40)
+  observation    String?  @db.Text
+  createdById    Int      @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  product    Product     @relation(fields: [productId], references: [id])
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  unit       Unit        @relation(fields: [unitId], references: [id])
+  createdBy  User        @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  workOrders WorkOrder[]
+
+  @@index([productId])
+  @@index([customerId])
+  @@index([unitId])
+  @@index([soldAt])
+  @@map("sales")
+}
+
+model WorkOrder {
+  id              Int       @id @default(autoincrement())
+  number          String    @unique @db.VarChar(40)
+  productId       Int       @map("product_id")
+  saleId          Int       @map("sale_id")
+  customerId      Int       @map("customer_id")
+  unitId          Int       @map("unit_id")
+  labUnitId       Int?      @map("lab_unit_id")
+  servicePlace    String    @map("service_place") @db.VarChar(40)
+  status          String    @db.VarChar(40)
+  reportedDefect  String    @map("reported_defect") @db.Text
+  analysisNotes   String?   @map("analysis_notes") @db.Text
+  technicianNotes String?   @map("technician_notes") @db.Text
+  createdById     Int       @map("created_by")
+  technicianId    Int?      @map("technician_id")
+  openedAt        DateTime  @default(now()) @map("opened_at")
+  closedAt        DateTime? @map("closed_at")
+  deliveredAt     DateTime? @map("delivered_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  product    Product          @relation(fields: [productId], references: [id])
+  sale       Sale             @relation(fields: [saleId], references: [id])
+  customer   Customer         @relation(fields: [customerId], references: [id])
+  unit       Unit             @relation("WorkOrderUnit", fields: [unitId], references: [id])
+  labUnit    Unit?            @relation("WorkOrderLabUnit", fields: [labUnitId], references: [id])
+  createdBy  User             @relation("WorkOrderCreatedBy", fields: [createdById], references: [id])
+  technician User?            @relation("WorkOrderTechnician", fields: [technicianId], references: [id])
+  events     WorkOrderEvent[]
+  images     WorkOrderImage[]
+  parts      WorkOrderPart[]
+  partMovements PartMovement[]
+
+  @@index([productId])
+  @@index([saleId])
+  @@index([customerId])
+  @@index([unitId])
+  @@index([labUnitId])
+  @@index([status])
+  @@index([servicePlace])
+  @@index([openedAt])
+  @@map("work_orders")
+}
+
+model WorkOrderEvent {
+  id          Int      @id @default(autoincrement())
+  workOrderId Int      @map("work_order_id")
+  type        String   @db.VarChar(40)
+  message     String   @db.Text
+  userId      Int      @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([workOrderId])
+  @@index([createdAt])
+  @@map("work_order_events")
+}
+
+model WorkOrderImage {
+  id           Int      @id @default(autoincrement())
+  workOrderId  Int      @map("work_order_id")
+  fileUrl      String   @map("file_url") @db.VarChar(500)
+  fileName     String   @map("file_name") @db.VarChar(255)
+  mimeType     String?  @map("mime_type") @db.VarChar(120)
+  fileSize     Int?     @map("file_size")
+  uploadedById Int      @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workOrder  WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  uploadedBy User      @relation("WorkOrderImageUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([workOrderId])
+  @@map("work_order_images")
+}
+
+model WorkOrderPart {
+  id              Int       @id @default(autoincrement())
+  workOrderId     Int       @map("work_order_id")
+  partId          Int       @map("part_id")
+  quantity        Int
+  status          String    @db.VarChar(40)
+  unitId          Int?      @map("unit_id")
+  locationId      Int?      @map("location_id")
+  observation     String?   @db.Text
+  requestedById   Int       @map("requested_by")
+  fulfilledById   Int?      @map("fulfilled_by")
+  fulfilledAt     DateTime? @map("fulfilled_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  part        Part      @relation(fields: [partId], references: [id])
+  requestedBy User      @relation("WorkOrderPartRequestedBy", fields: [requestedById], references: [id])
+  fulfilledBy User?     @relation("WorkOrderPartFulfilledBy", fields: [fulfilledById], references: [id])
+
+  @@index([workOrderId])
+  @@index([partId])
+  @@index([status])
+  @@map("work_order_parts")
+}
+
+model Part {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(80)
+  name        String   @db.VarChar(190)
+  description String?  @db.Text
+  active      Boolean  @default(true)
+  createdById Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy  User             @relation("PartCreatedBy", fields: [createdById], references: [id])
+  stocks     PartStock[]
+  movements  PartMovement[]
+  transfers  PartTransfer[]
+  workOrderParts WorkOrderPart[]
+
+  @@index([name])
+  @@index([active])
+  @@map("parts")
+}
+
+model PartStock {
+  id         Int      @id @default(autoincrement())
+  partId     Int      @map("part_id")
+  unitId     Int      @map("unit_id")
+  locationId Int      @map("location_id")
+  quantity   Int      @default(0)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  part     Part     @relation(fields: [partId], references: [id])
+  unit     Unit     @relation(fields: [unitId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([partId, unitId, locationId])
+  @@index([unitId])
+  @@index([locationId])
+  @@map("part_stocks")
+}
+
+model PartMovement {
+  id                 Int      @id @default(autoincrement())
+  partId             Int      @map("part_id")
+  type               String   @db.VarChar(40)
+  quantity           Int
+  previousQuantity   Int?     @map("previous_quantity")
+  newQuantity        Int?     @map("new_quantity")
+  unitId             Int      @map("unit_id")
+  locationId         Int?     @map("location_id")
+  toUnitId           Int?     @map("to_unit_id")
+  toLocationId       Int?     @map("to_location_id")
+  workOrderId        Int?     @map("work_order_id")
+  observation        String?  @db.Text
+  userId             Int      @map("user_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  part       Part       @relation(fields: [partId], references: [id])
+  unit       Unit       @relation("PartMovementUnit", fields: [unitId], references: [id])
+  toUnit     Unit?      @relation("PartMovementToUnit", fields: [toUnitId], references: [id])
+  location   Location?  @relation("PartMovementFromLocation", fields: [locationId], references: [id], onDelete: SetNull)
+  toLocation Location?  @relation("PartMovementToLocation", fields: [toLocationId], references: [id], onDelete: SetNull)
+  workOrder  WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@index([partId])
+  @@index([unitId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([workOrderId])
+  @@map("part_movements")
+}
+
+model PartTransfer {
+  id             Int      @id @default(autoincrement())
+  partId         Int      @map("part_id")
+  quantity       Int
+  fromUnitId     Int      @map("from_unit_id")
+  fromLocationId Int      @map("from_location_id")
+  toUnitId       Int      @map("to_unit_id")
+  toLocationId   Int?     @map("to_location_id")
+  status         String   @db.VarChar(40)
+  observation    String?  @db.Text
+  createdById    Int      @map("created_by")
+  receivedById   Int?     @map("received_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  part         Part      @relation(fields: [partId], references: [id])
+  fromUnit     Unit      @relation("PartTransferFromUnit", fields: [fromUnitId], references: [id])
+  toUnit       Unit      @relation("PartTransferToUnit", fields: [toUnitId], references: [id])
+  fromLocation Location  @relation("PartTransferFromLocation", fields: [fromLocationId], references: [id])
+  toLocation   Location? @relation("PartTransferToLocation", fields: [toLocationId], references: [id], onDelete: SetNull)
+  createdBy    User      @relation("PartTransferCreatedBy", fields: [createdById], references: [id])
+  receivedBy   User?     @relation("PartTransferReceivedBy", fields: [receivedById], references: [id])
+
+  @@index([partId])
+  @@index([fromUnitId])
+  @@index([toUnitId])
+  @@index([status])
+  @@map("part_transfers")
 }

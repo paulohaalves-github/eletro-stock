@@ -34,6 +34,9 @@ function assertOpenForExit(product) {
   if (product.status === STATUSES.IN_TRANSIT) {
     throw conflict("Este produto está em trânsito entre unidades. Conclua ou cancele a transferência.");
   }
+  if (product.status === STATUSES.IN_REPAIR) {
+    throw conflict("Este produto está em reparo técnico. Conclua a ordem de serviço para movimentá-lo.");
+  }
   if (CLOSED_STATUSES.includes(product.status) && product.status !== STATUSES.RETURNED) {
     throw conflict("Não é permitido dar baixa em produto vendido, descartado ou transferido.");
   }
@@ -42,7 +45,7 @@ function assertOpenForExit(product) {
   }
 }
 
-export async function exitProduct({ productId, reason, observation, user }) {
+export async function exitProduct({ productId, reason, observation, user, customerId, warrantyMonths, invoiceNumber, soldAt }) {
   const product = await getProduct(productId);
   assertProductWritable(user, product);
   assertOpenForExit(product);
@@ -52,6 +55,11 @@ export async function exitProduct({ productId, reason, observation, user }) {
   }
   if (reason === EXIT_REASONS.OTHER && !String(observation || "").trim()) {
     throw validationError("Informe uma observação para o motivo Outro.");
+  }
+  if (reason === EXIT_REASONS.SALE) {
+    if (!customerId) throw validationError("Informe o cliente da venda.");
+    if (!warrantyMonths) throw validationError("Informe os meses de garantia.");
+    if (!String(invoiceNumber || "").trim()) throw validationError("Informe o número da NF.");
   }
 
   const newStatus = EXIT_REASON_TO_STATUS[reason];
@@ -77,6 +85,21 @@ export async function exitProduct({ productId, reason, observation, user }) {
     ...movementUnitFields(product),
     userId: user.id,
   });
+
+  if (reason === EXIT_REASONS.SALE) {
+    const { createSale } = await import("./sales");
+    await createSale({
+      productId: product.id,
+      customerId,
+      warrantyMonths,
+      invoiceNumber,
+      soldAt,
+      observation,
+      user,
+      product: { ...product, status: STATUSES.SOLD },
+      fromExit: true,
+    });
+  }
 
   await writeAudit({
     userId: user.id,

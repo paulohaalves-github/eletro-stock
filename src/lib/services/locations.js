@@ -264,12 +264,15 @@ export async function deleteLocation(id, actor) {
     where: { id: Number(id) },
     include: {
       locationType: true,
-      _count: { select: { products: true, movementsFrom: true, movementsTo: true } },
+      _count: { select: { products: true, movementsFrom: true, movementsTo: true, partStocks: true } },
     },
   });
   if (!current || current.unitId !== unitId) throw notFound("Localização não encontrada.");
   if (current._count.products > 0) {
     throw conflict("Não é possível excluir uma localização com produtos vinculados. Inative-a.");
+  }
+  if (current._count.partStocks > 0) {
+    throw conflict("Não é possível excluir uma localização com peças vinculadas. Inative-a.");
   }
   if (current._count.movementsFrom > 0 || current._count.movementsTo > 0) {
     throw conflict("Não é possível excluir uma localização que já aparece no histórico de movimentações. Inative-a.");

@@ -10,6 +10,7 @@ import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { CONDITION_LABELS, STATUS_LABELS, STATUSES } from "@/lib/constants";
 import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
+import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
 import { can, PERMISSIONS } from "@/lib/permissions";
 
 function EstoqueContent() {
@@ -22,6 +23,8 @@ function EstoqueContent() {
   const [locations, setLocations] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
   const [me, setMe] = useState(null);
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const [labelIds, setLabelIds] = useState([]);
   const [q, setQ] = useState(params.get("q") || "");
   const [filters, setFilters] = useState({
     categoryId: "",
@@ -84,7 +87,14 @@ function EstoqueContent() {
 
   function printLabels(ids) {
     if (!ids.length) return;
-    window.open(`/estoque/etiquetas?ids=${ids.join(",")}`, "_blank");
+    setLabelIds(ids);
+    setLabelPickerOpen(true);
+  }
+
+  function confirmLabelModel(model) {
+    openLabelPrint({ productIds: labelIds, model });
+    setLabelPickerOpen(false);
+    setLabelIds([]);
   }
 
   function transferSelected() {
@@ -141,8 +151,9 @@ function EstoqueContent() {
           value={q}
           onChange={setQ}
           onScan={(parsed) => {
-            setQ(parsed.query);
-            router.push(`/estoque?q=${encodeURIComponent(parsed.query)}`);
+            const text = parsed.query ?? parsed.raw ?? "";
+            setQ(text);
+            router.push(`/estoque?q=${encodeURIComponent(text)}`);
           }}
           placeholder="ID, Serial Onyx, EAN, model code, categoria..."
         />
@@ -277,6 +288,15 @@ function EstoqueContent() {
           </table>
         </div>
       )}
+
+      <LabelModelPicker
+        open={labelPickerOpen}
+        onClose={() => {
+          setLabelPickerOpen(false);
+          setLabelIds([]);
+        }}
+        onSelect={confirmLabelModel}
+      />
     </div>
   );
 }

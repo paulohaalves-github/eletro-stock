@@ -24,7 +24,7 @@ export default function MovimentacoesPage() {
   }, [q, type]);
 
   return (
-    <div>
+    <div className="w-full">
       <PageHeader title="Movimentações" subtitle="Timeline geral de entradas, saídas e alterações." />
       <Card className="mb-4 grid gap-2 sm:grid-cols-2">
         <Input placeholder="Buscar produto, serial, observação..." value={q} onChange={(e) => setQ(e.target.value)} />
@@ -35,26 +35,52 @@ export default function MovimentacoesPage() {
           ))}
         </Select>
       </Card>
-      <div className="space-y-3">
-        {data.items.map((item) => (
-          <Link key={item.id} href={`/estoque/${item.productId}`} className="card flex items-start gap-3 p-4 hover:border-accent/40">
-            <img src={item.product?.images?.[0]?.fileUrl || "/logo.svg"} alt="" className="h-12 w-12 rounded-lg object-cover" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{MOVEMENT_TYPE_LABELS[item.type] || item.type}</p>
-              <p className="text-xs text-muted">
-                {formatDateTime(item.createdAt)} · {item.user?.name} · {formatProductId(item.productId)}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                {item.type === "ALTERACAO_LOCALIZACAO"
-                  ? `${formatLocationPath(item.previousLocation) || "sem localização"} → ${formatLocationPath(item.newLocation) || "sem localização"}`
-                  : `${STATUS_LABELS[item.previousStatus] || item.previousStatus || "—"} → ${STATUS_LABELS[item.newStatus] || item.newStatus || "—"}`}
-              </p>
-              {item.observation && item.type !== "ALTERACAO_LOCALIZACAO" ? <p className="mt-1 text-sm">{item.observation}</p> : null}
-            </div>
-            {item.product ? <StatusBadge status={item.product.status} /> : null}
-          </Link>
-        ))}
-      </div>
+
+      <Card className="w-full overflow-hidden p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-muted">
+              <tr>
+                <th className="px-5 py-3 font-semibold">Quando</th>
+                <th className="px-5 py-3 font-semibold">Movimentação</th>
+                <th className="px-5 py-3 font-semibold">Produto</th>
+                <th className="px-5 py-3 font-semibold">Detalhe</th>
+                <th className="px-5 py-3 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((item) => (
+                <tr key={item.id} className="border-t border-border align-top hover:bg-surface-2/80">
+                  <td className="px-5 py-4">
+                    <p className="font-medium">{formatDateTime(item.createdAt)}</p>
+                    <p className="text-xs text-muted">{item.user?.name}</p>
+                  </td>
+                  <td className="px-5 py-4 font-medium">{MOVEMENT_TYPE_LABELS[item.type] || item.type}</td>
+                  <td className="px-5 py-4">
+                    <Link href={`/estoque/${item.productId}`} className="text-accent">
+                      {formatProductId(item.productId)}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-4 text-muted">
+                    <p>
+                      {item.type === "ALTERACAO_LOCALIZACAO"
+                        ? `${formatLocationPath(item.previousLocation) || "sem localização"} → ${formatLocationPath(item.newLocation) || "sem localização"}`
+                        : `${STATUS_LABELS[item.previousStatus] || item.previousStatus || "—"} → ${STATUS_LABELS[item.newStatus] || item.newStatus || "—"}`}
+                    </p>
+                    {item.observation && item.type !== "ALTERACAO_LOCALIZACAO" ? (
+                      <p className="mt-1 text-sm text-text">{item.observation}</p>
+                    ) : null}
+                  </td>
+                  <td className="px-5 py-4">
+                    {item.product ? <StatusBadge status={item.product.status} /> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!data.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma movimentação encontrada.</p> : null}
+      </Card>
     </div>
   );
 }

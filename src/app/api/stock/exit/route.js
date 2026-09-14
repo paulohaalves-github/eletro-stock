@@ -12,6 +12,10 @@ export const POST = apiHandler(
       productId: parseId(body.productId),
       reason: body.reason,
       observation: body.observation,
+      customerId: body.customerId,
+      warrantyMonths: body.warrantyMonths,
+      invoiceNumber: body.invoiceNumber,
+      soldAt: body.soldAt,
       user: session,
     });
     return { product, message: "Baixa realizada com sucesso." };

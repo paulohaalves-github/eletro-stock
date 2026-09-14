@@ -203,6 +203,128 @@
   white-space: nowrap;
 }
 
+/* Modelo de Preços 02 — 50 × 25 mm */
+.price-tag--modelo-2 {
+  width: 50mm;
+  height: 25mm;
+  background: #fff;
+  color: #111;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.1mm 1.4mm 1mm;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.price-tag-m2-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1mm;
+}
+
+.price-tag-m2-id {
+  display: flex;
+  align-items: flex-start;
+  gap: 1mm;
+  min-width: 0;
+}
+
+.price-tag-m2-logo {
+  width: 4.8mm;
+  height: 4.8mm;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #000;
+}
+
+.price-tag-m2-id p,
+.price-tag-m2-serial,
+.price-tag-m2-product p,
+.price-tag-m2-valor {
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.price-tag-m2-id p {
+  font-size: 4.1pt;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.price-tag-m2-serial {
+  font-size: 5pt;
+  font-weight: 800;
+  line-height: 1.1;
+  flex-shrink: 0;
+}
+
+.price-tag-m2-product {
+  text-align: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.2mm 0;
+}
+
+.price-tag-m2-product h1 {
+  margin: 0;
+  font-size: 7.2pt;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.price-tag-m2-product p {
+  margin-top: 0.2mm;
+  font-size: 5.4pt;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.price-tag-m2-cash {
+  background: #111;
+  color: #fff;
+  text-align: center;
+  padding: 0.55mm 1mm 0.45mm;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.price-tag-m2-discount {
+  display: block;
+  font-size: 3.8pt;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.price-tag-m2-avista {
+  display: block;
+  margin-top: 0.15mm;
+  font-size: 7.4pt;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.price-tag-m2-valor {
+  text-align: center;
+  font-size: 5.2pt;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
 @media print {
   html,
   body {
@@ -237,10 +359,5 @@
   .price-tag:last-child {
     page-break-after: auto;
     break-after: auto;
-  }
-
-  @page {
-    size: 90mm 45mm;
-    margin: 0;
   }
 }

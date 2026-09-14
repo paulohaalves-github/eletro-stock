@@ -259,6 +259,37 @@ export async function deleteProductFile(productId, fileId, user) {
   });
 }
 
+export async function addWorkOrderImageFiles(workOrderId, files, user) {
+  const created = [];
+  for (const file of files) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw validationError("Arquivo excede o tamanho máximo permitido.");
+    }
+    assertImage(file);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const optimized = await sharp(bytes)
+      .rotate()
+      .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+
+    const filename = `${randomUUID()}.webp`;
+    const fileUrl = await saveBuffer(`repairs/${workOrderId}`, filename, optimized);
+    const image = await prisma.workOrderImage.create({
+      data: {
+        workOrderId: Number(workOrderId),
+        fileUrl,
+        fileName: file.name || filename,
+        mimeType: "image/webp",
+        fileSize: optimized.length,
+        uploadedById: user.id,
+      },
+    });
+    created.push(image);
+  }
+  return created;
+}
+
 export function resolveUploadPath(relativePath) {
   const root = path.resolve(uploadRoot());
   const full = path.resolve(root, relativePath);

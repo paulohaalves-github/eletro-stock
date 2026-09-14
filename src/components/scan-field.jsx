@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { createScannerAdapter, detectCodeType } from "@/lib/scanner";
+import { createScannerAdapter, parseQrPayload } from "@/lib/scanner";
 import { Input } from "./ui";
 
 export function ScanField({ value, onChange, onScan, placeholder = "Digite ou leia o código" }) {
@@ -9,9 +9,9 @@ export function ScanField({ value, onChange, onScan, placeholder = "Digite ou le
   const [hint, setHint] = useState("");
 
   function submit(raw) {
-    const type = detectCodeType(raw);
-    setHint(type !== "UNKNOWN" ? `Tipo detectado: ${type}` : "");
-    onScan?.({ raw, type });
+    const parsed = parseQrPayload(raw);
+    setHint(parsed.type !== "UNKNOWN" ? `Tipo detectado: ${parsed.type}` : "");
+    onScan?.(parsed);
   }
 
   return (
@@ -19,7 +19,7 @@ export function ScanField({ value, onChange, onScan, placeholder = "Digite ou le
       <div className="flex gap-2">
         <Input
           ref={inputRef}
-          value={value}
+          value={value ?? ""}
           placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
@@ -35,7 +35,7 @@ export function ScanField({ value, onChange, onScan, placeholder = "Digite ou le
           onClick={() => {
             const adapter = createScannerAdapter({
               onScan: (parsed) => {
-                onChange(parsed.query);
+                onChange(parsed.query ?? parsed.raw ?? "");
                 onScan?.(parsed);
               },
               onError: () => {

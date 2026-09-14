@@ -58,6 +58,13 @@ export function canViewProduct(session, product) {
   return ids.includes(product.unitId) || (product.transferToUnitId != null && ids.includes(product.transferToUnitId));
 }
 
+export function canViewWorkOrder(session, workOrder) {
+  if (!session || !workOrder) return false;
+  if (isAdminRole(session.role)) return true;
+  const ids = allowedUnitIds(session);
+  return ids.includes(workOrder.unitId) || (workOrder.labUnitId != null && ids.includes(workOrder.labUnitId));
+}
+
 export function assertCanViewProduct(session, product) {
   if (!canViewProduct(session, product)) {
     throw notFound("Produto não encontrado.");
@@ -75,6 +82,9 @@ export function assertProductWritable(session, product) {
   assertProductInActiveUnit(session, product);
   if (product.status === "EM_TRANSITO") {
     throw forbidden("Este produto está em trânsito. Conclua ou cancele a transferência para alterá-lo.");
+  }
+  if (product.status === "EM_REPARO") {
+    throw forbidden("Este produto está em reparo técnico. Altere-o pela ordem de serviço.");
   }
 }
 
@@ -98,12 +108,24 @@ export async function listActiveUnits() {
 }
 
 export function sortUnits(items) {
-  const rank = { [UNIT_TYPES.HQ]: 0, [UNIT_TYPES.BRANCH]: 1 };
+  const rank = { [UNIT_TYPES.HQ]: 0, [UNIT_TYPES.BRANCH]: 1, [UNIT_TYPES.LAB]: 2 };
   return [...items].sort((a, b) => {
     const typeDiff = (rank[a.type] ?? 9) - (rank[b.type] ?? 9);
     if (typeDiff !== 0) return typeDiff;
     return String(a.name).localeCompare(String(b.name), "pt-BR");
   });
+}
+
+export async function getLabUnit() {
+  const unit = await prisma.unit.findFirst({
+    where: { type: UNIT_TYPES.LAB, active: true },
+    select: unitSelect,
+    orderBy: { id: "asc" },
+  });
+  if (!unit) {
+    throw validationError("Cadastre uma unidade do tipo Laboratório para enviar o aparelho ao lab do grupo.");
+  }
+  return unit;
 }
 
 export async function resolveAllowedUnits(user) {

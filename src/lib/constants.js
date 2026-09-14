@@ -2,23 +2,27 @@ export const ROLES = {
   ADMIN: "ADMINISTRADOR",
   GESTOR: "GESTOR",
   STOCK: "ESTOQUE",
+  TECHNICIAN: "TECNICO",
   VIEWER: "CONSULTA",
 };
 
 export const UNIT_TYPES = {
   HQ: "MATRIZ",
   BRANCH: "FILIAL",
+  LAB: "LABORATORIO",
 };
 
 export const UNIT_TYPE_LABELS = {
   MATRIZ: "Matriz",
   FILIAL: "Filial",
+  LABORATORIO: "Laboratório",
 };
 
 export const ROLE_LABELS = {
   ADMINISTRADOR: "Administrador",
   GESTOR: "Gestor",
   ESTOQUE: "Estoque",
+  TECNICO: "Técnico",
   CONSULTA: "Consulta",
 };
 
@@ -39,6 +43,7 @@ export const STATUSES = {
   RESERVED: "RESERVADO",
   IN_TRANSIT: "EM_TRANSITO",
   SOLD: "VENDIDO",
+  IN_REPAIR: "EM_REPARO",
   TRANSFERRED: "TRANSFERIDO",
   RETURNED: "DEVOLVIDO",
   DISCARDED: "DESCARTADO",
@@ -49,6 +54,7 @@ export const STATUS_LABELS = {
   RESERVADO: "Reservado",
   EM_TRANSITO: "Em trânsito",
   VENDIDO: "Vendido",
+  EM_REPARO: "Em reparo",
   TRANSFERIDO: "Transferido",
   DEVOLVIDO: "Devolvido",
   DESCARTADO: "Descartado",
@@ -72,6 +78,9 @@ export const MOVEMENT_TYPES = {
   FILE_ADD: "ANEXO_ADICIONADO",
   FILE_REMOVE: "ANEXO_REMOVIDO",
   LOCATION_CHANGE: "ALTERACAO_LOCALIZACAO",
+  REPAIR_OPEN: "REPARO_ABERTURA",
+  REPAIR_TO_LAB: "REPARO_ENVIO_LAB",
+  REPAIR_DELIVER: "REPARO_ENTREGA",
 };
 
 export const MOVEMENT_TYPE_LABELS = {
@@ -92,6 +101,9 @@ export const MOVEMENT_TYPE_LABELS = {
   ANEXO_ADICIONADO: "Anexo adicionado",
   ANEXO_REMOVIDO: "Anexo removido",
   ALTERACAO_LOCALIZACAO: "Localização alterada",
+  REPARO_ABERTURA: "Aberto para reparo técnico",
+  REPARO_ENVIO_LAB: "Enviado ao laboratório",
+  REPARO_ENTREGA: "Devolvido ao cliente após reparo",
 };
 
 export const EXIT_REASONS = {
@@ -127,8 +139,137 @@ export function isInTransit(status) {
   return status === STATUSES.IN_TRANSIT;
 }
 
+export function isInRepair(status) {
+  return status === STATUSES.IN_REPAIR;
+}
+
 export function canOperateStock(status) {
-  return !CLOSED_STATUSES.includes(status) && !isInTransit(status);
+  return !CLOSED_STATUSES.includes(status) && !isInTransit(status) && !isInRepair(status);
+}
+
+export const WARRANTY_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+export const SERVICE_PLACES = {
+  LAB: "LABORATORIO",
+  CUSTOMER_HOME: "CASA_CLIENTE",
+};
+
+export const SERVICE_PLACE_LABELS = {
+  LABORATORIO: "Laboratório do grupo",
+  CASA_CLIENTE: "Casa do cliente",
+};
+
+export const WORK_ORDER_STATUSES = {
+  OPEN: "ABERTA",
+  ANALYSIS: "EM_ANALISE",
+  WAITING_PART: "AGUARDANDO_PECA",
+  REPAIRING: "EM_REPARO",
+  READY: "PRONTO",
+  DELIVERED: "ENTREGUE",
+  UNREPAIRABLE: "SEM_REPARO",
+  CANCELLED: "CANCELADA",
+};
+
+export const WORK_ORDER_STATUS_LABELS = {
+  ABERTA: "Aberta",
+  EM_ANALISE: "Em análise",
+  AGUARDANDO_PECA: "Aguardando peça",
+  EM_REPARO: "Em reparo",
+  PRONTO: "Pronto para entrega",
+  ENTREGUE: "Entregue ao cliente",
+  SEM_REPARO: "Sem reparo",
+  CANCELADA: "Cancelada",
+};
+
+export const WORK_ORDER_CLOSED_STATUSES = ["ENTREGUE", "SEM_REPARO", "CANCELADA"];
+
+export const WORK_ORDER_EVENT_TYPES = {
+  OPEN: "ABERTURA",
+  STATUS: "STATUS",
+  ANALYSIS: "ANALISE",
+  TECHNICIAN_NOTE: "APONTAMENTO",
+  NOTE: "NOTA",
+  DELIVERY: "ENTREGA",
+  LOCATION: "LOCALIZACAO",
+  PART_REQUESTED: "PECA_SOLICITADA",
+  EVIDENCE: "EVIDENCIA",
+};
+
+export const WORK_ORDER_EVENT_LABELS = {
+  ABERTURA: "Abertura",
+  STATUS: "Status",
+  ANALISE: "Análise",
+  APONTAMENTO: "Apontamento do técnico",
+  NOTA: "Atualização",
+  ENTREGA: "Entrega",
+  LOCALIZACAO: "Localização",
+  PECA_SOLICITADA: "Peça",
+  EVIDENCIA: "Evidência",
+};
+
+export const WORK_ORDER_INTERACTION_TYPES = {
+  ANALYSIS: "ANALISE",
+  TECHNICIAN_NOTE: "APONTAMENTO",
+  NOTE: "NOTA",
+  EVIDENCE: "EVIDENCIA",
+};
+
+export const WORK_ORDER_PART_STATUSES = {
+  REQUESTED: "SOLICITADA",
+  FULFILLED: "ATENDIDA",
+  REFUSED: "RECUSADA",
+};
+
+export const WORK_ORDER_PART_STATUS_LABELS = {
+  SOLICITADA: "Solicitada",
+  ATENDIDA: "Atendida",
+  RECUSADA: "Recusada",
+};
+
+export const PART_MOVEMENT_TYPES = {
+  ENTRY: "ENTRADA",
+  EXIT: "SAIDA",
+  LOCATION_CHANGE: "ALTERACAO_LOCALIZACAO",
+  TRANSFER_SEND: "TRANSFERENCIA_ENVIO",
+  TRANSFER_RECEIVE: "TRANSFERENCIA_RECEBIMENTO",
+  TRANSFER_CANCEL: "TRANSFERENCIA_CANCELADA",
+  TRANSFER_REFUSE: "TRANSFERENCIA_RECUSADA",
+  OS_OUT: "BAIXA_OS",
+};
+
+export const PART_MOVEMENT_TYPE_LABELS = {
+  ENTRADA: "Entrada de peça",
+  SAIDA: "Saída de peça",
+  ALTERACAO_LOCALIZACAO: "Localização alterada",
+  TRANSFERENCIA_ENVIO: "Enviada para outra unidade",
+  TRANSFERENCIA_RECEBIMENTO: "Recebida de outra unidade",
+  TRANSFERENCIA_CANCELADA: "Transferência cancelada",
+  TRANSFERENCIA_RECUSADA: "Transferência recusada",
+  BAIXA_OS: "Baixa para ordem de serviço",
+};
+
+export const PART_TRANSFER_STATUSES = {
+  IN_TRANSIT: "EM_TRANSITO",
+  RECEIVED: "RECEBIDO",
+  CANCELLED: "CANCELADO",
+  REFUSED: "RECUSADO",
+};
+
+export function addMonths(date, months) {
+  const source = new Date(date);
+  const day = source.getDate();
+  const next = new Date(source);
+  next.setMonth(next.getMonth() + Number(months));
+  if (next.getDate() < day) next.setDate(0);
+  return next;
+}
+
+export function warrantyExpiresAt(soldAt, months) {
+  return addMonths(soldAt, months);
+}
+
+export function isWarrantyValid(soldAt, months, at = new Date()) {
+  return warrantyExpiresAt(soldAt, months) >= at;
 }
 
 export const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -162,3 +303,26 @@ export const DASHBOARD_PERIODS = {
 export const SESSION_COOKIE = "eletro_stock_session";
 export const UNIT_COOKIE = "eletro_stock_unit";
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+
+export const LABEL_MODELS = {
+  PRECOS_01: "1",
+  PRECOS_02: "2",
+};
+
+export const LABEL_MODEL_OPTIONS = [
+  {
+    id: LABEL_MODELS.PRECOS_01,
+    label: "Modelo de Preços 01",
+    description: "Etiqueta 9 × 4,5 cm (90 × 45 mm)",
+  },
+  {
+    id: LABEL_MODELS.PRECOS_02,
+    label: "Modelo de Preços 02",
+    description: "Etiqueta 5 × 2,5 cm (50 × 25 mm)",
+  },
+];
+
+export function resolveLabelModel(value) {
+  const model = String(value || LABEL_MODELS.PRECOS_01);
+  return model === LABEL_MODELS.PRECOS_02 ? LABEL_MODELS.PRECOS_02 : LABEL_MODELS.PRECOS_01;
+}

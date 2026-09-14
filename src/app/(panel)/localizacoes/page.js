@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader } from "@/components/ui";
+import { Modal } from "@/components/modal";
+import { cn } from "@/lib/format";
 
 export default function LocalizacoesPage() {
   const [types, setTypes] = useState([]);
@@ -13,6 +15,9 @@ export default function LocalizacoesPage() {
   const [locationName, setLocationName] = useState("");
   const [editingType, setEditingType] = useState(null);
   const [editingLocation, setEditingLocation] = useState(null);
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     const [typeData, locationData] = await Promise.all([
@@ -33,21 +38,53 @@ export default function LocalizacoesPage() {
     [locations, selectedTypeId],
   );
 
+  function openTypeModal(item = null) {
+    setEditingType(item);
+    setTypeName(item?.name || "");
+    setTypeOpen(true);
+  }
+
+  function closeTypeModal() {
+    if (saving) return;
+    setTypeOpen(false);
+    setEditingType(null);
+    setTypeName("");
+  }
+
+  function openLocationModal(item = null) {
+    if (!selectedTypeId && !item) {
+      toast.error("Selecione um tipo de localização.");
+      return;
+    }
+    setEditingLocation(item);
+    setLocationName(item?.name || "");
+    setLocationOpen(true);
+  }
+
+  function closeLocationModal() {
+    if (saving) return;
+    setLocationOpen(false);
+    setEditingLocation(null);
+    setLocationName("");
+  }
+
   async function saveType(event) {
     event.preventDefault();
+    setSaving(true);
     try {
       if (editingType) {
         await api(`/api/location-types/${editingType.id}`, { method: "PATCH", json: { name: typeName, active: editingType.active } });
         toast.success("Tipo atualizado.");
-        setEditingType(null);
       } else {
         await api("/api/location-types", { method: "POST", json: { name: typeName } });
         toast.success("Tipo cadastrado.");
       }
-      setTypeName("");
+      closeTypeModal();
       load();
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -74,26 +111,29 @@ export default function LocalizacoesPage() {
 
   async function saveLocation(event) {
     event.preventDefault();
-    if (!selectedTypeId) {
+    const typeId = editingLocation?.locationTypeId || selectedTypeId;
+    if (!typeId) {
       toast.error("Selecione um tipo de localização.");
       return;
     }
+    setSaving(true);
     try {
       if (editingLocation) {
         await api(`/api/locations/${editingLocation.id}`, {
           method: "PATCH",
-          json: { name: locationName, locationTypeId: selectedTypeId, active: editingLocation.active },
+          json: { name: locationName, locationTypeId: typeId, active: editingLocation.active },
         });
         toast.success("Localização atualizada.");
-        setEditingLocation(null);
       } else {
-        await api("/api/locations", { method: "POST", json: { name: locationName, locationTypeId: selectedTypeId } });
+        await api("/api/locations", { method: "POST", json: { name: locationName, locationTypeId: typeId } });
         toast.success("Localização cadastrada.");
       }
-      setLocationName("");
+      closeLocationModal();
       load();
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -121,98 +161,147 @@ export default function LocalizacoesPage() {
   }
 
   return (
-    <div>
+    <div className="w-full space-y-4">
       <PageHeader
         title="Localizações"
         subtitle="Tipo de localização é compartilhado. As prateleiras pertencem à unidade selecionada no menu."
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => openTypeModal()}>Novo tipo</Button>
+            <Button onClick={() => openLocationModal()} disabled={!selectedTypeId}>Nova localização</Button>
+          </>
+        }
       />
-      <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-        <div className="space-y-4">
-          <Card>
-            <form onSubmit={saveType} className="space-y-3">
-              <Field label={editingType ? "Editar tipo" : "Novo tipo de localização"}>
-                <Input value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="Armazém, Showroom, Expedição..." />
-              </Field>
-              <div className="flex gap-2">
-                <Button>{editingType ? "Salvar tipo" : "Cadastrar tipo"}</Button>
-                {editingType ? (
-                  <Button type="button" variant="secondary" onClick={() => { setEditingType(null); setTypeName(""); }}>
-                    Cancelar
-                  </Button>
-                ) : null}
-              </div>
-            </form>
-          </Card>
-          <div className="space-y-2">
-            {types.map((item) => (
-              <Card
-                key={item.id}
-                className={`cursor-pointer p-4 ${String(selectedTypeId) === String(item.id) ? "border-accent/60" : ""}`}
-                onClick={() => setSelectedTypeId(item.id)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-xs text-muted">
-                      {item.locationCount || 0} {item.locationCount === 1 ? "localização" : "localizações"} · {item.productCount || 0} {item.productCount === 1 ? "produto" : "produtos"} · {item.active ? "Ativo" : "Inativo"}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1" onClick={(event) => event.stopPropagation()}>
-                    <Button variant="ghost" onClick={() => { setEditingType(item); setTypeName(item.name); }}>Editar</Button>
-                    <Button variant="ghost" onClick={() => toggleType(item)}>{item.active ? "Inativar" : "Ativar"}</Button>
-                    <Button variant="ghost" onClick={() => removeType(item)}>Excluir</Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
 
-        <div className="space-y-4">
-          <Card>
-            <h2 className="mb-3 font-semibold">{selectedType ? selectedType.name : "Selecione um tipo"}</h2>
-            {selectedType ? (
-              <form onSubmit={saveLocation} className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                <Field label={editingLocation ? "Editar localização" : "Nova localização"}>
-                  <Input value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder="A1, A2, Box 03..." />
-                </Field>
-                <div className="flex items-end gap-2">
-                  <Button>{editingLocation ? "Salvar" : "Cadastrar"}</Button>
-                  {editingLocation ? (
-                    <Button type="button" variant="secondary" onClick={() => { setEditingLocation(null); setLocationName(""); }}>
-                      Cancelar
-                    </Button>
-                  ) : null}
-                </div>
-              </form>
-            ) : (
-              <p className="text-sm text-muted">Escolha um tipo à esquerda para ver e cadastrar as localizações.</p>
-            )}
-          </Card>
-          {selectedType ? (
-            <div className="space-y-2">
-              {typeLocations.map((item) => (
-                <Card key={item.id} className="flex items-center justify-between p-4">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-xs text-muted">
-                      {item.productCount || 0} {item.productCount === 1 ? "produto" : "produtos"} · {item.active ? "Ativa" : "Inativa"}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" onClick={() => { setEditingLocation(item); setLocationName(item.name); }}>Editar</Button>
-                    <Button variant="ghost" onClick={() => toggleLocation(item)}>{item.active ? "Inativar" : "Ativar"}</Button>
-                    <Button variant="ghost" onClick={() => removeLocation(item)}>Excluir</Button>
-                  </div>
-                </Card>
-              ))}
-              {!typeLocations.length ? (
-                <p className="text-sm text-muted">Nenhuma localização neste tipo.</p>
-              ) : null}
-            </div>
-          ) : null}
+      <Card className="w-full overflow-hidden p-0">
+        <div className="border-b border-border px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Tipos de localização</p>
         </div>
-      </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-muted">
+              <tr>
+                <th className="px-5 py-3 font-semibold">Tipo</th>
+                <th className="px-5 py-3 font-semibold">Localizações</th>
+                <th className="px-5 py-3 font-semibold">Produtos</th>
+                <th className="px-5 py-3 font-semibold">Status</th>
+                <th className="px-5 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {types.map((item) => (
+                <tr
+                  key={item.id}
+                  className={cn(
+                    "cursor-pointer border-t border-border hover:bg-surface-2/80",
+                    String(selectedTypeId) === String(item.id) ? "bg-accent/10" : "",
+                  )}
+                  onClick={() => setSelectedTypeId(item.id)}
+                >
+                  <td className="px-5 py-4 font-medium">{item.name}</td>
+                  <td className="px-5 py-4 text-muted">{item.locationCount || 0}</td>
+                  <td className="px-5 py-4 text-muted">{item.productCount || 0}</td>
+                  <td className="px-5 py-4 text-muted">{item.active ? "Ativo" : "Inativo"}</td>
+                  <td className="px-5 py-4 text-right" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <Button variant="ghost" onClick={() => openTypeModal(item)}>Editar</Button>
+                      <Button variant="ghost" onClick={() => toggleType(item)}>{item.active ? "Inativar" : "Ativar"}</Button>
+                      <Button variant="ghost" onClick={() => removeType(item)}>Excluir</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!types.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum tipo cadastrado.</p> : null}
+      </Card>
+
+      <Card className="w-full overflow-hidden p-0">
+        <div className="border-b border-border px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+            {selectedType ? `Localizações · ${selectedType.name}` : "Localizações"}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            {selectedType ? "Selecione um tipo acima para filtrar. Cadastre novas localizações pelo botão do topo." : "Selecione um tipo na tabela acima."}
+          </p>
+        </div>
+        {selectedType ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-muted">
+                  <tr>
+                    <th className="px-5 py-3 font-semibold">Localização</th>
+                    <th className="px-5 py-3 font-semibold">Produtos</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
+                    <th className="px-5 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {typeLocations.map((item) => (
+                    <tr key={item.id} className="border-t border-border hover:bg-surface-2/80">
+                      <td className="px-5 py-4 font-medium">{item.name}</td>
+                      <td className="px-5 py-4 text-muted">{item.productCount || 0}</td>
+                      <td className="px-5 py-4 text-muted">{item.active ? "Ativa" : "Inativa"}</td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Button variant="ghost" onClick={() => openLocationModal(item)}>Editar</Button>
+                          <Button variant="ghost" onClick={() => toggleLocation(item)}>{item.active ? "Inativar" : "Ativar"}</Button>
+                          <Button variant="ghost" onClick={() => removeLocation(item)}>Excluir</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!typeLocations.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma localização neste tipo.</p> : null}
+          </>
+        ) : (
+          <p className="px-5 py-6 text-sm text-muted">Escolha um tipo para ver e cadastrar as localizações.</p>
+        )}
+      </Card>
+
+      <Modal
+        open={typeOpen}
+        title={editingType ? "Editar tipo" : "Novo tipo de localização"}
+        onClose={closeTypeModal}
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={closeTypeModal} disabled={saving}>Cancelar</Button>
+            <Button type="submit" form="location-type-form" disabled={saving || !typeName.trim()}>
+              {saving ? "Salvando..." : editingType ? "Salvar" : "Cadastrar"}
+            </Button>
+          </>
+        }
+      >
+        <form id="location-type-form" onSubmit={saveType}>
+          <Field label="Nome" required>
+            <Input value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="Armazém, Showroom, Expedição..." />
+          </Field>
+        </form>
+      </Modal>
+
+      <Modal
+        open={locationOpen}
+        title={editingLocation ? "Editar localização" : `Nova localização${selectedType ? ` · ${selectedType.name}` : ""}`}
+        onClose={closeLocationModal}
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={closeLocationModal} disabled={saving}>Cancelar</Button>
+            <Button type="submit" form="location-form" disabled={saving || !locationName.trim()}>
+              {saving ? "Salvando..." : editingLocation ? "Salvar" : "Cadastrar"}
+            </Button>
+          </>
+        }
+      >
+        <form id="location-form" onSubmit={saveLocation}>
+          <Field label="Nome" required>
+            <Input value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder="A1, A2, Box 03..." />
+          </Field>
+        </form>
+      </Modal>
     </div>
   );
 }
