@@ -22,7 +22,7 @@ export default async function ProductLabelPage({ params, searchParams }) {
 
   const printedAt = new Date();
   const paperHint = model === LABEL_MODELS.PRECOS_02
-    ? <>papel <strong>103 × 25 mm</strong> (2 etiquetas por linha)</>
+    ? <>papel <strong>103 × 25 mm</strong>, margens <strong>Nenhuma</strong>, escala <strong>100%</strong></>
     : <>papel <strong>90 × 45 mm</strong></>;
 
   return (

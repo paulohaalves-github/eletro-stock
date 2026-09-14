@@ -41,17 +41,20 @@
 }
 
 .price-tag {
+  overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.price-tag--modelo-1 {
   width: 90mm;
   height: 45mm;
   background: #ffe100;
   color: #111;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
 }
 
 .price-tag-body {
@@ -203,159 +206,39 @@
   white-space: nowrap;
 }
 
-/* Modelo de Preços 02 — rolo 2 colunas: 50×25 mm + gap 3 mm */
+/* Modelo de Preços 02 — rolo 2 colunas: 50×25 mm + gap 3 mm (SVG) */
 .price-tag-sheet--modelo-2 {
   gap: 12px;
+  align-items: center;
 }
 
 .price-tag-row {
-  display: grid;
-  grid-template-columns: 50mm 50mm;
-  column-gap: 3mm;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 3mm;
   width: 103mm;
   height: 25mm;
   box-sizing: border-box;
+  background: #fff;
 }
 
 .price-tag--modelo-2 {
+  display: block;
   width: 50mm;
   height: 25mm;
-  background: #fff;
-  color: #111;
+  flex: 0 0 50mm;
   box-sizing: border-box;
   overflow: hidden;
-  font-family: Arial, Helvetica, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-  transform: rotate(180deg);
-  transform-origin: center center;
 }
 
 .price-tag--modelo-2.price-tag--empty {
+  box-shadow: none;
   background: transparent;
-  transform: none;
-}
-
-.price-tag-m2-inner {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 0.9mm 1.2mm 0.7mm;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-.price-tag-m2-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1mm;
-  flex-shrink: 0;
-}
-
-.price-tag-m2-id {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.8mm;
-  min-width: 0;
-}
-
-.price-tag-m2-logo {
-  width: 4.2mm;
-  height: 4.2mm;
-  object-fit: cover;
-  flex-shrink: 0;
-  background: #000;
-}
-
-.price-tag-m2-id p,
-.price-tag-m2-serial,
-.price-tag-m2-product p,
-.price-tag-m2-valor {
-  margin: 0;
-  text-transform: uppercase;
-}
-
-.price-tag-m2-id p {
-  font-size: 3.8pt;
-  line-height: 1.15;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.price-tag-m2-serial {
-  font-size: 4.6pt;
-  font-weight: 800;
-  line-height: 1.1;
-  flex-shrink: 0;
-}
-
-.price-tag-m2-product {
-  text-align: center;
-  min-height: 0;
-  overflow: hidden;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 0.15mm 0;
-}
-
-.price-tag-m2-product h1 {
-  margin: 0;
-  font-size: 6.4pt;
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.price-tag-m2-product p {
-  margin-top: 0.15mm;
-  font-size: 4.8pt;
-  font-weight: 700;
-  line-height: 1.05;
-}
-
-.price-tag-m2-cash {
-  background: #111;
-  color: #fff;
-  text-align: center;
-  padding: 0.4mm 0.8mm 0.35mm;
-  flex-shrink: 0;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.price-tag-m2-discount {
-  display: block;
-  font-size: 3.4pt;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  line-height: 1;
-}
-
-.price-tag-m2-avista {
-  display: block;
-  margin-top: 0.1mm;
-  font-size: 6.6pt;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.price-tag-m2-valor {
-  text-align: center;
-  font-size: 4.6pt;
-  font-weight: 700;
-  line-height: 1.05;
-  flex-shrink: 0;
 }
 
 @media print {
@@ -363,13 +246,22 @@
   body {
     background: #fff !important;
     color: #111 !important;
+    min-height: 0 !important;
+    height: auto !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   .label-print-root {
-    background: #fff;
-    min-height: 0;
+    background: #fff !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .label-print-toolbar,
@@ -378,9 +270,10 @@
   }
 
   .price-tag-sheet {
-    padding: 0;
-    gap: 0;
-    align-items: stretch;
+    padding: 0 !important;
+    gap: 0 !important;
+    align-items: stretch !important;
+    margin: 0 !important;
   }
 
   .price-tag-sheet--modelo-1 .price-tag {
@@ -395,10 +288,17 @@
   }
 
   .price-tag-sheet--modelo-2 {
-    width: 103mm;
+    width: 103mm !important;
+    max-width: 103mm !important;
   }
 
   .price-tag-row {
+    width: 103mm !important;
+    height: 25mm !important;
+    max-height: 25mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 3mm !important;
     page-break-after: always;
     break-after: page;
     page-break-inside: avoid;
@@ -411,16 +311,16 @@
   }
 
   .price-tag--modelo-2 {
-    box-shadow: none;
+    box-shadow: none !important;
+    width: 50mm !important;
+    height: 25mm !important;
+    min-width: 50mm !important;
+    min-height: 25mm !important;
+    max-width: 50mm !important;
+    max-height: 25mm !important;
+    flex: 0 0 50mm !important;
     page-break-after: auto;
     break-after: auto;
-    transform: rotate(180deg);
-    transform-origin: center center;
-    -webkit-transform: rotate(180deg);
-  }
-
-  .price-tag--modelo-2.price-tag--empty {
-    transform: none;
-    -webkit-transform: none;
+    transform: none !important;
   }
 }

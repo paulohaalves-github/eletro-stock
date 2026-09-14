@@ -1,11 +1,15 @@
 import { formatCurrency, formatDate } from "@/lib/format";
 import { LABEL_MODELS, resolveLabelModel } from "@/lib/constants";
 
-/** Rolo modelo 02: 2 etiquetas por linha (50mm + 3mm + 50mm) × 25mm */
-const LABEL_02_WIDTH_MM = 50;
-const LABEL_02_HEIGHT_MM = 25;
-const LABEL_02_GAP_MM = 3;
-const LABEL_02_PAGE_WIDTH_MM = LABEL_02_WIDTH_MM * 2 + LABEL_02_GAP_MM;
+/** Rolo modelo 02: 2 etiquetas por linha (50 + 3 + 50) × 25 mm */
+export const LABEL_02 = {
+  widthMm: 50,
+  heightMm: 25,
+  gapMm: 3,
+  get pageWidthMm() {
+    return this.widthMm * 2 + this.gapMm;
+  },
+};
 
 function productName(product) {
   return String(product.commercialName || product.supplierModelCode || product.category?.name || "Produto")
@@ -23,6 +27,11 @@ function chunkPairs(items) {
     rows.push(items.slice(i, i + 2));
   }
   return rows;
+}
+
+function svgText(value, max = 42) {
+  const text = String(value || "—");
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 export function PriceTag({ product, printedAt }) {
@@ -60,37 +69,112 @@ export function PriceTag({ product, printedAt }) {
   );
 }
 
+/** Etiqueta 50×25 mm em SVG — rotação 180° dentro do viewBox (estável na impressão térmica). */
 export function PriceTagCompact({ product }) {
-  const name = productName(product);
+  const name = svgText(productName(product), 36);
   const capacity = capacityLine(product);
+  const ean = svgText(`EAN:${product.ean || "—"}`, 22);
+  const model = svgText(product.supplierModelCode || "—", 22);
+  const serial = svgText(product.serialOnyx || "—", 14);
+  const cash = svgText(`A VISTA ${formatCurrency(product.cashPrice)}`, 28);
+  const valor = svgText(`VALOR: ${formatCurrency(product.installmentPrice)}`, 28);
 
   return (
-    <article className="price-tag price-tag--modelo-2">
-      <div className="price-tag-m2-inner">
-        <header className="price-tag-m2-header">
-          <div className="price-tag-m2-id">
-            <img src="/logo.svg" alt="Eletromall" className="price-tag-m2-logo" />
-            <div>
-              <p>EAN:{product.ean || "—"}</p>
-              <p>{product.supplierModelCode || "—"}</p>
-            </div>
-          </div>
-          <p className="price-tag-m2-serial">{product.serialOnyx || "—"}</p>
-        </header>
+    <svg
+      className="price-tag price-tag--modelo-2"
+      width={`${LABEL_02.widthMm}mm`}
+      height={`${LABEL_02.heightMm}mm`}
+      viewBox="0 0 50 25"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label={name}
+    >
+      <rect width="50" height="25" fill="#fff" />
+      {/* Conteúdo girado 180° em torno do centro da etiqueta */}
+      <g transform="rotate(180 25 12.5)">
+        {/* Logo marca */}
+        <rect x="1.2" y="1.1" width="4" height="4" fill="#111" />
+        <text x="6" y="2.55" fontFamily="Arial, Helvetica, sans-serif" fontSize="1.55" fontWeight="700" fill="#111">
+          {ean}
+        </text>
+        <text x="6" y="4.45" fontFamily="Arial, Helvetica, sans-serif" fontSize="1.55" fontWeight="700" fill="#111">
+          {model}
+        </text>
+        <text
+          x="48.8"
+          y="3.3"
+          textAnchor="end"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="1.9"
+          fontWeight="800"
+          fill="#111"
+        >
+          {serial}
+        </text>
 
-        <div className="price-tag-m2-product">
-          <h1>{name}</h1>
-          {capacity ? <p>{capacity}</p> : null}
-        </div>
+        <text
+          x="25"
+          y={capacity ? "9.2" : "10.2"}
+          textAnchor="middle"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="2.55"
+          fontWeight="800"
+          fill="#111"
+        >
+          {name}
+        </text>
+        {capacity ? (
+          <text
+            x="25"
+            y="11.6"
+            textAnchor="middle"
+            fontFamily="Arial, Helvetica, sans-serif"
+            fontSize="1.9"
+            fontWeight="700"
+            fill="#111"
+          >
+            {svgText(capacity, 28)}
+          </text>
+        ) : null}
 
-        <div className="price-tag-m2-cash">
-          <span className="price-tag-m2-discount">DESCONTO</span>
-          <span className="price-tag-m2-avista">A VISTA {formatCurrency(product.cashPrice)}</span>
-        </div>
+        <rect x="1.2" y="13.4" width="47.6" height="6.2" fill="#111" />
+        <text
+          x="25"
+          y="15.55"
+          textAnchor="middle"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="1.35"
+          fontWeight="800"
+          fill="#fff"
+          letterSpacing="0.12"
+        >
+          DESCONTO
+        </text>
+        <text
+          x="25"
+          y="18.55"
+          textAnchor="middle"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="2.7"
+          fontWeight="800"
+          fill="#fff"
+        >
+          {cash}
+        </text>
 
-        <p className="price-tag-m2-valor">VALOR: {formatCurrency(product.installmentPrice)}</p>
-      </div>
-    </article>
+        <text
+          x="25"
+          y="22.8"
+          textAnchor="middle"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="1.85"
+          fontWeight="700"
+          fill="#111"
+        >
+          {valor}
+        </text>
+      </g>
+    </svg>
   );
 }
 
@@ -103,10 +187,8 @@ export function PriceTagSheet({ products, printedAt, model }) {
       <div className="price-tag-sheet price-tag-sheet--modelo-1" data-modelo={resolved}>
         <style>{`
           @media print {
-            @page {
-              size: 90mm 45mm;
-              margin: 0;
-            }
+            @page { size: 90mm 45mm; margin: 0; }
+            html, body { margin: 0 !important; padding: 0 !important; }
           }
         `}</style>
         {products.map((product) => (
@@ -123,8 +205,13 @@ export function PriceTagSheet({ products, printedAt, model }) {
       <style>{`
         @media print {
           @page {
-            size: ${LABEL_02_PAGE_WIDTH_MM}mm ${LABEL_02_HEIGHT_MM}mm;
+            size: ${LABEL_02.pageWidthMm}mm ${LABEL_02.heightMm}mm;
             margin: 0;
+          }
+          html, body {
+            width: ${LABEL_02.pageWidthMm}mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
         }
       `}</style>
@@ -133,7 +220,15 @@ export function PriceTagSheet({ products, printedAt, model }) {
           {row.map((product) => (
             <PriceTagCompact key={product.id} product={product} />
           ))}
-          {row.length === 1 ? <div className="price-tag price-tag--modelo-2 price-tag--empty" aria-hidden="true" /> : null}
+          {row.length === 1 ? (
+            <svg
+              className="price-tag price-tag--modelo-2 price-tag--empty"
+              width={`${LABEL_02.widthMm}mm`}
+              height={`${LABEL_02.heightMm}mm`}
+              viewBox="0 0 50 25"
+              aria-hidden="true"
+            />
+          ) : null}
         </div>
       ))}
     </div>
