@@ -2,7 +2,8 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { getProductsByIds } from "@/lib/services/products";
 import { PrintButton } from "@/components/print-button";
-import { PriceTagSheet } from "@/components/price-tag";
+import { PriceTagSheet, toModelo2Product } from "@/components/price-tag";
+import { Modelo2LabelSheet } from "@/components/modelo-2-label-sheet";
 import { LABEL_MODELS, LABEL_MODEL_OPTIONS, resolveLabelModel } from "@/lib/constants";
 
 export default async function BatchLabelsPage({ searchParams }) {
@@ -17,9 +18,6 @@ export default async function BatchLabelsPage({ searchParams }) {
 
   const products = await getProductsByIds(ids, session);
   const printedAt = new Date();
-  const paperHint = model === LABEL_MODELS.PRECOS_02
-    ? <>papel <strong>103 × 25 mm</strong>, margens <strong>Nenhuma</strong>, escala <strong>100%</strong></>
-    : <>papel <strong>90 × 45 mm</strong></>;
 
   if (!products.length) {
     return (
@@ -32,11 +30,21 @@ export default async function BatchLabelsPage({ searchParams }) {
     );
   }
 
+  if (model === LABEL_MODELS.PRECOS_02) {
+    return (
+      <Modelo2LabelSheet
+        products={products.map(toModelo2Product)}
+        option={option}
+      />
+    );
+  }
+
   return (
     <>
       <div className="label-print-toolbar no-print">
         <p>
-          {products.length} etiqueta(s) · {option?.label} ({option?.description}). Na impressora, escolha {paperHint} e desative cabeçalhos.
+          {products.length} etiqueta(s) · {option?.label} ({option?.description}). Na impressora, escolha papel{" "}
+          <strong>90 × 45 mm</strong> e desative cabeçalhos.
         </p>
         <PrintButton />
       </div>

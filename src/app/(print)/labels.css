@@ -206,7 +206,7 @@
   white-space: nowrap;
 }
 
-/* Modelo de Preços 02 — rolo 2 colunas: 50×25 mm + gap 3 mm (SVG) */
+/* Modelo de Preços 02 — preview em tela (impressão via janela canvas) */
 .price-tag-sheet--modelo-2 {
   gap: 12px;
   align-items: center;
@@ -217,28 +217,12 @@
   flex-direction: row;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 3mm;
-  width: 103mm;
-  height: 25mm;
   box-sizing: border-box;
   background: #fff;
 }
 
-.price-tag--modelo-2 {
-  display: block;
-  width: 50mm;
-  height: 25mm;
-  flex: 0 0 50mm;
-  box-sizing: border-box;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.price-tag--modelo-2.price-tag--empty {
-  box-shadow: none;
-  background: transparent;
+.price-tag--modelo-2-canvas {
+  flex: 0 0 auto;
 }
 
 @media print {
@@ -285,42 +269,5 @@
   .price-tag-sheet--modelo-1 .price-tag:last-child {
     page-break-after: auto;
     break-after: auto;
-  }
-
-  .price-tag-sheet--modelo-2 {
-    width: 103mm !important;
-    max-width: 103mm !important;
-  }
-
-  .price-tag-row {
-    width: 103mm !important;
-    height: 25mm !important;
-    max-height: 25mm !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    gap: 3mm !important;
-    page-break-after: always;
-    break-after: page;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  .price-tag-row:last-child {
-    page-break-after: auto;
-    break-after: auto;
-  }
-
-  .price-tag--modelo-2 {
-    box-shadow: none !important;
-    width: 50mm !important;
-    height: 25mm !important;
-    min-width: 50mm !important;
-    min-height: 25mm !important;
-    max-width: 50mm !important;
-    max-height: 25mm !important;
-    flex: 0 0 50mm !important;
-    page-break-after: auto;
-    break-after: auto;
-    transform: none !important;
   }
 }
