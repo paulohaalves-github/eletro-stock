@@ -117,6 +117,7 @@ export async function listProducts(filters = {}, session) {
     to,
     locationId,
     locationTypeId,
+    stalePriceDays,
     ids,
     page = 1,
     pageSize = 24,
@@ -157,6 +158,14 @@ export async function listProducts(filters = {}, session) {
     where.locationId = Number(locationId);
   } else if (locationTypeId) {
     where.location = { locationTypeId: Number(locationTypeId) };
+  }
+
+  const staleDays = Number(stalePriceDays);
+  if (Number.isInteger(staleDays) && staleDays > 0) {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - staleDays);
+    where.lastPriceUpdateAt = { lt: cutoff };
   }
 
   const take = idList.length ? Math.min(idList.length, 200) : Math.min(Number(pageSize) || 24, 100);
@@ -268,6 +277,7 @@ export async function createProduct(payload, user) {
         supplierModelCode: catalog.supplierModelCode,
         locationId: location?.id ?? null,
         status: STATUSES.AVAILABLE,
+        lastPriceUpdateAt: new Date(),
         createdById: user.id,
       },
       include: {
@@ -348,6 +358,14 @@ export async function updateProduct(id, payload, user) {
   const locationChanged =
     location !== undefined && (location?.id ?? null) !== (current.locationId ?? null);
 
+  const priceFields = ["cashPrice", "installmentPrice", "marketPrice"];
+  const priceChanged = priceFields.some(
+    (field) => data[field] !== undefined && Number(data[field]) !== Number(current[field]),
+  );
+  if (priceChanged) {
+    data.lastPriceUpdateAt = new Date();
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const saved = await tx.product.update({
       where: { id: current.id },
@@ -399,10 +417,6 @@ export async function updateProduct(id, payload, user) {
       );
     }
 
-    const priceFields = ["cashPrice", "installmentPrice", "marketPrice"];
-    const priceChanged = priceFields.some(
-      (field) => data[field] !== undefined && Number(data[field]) !== Number(current[field]),
-    );
     if (priceChanged) {
       await writeMovement(
         {
@@ -419,7 +433,9 @@ export async function updateProduct(id, payload, user) {
     }
 
     const conditionChanged = Boolean(data.condition && data.condition !== current.condition);
-    const otherFieldsChanged = Object.keys(data).some((key) => key !== "locationId");
+    const otherFieldsChanged = Object.keys(data).some(
+      (key) => key !== "locationId" && key !== "lastPriceUpdateAt",
+    );
     if (!priceChanged && !conditionChanged && !locationChanged && otherFieldsChanged) {
       await writeMovement(
         {

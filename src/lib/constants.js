@@ -292,6 +292,15 @@ export const PRICE_RANGES = [
   { id: "10000+", label: "Acima de R$ 10.000", min: 10000, max: null },
 ];
 
+export const PRICE_STALE_DAYS = [
+  { value: "10", label: "Mais de 10 dias" },
+  { value: "20", label: "Mais de 20 dias" },
+  { value: "30", label: "Mais de 30 dias" },
+  { value: "60", label: "Mais de 60 dias" },
+  { value: "90", label: "Mais de 90 dias" },
+];
+
+
 export const DASHBOARD_PERIODS = {
   today: { label: "Hoje", days: 0 },
   "7d": { label: "7 dias", days: 7 },

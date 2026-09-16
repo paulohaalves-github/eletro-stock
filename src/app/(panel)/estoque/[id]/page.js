@@ -205,6 +205,9 @@ export default function ProductDetailPage() {
           <p className="mt-1 text-2xl font-semibold">{formatCurrency(product.installmentPrice)}</p>
         </Card>
       </div>
+      <p className="mb-4 text-sm text-muted">
+        Última atualização de preços: {formatDateTime(product.lastPriceUpdateAt)}
+      </p>
 
       <Card className="mb-4">
         <h2 className="mb-2 font-semibold">Descrição</h2>

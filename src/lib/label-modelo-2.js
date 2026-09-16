@@ -168,7 +168,7 @@ export function drawModelo2Label(ctx, product, width = LABEL_02_PX.width, height
   ctx.fillText(fitText(ctx, `EAN:${product.ean || "—"}`, 28 * s), Math.round(5.9 * s), Math.round(2.85 * s));
   ctx.fillText(fitText(ctx, product.supplierModelCode || "—", 28 * s), Math.round(5.9 * s), Math.round(4.95 * s));
 
-  ctx.font = `bold ${fontPx(s, 2.45)} Arial, Helvetica, sans-serif`;
+  ctx.font = `bold ${fontPx(s, 2.1)} Arial, Helvetica, sans-serif`;
   ctx.textAlign = "right";
   ctx.fillText(fitText(ctx, product.serialOnyx || "—", 18 * s), Math.round(48.9 * s), Math.round(3.55 * s));
 
@@ -176,7 +176,7 @@ export function drawModelo2Label(ctx, product, width = LABEL_02_PX.width, height
   const capacity = capacityLine(product);
 
   ctx.textAlign = "center";
-  ctx.font = `bold ${fontPx(s, 3.35)} Arial, Helvetica, sans-serif`;
+  ctx.font = `bold ${fontPx(s, 2.35)} Arial, Helvetica, sans-serif`;
   ctx.fillText(fitText(ctx, name, 46 * s), Math.round(25 * s), Math.round(capacity ? 9.45 * s : 10.45 * s));
 
   if (capacity) {
@@ -191,7 +191,7 @@ export function drawModelo2Label(ctx, product, width = LABEL_02_PX.width, height
   ctx.font = `bold ${fontPx(s, 1.75)} Arial, Helvetica, sans-serif`;
   ctx.fillText("DESCONTO", Math.round(25 * s), Math.round(15.55 * s));
 
-  ctx.font = `bold ${fontPx(s, 3.4)} Arial, Helvetica, sans-serif`;
+  ctx.font = `bold ${fontPx(s, 3.0)} Arial, Helvetica, sans-serif`;
   ctx.fillText(fitText(ctx, `A VISTA ${formatCurrency(product.cashPrice)}`, 45 * s), Math.round(25 * s), Math.round(18.9 * s));
 
   ctx.fillStyle = "#000000";

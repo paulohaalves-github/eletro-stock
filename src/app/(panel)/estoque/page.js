@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
-import { CONDITION_LABELS, STATUS_LABELS, STATUSES } from "@/lib/constants";
+import { CONDITION_LABELS, PRICE_STALE_DAYS, STATUS_LABELS, STATUSES } from "@/lib/constants";
 import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
 import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
@@ -36,6 +36,7 @@ function EstoqueContent() {
     to: "",
     locationTypeId: "",
     locationId: "",
+    stalePriceDays: "",
   });
 
   const query = useMemo(() => {
@@ -180,6 +181,15 @@ function EstoqueContent() {
           <Input placeholder="Preço máx." value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
           <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
           <Select
+            value={filters.stalePriceDays}
+            onChange={(e) => setFilters({ ...filters, stalePriceDays: e.target.value })}
+          >
+            <option value="">Preço desatualizado</option>
+            {PRICE_STALE_DAYS.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+          </Select>
+          <Select
             value={filters.locationTypeId}
             onChange={(e) => setFilters({ ...filters, locationTypeId: e.target.value, locationId: "" })}
           >
@@ -232,6 +242,7 @@ function EstoqueContent() {
                     <ConditionBadge condition={item.condition} />
                     <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
                   </div>
+                  <p className="text-xs text-muted">Preço atualizado em {formatDate(item.lastPriceUpdateAt)}</p>
                 </div>
               </Link>
             </div>
@@ -239,7 +250,7 @@ function EstoqueContent() {
         </div>
       ) : (
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="text-xs uppercase text-muted">
               <tr>
                 <th className="px-3 py-3">
@@ -250,7 +261,7 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Condição", "À vista", "Parcelado", "Status", "Entrada"].map((col) => (
+                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Condição", "À vista", "Parcelado", "Preço atualizado", "Status", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
               </tr>
@@ -280,6 +291,7 @@ function EstoqueContent() {
                   <td className="px-3 py-2"><ConditionBadge condition={item.condition} /></td>
                   <td className="px-3 py-2">{formatCurrency(item.cashPrice)}</td>
                   <td className="px-3 py-2">{formatCurrency(item.installmentPrice)}</td>
+                  <td className="px-3 py-2">{formatDate(item.lastPriceUpdateAt)}</td>
                   <td className="px-3 py-2"><StatusBadge status={item.status} /></td>
                   <td className="px-3 py-2">{formatDate(item.entryDate)}</td>
                 </tr>
