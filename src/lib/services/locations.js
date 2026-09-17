@@ -3,6 +3,7 @@ import { conflict, notFound, validationError } from "../errors";
 import { writeAudit } from "../audit";
 import { formatLocationPath } from "../format";
 import { requireActiveUnit } from "../units";
+import { paginationResult, parsePagination } from "../pagination";
 
 export { formatLocationPath };
 
@@ -18,29 +19,37 @@ const locationInclude = {
   locationType: { select: locationTypeSelect },
 };
 
-export async function listLocationTypes({ active, includeCounts = false, session } = {}) {
+export async function listLocationTypes({ active, includeCounts = false, session, q, page, pageSize } = {}) {
   const where = {};
   if (active === true || active === "true") where.active = true;
   if (active === false || active === "false") where.active = false;
+  const text = String(q || "").trim();
+  if (text) where.name = { contains: text };
 
   const unitId = session ? requireActiveUnit(session) : null;
+  const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
 
-  const items = await prisma.locationType.findMany({
-    where,
-    orderBy: { name: "asc" },
-    ...(includeCounts
-      ? {
-          include: {
-            locations: {
-              where: unitId ? { unitId } : {},
-              select: { id: true },
+  const [total, items] = await Promise.all([
+    prisma.locationType.count({ where }),
+    prisma.locationType.findMany({
+      where,
+      orderBy: { name: "asc" },
+      skip: pagination.skip,
+      take: pagination.take,
+      ...(includeCounts
+        ? {
+            include: {
+              locations: {
+                where: unitId ? { unitId } : {},
+                select: { id: true },
+              },
             },
-          },
-        }
-      : {}),
-  });
+          }
+        : {}),
+    }),
+  ]);
 
-  if (!includeCounts) return items;
+  if (!includeCounts) return paginationResult(items, total, pagination);
 
   const typeIds = items.map((item) => item.id);
   const productCounts = typeIds.length
@@ -56,7 +65,7 @@ export async function listLocationTypes({ active, includeCounts = false, session
 
   const locationToCount = Object.fromEntries(productCounts.map((row) => [row.locationId, row._count._all]));
 
-  return items.map((item) => {
+  const mapped = items.map((item) => {
     const productCount = item.locations.reduce((sum, location) => sum + (locationToCount[location.id] || 0), 0);
     return {
       id: item.id,
@@ -68,6 +77,7 @@ export async function listLocationTypes({ active, includeCounts = false, session
       productCount,
     };
   });
+  return paginationResult(mapped, total, pagination);
 }
 
 export async function createLocationType(payload, actor) {
@@ -145,24 +155,33 @@ export async function deleteLocationType(id, actor) {
   });
 }
 
-export async function listLocations({ locationTypeId, active, includeCounts = false, session } = {}) {
+export async function listLocations({ locationTypeId, active, includeCounts = false, session, q, page, pageSize } = {}) {
   const where = { unitId: requireActiveUnit(session) };
   if (locationTypeId) where.locationTypeId = Number(locationTypeId);
   if (active === true || active === "true") where.active = true;
   if (active === false || active === "false") where.active = false;
+  const text = String(q || "").trim();
+  if (text) where.name = { contains: text };
 
-  const items = await prisma.location.findMany({
-    where,
-    include: {
-      ...locationInclude,
-      ...(includeCounts ? { _count: { select: { products: true } } } : {}),
-    },
-    orderBy: [{ locationTypeId: "asc" }, { name: "asc" }],
-  });
+  const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
+  const [total, items] = await Promise.all([
+    prisma.location.count({ where }),
+    prisma.location.findMany({
+      where,
+      include: {
+        ...locationInclude,
+        ...(includeCounts ? { _count: { select: { products: true } } } : {}),
+      },
+      orderBy: [{ locationTypeId: "asc" }, { name: "asc" }],
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
 
-  return includeCounts
+  const mapped = includeCounts
     ? items.map((item) => ({ ...item, productCount: item._count.products }))
     : items;
+  return paginationResult(mapped, total, pagination);
 }
 
 export async function createLocation(payload, actor) {

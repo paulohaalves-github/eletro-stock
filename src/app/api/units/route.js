@@ -6,10 +6,16 @@ import { UNIT_TYPE_LABELS } from "@/lib/constants";
 export const GET = apiHandler(async (request, { session }) => {
   const { searchParams } = new URL(request.url);
   const all = searchParams.get("all") === "1";
-  const items = all && can(session.role, PERMISSIONS.UNIT_MANAGE)
-    ? await listUnits({ includeInactive: true })
-    : await listActiveUnits();
-  return { items };
+  if (all && can(session.role, PERMISSIONS.UNIT_MANAGE)) {
+    return listUnits({
+      includeInactive: true,
+      q: searchParams.get("q"),
+      page: searchParams.get("page"),
+      pageSize: searchParams.get("pageSize"),
+    });
+  }
+  const items = await listActiveUnits();
+  return { items, total: items.length };
 });
 
 export const POST = apiHandler(

@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { conflict, forbidden, notFound, validationError } from "./errors";
 import { writeAudit } from "./audit";
 import { ROLES, UNIT_TYPES } from "./constants";
+import { paginationResult, parsePagination } from "./pagination";
 
 export const unitSelect = {
   id: true,
@@ -145,12 +146,21 @@ export async function getUnitOrThrow(id) {
   return unit;
 }
 
-export async function listUnits({ includeInactive = false } = {}) {
-  const items = await prisma.unit.findMany({
-    where: includeInactive ? {} : { active: true },
-    select: unitSelect,
-  });
-  return sortUnits(items);
+export async function listUnits({ includeInactive = false, q, page, pageSize } = {}) {
+  const where = includeInactive ? {} : { active: true };
+  const text = String(q || "").trim();
+  if (text) where.name = { contains: text };
+  const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
+  const [total, items] = await Promise.all([
+    prisma.unit.count({ where }),
+    prisma.unit.findMany({
+      where,
+      select: unitSelect,
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+  return paginationResult(sortUnits(items), total, pagination);
 }
 
 export function slugifyUnitName(name) {

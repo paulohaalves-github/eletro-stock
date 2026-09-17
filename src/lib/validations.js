@@ -1,10 +1,28 @@
-import { CONDITIONS } from "./constants";
+import { CONDITIONS, VOLTAGES } from "./constants";
 import { validationError } from "./errors";
 
 export function emptyToNull(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
   return text.length ? text : null;
+}
+
+export function normalizeVoltage(value) {
+  const text = emptyToNull(value);
+  if (!text) return null;
+  const normalized = text.toUpperCase().replace(/[\s-]/g, "");
+  const mapped = {
+    110: VOLTAGES.V110,
+    "110V": VOLTAGES.V110,
+    220: VOLTAGES.V220,
+    "220V": VOLTAGES.V220,
+    BIVOLT: VOLTAGES.BIVOLT,
+    BIVOLTS: VOLTAGES.BIVOLT,
+  }[normalized];
+  if (!mapped) {
+    throw validationError("Tensão inválida. Use 110V, 220V ou BIVOLT.");
+  }
+  return mapped;
 }
 
 export function toNumber(value, fallback = 0) {
@@ -66,6 +84,9 @@ export function validateProductPayload(payload, { partial = false } = {}) {
   }
   if (!partial || payload.capacitySizeType !== undefined) {
     data.capacitySizeType = emptyToNull(payload.capacitySizeType);
+  }
+  if (!partial || payload.voltage !== undefined) {
+    data.voltage = normalizeVoltage(payload.voltage);
   }
   if (!partial || payload.condition !== undefined) {
     data.condition = emptyToNull(payload.condition);

@@ -8,6 +8,7 @@ import {
   WORK_ORDER_STATUSES,
 } from "../constants";
 import { emptyToNull, parseId, toNumber } from "../validations";
+import { paginationResult, parsePagination } from "../pagination";
 import { getUnitOrThrow, requireActiveUnit, unitSelect } from "../units";
 import { formatLocationPath } from "../format";
 
@@ -52,7 +53,7 @@ export function serializePart(part, { unitId } = {}) {
   };
 }
 
-export async function listParts({ q, active, page = 1, pageSize = 50 } = {}, session) {
+export async function listParts({ q, active, page = 1, pageSize } = {}, session) {
   const unitId = requireActiveUnit(session);
   const where = {};
   if (active === true || active === "true") where.active = true;
@@ -66,9 +67,7 @@ export async function listParts({ q, active, page = 1, pageSize = 50 } = {}, ses
     ];
   }
 
-  const take = Math.min(Number(pageSize) || 50, 100);
-  const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
-
+  const pagination = parsePagination({ page, pageSize });
   const [total, rows] = await Promise.all([
     prisma.part.count({ where }),
     prisma.part.findMany({
@@ -80,17 +79,16 @@ export async function listParts({ q, active, page = 1, pageSize = 50 } = {}, ses
         },
       },
       orderBy: { name: "asc" },
-      skip,
-      take,
+      skip: pagination.skip,
+      take: pagination.take,
     }),
   ]);
 
-  return {
-    items: rows.map((item) => serializePart(item, { unitId })),
+  return paginationResult(
+    rows.map((item) => serializePart(item, { unitId })),
     total,
-    page: Math.max(Number(page) || 1, 1),
-    pageSize: take,
-  };
+    pagination,
+  );
 }
 
 export async function getPart(id, session) {
@@ -402,11 +400,20 @@ export async function listPartTransfers(session) {
   return items;
 }
 
-export async function listPartRequests({ status } = {}, session) {
+export async function listPartRequests({ status, q, page = 1, pageSize } = {}, session) {
   requireActiveUnit(session);
   const where = {};
   if (status) where.status = status;
   else where.status = WORK_ORDER_PART_STATUSES.REQUESTED;
+  const text = String(q || "").trim();
+  if (text) {
+    where.OR = [
+      { part: { code: { contains: text } } },
+      { part: { name: { contains: text } } },
+      { workOrder: { number: { contains: text } } },
+      { workOrder: { customer: { name: { contains: text } } } },
+    ];
+  }
 
   const items = await prisma.workOrderPart.findMany({
     where,
@@ -425,13 +432,19 @@ export async function listPartRequests({ status } = {}, session) {
     orderBy: { createdAt: "asc" },
   });
 
-  return items.filter((item) => {
+  const visible = items.filter((item) => {
     const order = item.workOrder;
     if (!order) return false;
     if (session.role === "ADMINISTRADOR") return true;
     const ids = (session.units || []).map((unit) => unit.id);
     return ids.includes(order.unitId) || (order.labUnitId && ids.includes(order.labUnitId));
   });
+
+  const pagination = parsePagination({ page, pageSize });
+  const paged = pagination.paginated
+    ? visible.slice(pagination.skip, pagination.skip + pagination.take)
+    : visible;
+  return paginationResult(paged, visible.length, pagination);
 }
 
 export async function fulfillWorkOrderPart(id, payload, user) {

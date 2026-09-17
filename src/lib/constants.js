@@ -38,6 +38,18 @@ export const CONDITION_LABELS = {
   REVISADO: "Revisado",
 };
 
+export const VOLTAGES = {
+  V110: "110V",
+  V220: "220V",
+  BIVOLT: "BIVOLT",
+};
+
+export const VOLTAGE_LABELS = {
+  "110V": "110V",
+  "220V": "220V",
+  BIVOLT: "BIVOLT",
+};
+
 export const STATUSES = {
   AVAILABLE: "DISPONIVEL",
   RESERVED: "RESERVADO",
@@ -299,6 +311,9 @@ export const PRICE_STALE_DAYS = [
   { value: "60", label: "Mais de 60 dias" },
   { value: "90", label: "Mais de 90 dias" },
 ];
+
+export const LIST_PAGE_SIZE = 50;
+export const ESTOQUE_PAGE_SIZE = LIST_PAGE_SIZE;
 
 
 export const DASHBOARD_PERIODS = {

@@ -10,6 +10,7 @@ import {
 } from "../constants";
 import { formatProductId } from "../format";
 import { parseProductIds } from "../validations";
+import { paginationResult, parsePagination } from "../pagination";
 import { getProduct, movementUnitFields } from "./products";
 import { resolveProductLocation } from "./locations";
 import {
@@ -457,7 +458,7 @@ export async function listTransfers(session) {
 }
 
 export async function listMovements(filters = {}, session) {
-  const { q, type, from, to, page = 1, pageSize = 30, productId } = filters;
+  const { q, type, from, to, page = 1, pageSize, productId } = filters;
   const unitId = requireActiveUnit(session);
   const where = {
     AND: [movementUnitWhere(unitId)],
@@ -490,9 +491,7 @@ export async function listMovements(filters = {}, session) {
     });
   }
 
-  const take = Math.min(Number(pageSize) || 30, 100);
-  const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
-
+  const pagination = parsePagination({ page, pageSize });
   const [total, items] = await Promise.all([
     prisma.stockMovement.count({ where }),
     prisma.stockMovement.findMany({
@@ -512,10 +511,10 @@ export async function listMovements(filters = {}, session) {
         newUnit: { select: unitSelect },
       },
       orderBy: { createdAt: "desc" },
-      skip,
-      take,
+      skip: pagination.skip,
+      take: pagination.take,
     }),
   ]);
 
-  return { items, total, page: Math.max(Number(page) || 1, 1), pageSize: take };
+  return paginationResult(items, total, pagination);
 }

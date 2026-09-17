@@ -39,6 +39,7 @@ export default async function PrintPage({ params }) {
           <Item label="Condição" value={CONDITION_LABELS[product.condition]} />
           <Item label="Status" value={STATUS_LABELS[product.status]} />
           <Item label="Capacidade" value={product.capacitySizeType} />
+          <Item label="Tensão" value={product.voltage} />
         </dl>
       </div>
       <section className="mt-6 grid grid-cols-3 gap-3 text-sm">

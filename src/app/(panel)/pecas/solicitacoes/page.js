@@ -4,37 +4,47 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, PageHeader } from "@/components/ui";
+import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { LocationPickers } from "@/components/location-pickers";
 import { PartRequestBadge } from "@/components/badges";
 import { Modal } from "@/components/modal";
 import { formatDateTime, formatProductId } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
+import { WORK_ORDER_PART_STATUS_LABELS, WORK_ORDER_PART_STATUSES } from "@/lib/constants";
 
 export default function SolicitacoesPecasPage() {
-  const [items, setItems] = useState([]);
+  const list = usePagedList();
   const [me, setMe] = useState(null);
   const [types, setTypes] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState(WORK_ORDER_PART_STATUSES.REQUESTED);
   const [activeItem, setActiveItem] = useState(null);
   const [form, setForm] = useState({ locationTypeId: "", locationId: "" });
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const [auth, data, locTypes, locs] = await Promise.all([
+  function loader(page, pageSize) {
+    return api(`/api/parts/requests?${listQuery({ q, status }, page, pageSize)}`);
+  }
+
+  async function loadMeta() {
+    const [auth, locTypes, locs] = await Promise.all([
       api("/api/auth/me"),
-      api("/api/parts/requests"),
       api("/api/location-types"),
       api("/api/locations"),
     ]);
     setMe(auth.user);
-    setItems(data.items || []);
     setTypes(locTypes.items || []);
     setLocations(locs.items || []);
   }
 
   useEffect(() => {
-    void load().catch((error) => toast.error(error.message));
+    void loadMeta().catch((error) => toast.error(error.message));
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const canStock = me && can(me.role, PERMISSIONS.PART_STOCK);
@@ -60,7 +70,7 @@ export default function SolicitacoesPecasPage() {
       });
       toast.success(data.message);
       closeFulfill();
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -77,7 +87,7 @@ export default function SolicitacoesPecasPage() {
         json: { action: "refuse", observation: reason },
       });
       toast.success(data.message);
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     }
@@ -87,6 +97,17 @@ export default function SolicitacoesPecasPage() {
     <div className="w-full">
       <PageHeader title="Solicitações de peça" subtitle="O estoque atende os pedidos das ordens de serviço, baixando o saldo da localização." />
 
+      <Card className="mb-4 space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Peça, OS ou cliente" />
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {Object.entries(WORK_ORDER_PART_STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
+        </div>
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+      </Card>
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
@@ -100,7 +121,7 @@ export default function SolicitacoesPecasPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {list.items.map((item) => (
                 <tr key={item.id} className="border-t border-border align-top hover:bg-surface-2/80">
                   <td className="px-5 py-4">
                     <p className="font-medium">{item.part?.code} · {item.part?.name}</p>
@@ -129,8 +150,15 @@ export default function SolicitacoesPecasPage() {
             </tbody>
           </table>
         </div>
-        {!items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma solicitação pendente.</p> : null}
+        {!list.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma solicitação pendente.</p> : null}
       </Card>
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
 
       <Modal
         open={Boolean(activeItem)}

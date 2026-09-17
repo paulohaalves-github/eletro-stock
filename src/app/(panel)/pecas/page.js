@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { LoadMore } from "@/components/paged-list";
 import { LocationPickers } from "@/components/location-pickers";
 import { Modal } from "@/components/modal";
 import { cn, formatLocationPath } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { UNIT_TYPE_LABELS } from "@/lib/constants";
 
@@ -17,7 +20,7 @@ const emptyTransfer = { partId: "", locationTypeId: "", locationId: "", toUnitId
 
 export default function PecasPage() {
   const [me, setMe] = useState(null);
-  const [items, setItems] = useState([]);
+  const list = usePagedList();
   const [searchText, setSearchText] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [panel, setPanel] = useState(null);
@@ -31,13 +34,9 @@ export default function PecasPage() {
   const [units, setUnits] = useState([]);
   const [pending, setPending] = useState([]);
   const [receiveForm, setReceiveForm] = useState({ locationTypeId: "", locationId: "" });
-  const [searching, setSearching] = useState(false);
 
-  async function loadParts(query) {
-    const data = await api(`/api/parts?q=${encodeURIComponent(query)}&pageSize=80`);
-    const nextItems = data.items || [];
-    setItems(nextItems);
-    return nextItems;
+  function partsLoader(query) {
+    return (page, pageSize) => api(`/api/parts?${listQuery({ q: query }, page, pageSize)}`);
   }
 
   async function load() {
@@ -53,7 +52,7 @@ export default function PecasPage() {
     setLocations(locs.items || []);
     setUnits(unitData.items || []);
     setPending(transfers.items || []);
-    await loadParts("");
+    await list.search(partsLoader(""));
   }
 
   useEffect(() => {
@@ -62,7 +61,7 @@ export default function PecasPage() {
 
   const canManage = me && can(me.role, PERMISSIONS.PART_MANAGE);
   const canStock = me && can(me.role, PERMISSIONS.PART_STOCK);
-  const selectedPart = items.find((item) => String(item.id) === String(selectedPartId));
+  const selectedPart = list.items.find((item) => String(item.id) === String(selectedPartId));
 
   function openPanel(next) {
     setPanel(next);
@@ -84,26 +83,18 @@ export default function PecasPage() {
     event.preventDefault();
     const text = searchText.trim();
     setAppliedQuery(text);
-    setSearching(true);
-    try {
-      const nextItems = await loadParts(text);
-      if (selectedPartId && !nextItems.some((item) => String(item.id) === String(selectedPartId))) {
-        selectPart("");
-      }
-    } catch (error) {
-      toast.error(error.message);
-    } finally {
-      setSearching(false);
+    const result = await list.search(partsLoader(text));
+    const nextItems = result?.items || [];
+    if (selectedPartId && !nextItems.some((item) => String(item.id) === String(selectedPartId))) {
+      selectPart("");
     }
   }
 
   async function refresh() {
-    const [parts, transfers] = await Promise.all([
-      api(`/api/parts?q=${encodeURIComponent(appliedQuery)}&pageSize=80`),
-      api("/api/parts/transfer"),
+    await Promise.all([
+      list.search(partsLoader(appliedQuery)),
+      api("/api/parts/transfer").then((transfers) => setPending(transfers.items || [])),
     ]);
-    setItems(parts.items || []);
-    setPending(transfers.items || []);
   }
 
   async function createPart(event) {
@@ -205,7 +196,7 @@ export default function PecasPage() {
   const incoming = pending.filter((item) => Number(item.toUnitId) === Number(me?.activeUnitId));
   const outgoing = pending.filter((item) => Number(item.fromUnitId) === Number(me?.activeUnitId));
   const destinations = units.filter((unit) => String(unit.id) !== String(me?.activeUnitId));
-  const partOptions = items.map((item) => (
+  const partOptions = list.items.map((item) => (
     <option key={item.id} value={item.id}>{item.code} · {item.name}</option>
   ));
 
@@ -241,7 +232,7 @@ export default function PecasPage() {
               />
             </Field>
           </div>
-          <Button type="submit" disabled={searching}>{searching ? "Buscando..." : "Buscar"}</Button>
+          <Button type="submit" disabled={list.loading}>{list.loading ? "Buscando..." : "Buscar"}</Button>
         </form>
       </Card>
 
@@ -286,7 +277,7 @@ export default function PecasPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {list.items.map((item) => (
                 <tr
                   key={item.id}
                   className={cn(
@@ -311,12 +302,19 @@ export default function PecasPage() {
             </tbody>
           </table>
         </div>
-        {!items.length ? (
+        {!list.items.length ? (
           <p className="px-5 py-6 text-sm text-muted">
             {appliedQuery ? "Nenhuma peça encontrada para esta consulta." : "Nenhuma peça cadastrada."}
           </p>
         ) : null}
       </Card>
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
 
       <Modal
         open={panel === "create" && canManage}

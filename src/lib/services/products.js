@@ -1,10 +1,12 @@
 import { prisma } from "../db";
 import { conflict, notFound, validationError } from "../errors";
 import { writeAudit, writeMovement } from "../audit";
-import { CONDITIONS, MOVEMENT_TYPES, STATUSES } from "../constants";
+import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS } from "../constants";
+import { formatCurrency, formatDate, formatProductId } from "../format";
 import { emptyToNull, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
+import { toExcelBuffer } from "./reports";
 import {
   assertCanViewProduct,
   assertProductWritable,
@@ -73,6 +75,14 @@ function expandToken(token) {
   return synonyms[token.toLowerCase()] || [token];
 }
 
+const PRODUCT_LIST_MAX_PAGE_SIZE = 100;
+export const PRODUCT_EXPORT_MAX = 5000;
+
+function parseIdList(ids, max = 200) {
+  const raw = Array.isArray(ids) ? ids : String(ids || "").split(/[,\s]+/);
+  return [...new Set(raw.map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, max);
+}
+
 function buildSearchWhere(query) {
   const text = String(query || "").trim();
   if (!text) return {};
@@ -104,13 +114,14 @@ function buildSearchWhere(query) {
   };
 }
 
-export async function listProducts(filters = {}, session) {
+function buildProductListWhere(filters = {}, session) {
   const {
     q,
     categoryId,
     lineId,
     condition,
     status,
+    voltage,
     minPrice,
     maxPrice,
     from,
@@ -118,28 +129,18 @@ export async function listProducts(filters = {}, session) {
     locationId,
     locationTypeId,
     stalePriceDays,
-    ids,
-    page = 1,
-    pageSize = 24,
-    view = "table",
   } = filters;
-
-  const idList = String(ids || "")
-    .split(/[,\s]+/)
-    .map(Number)
-    .filter((id) => Number.isInteger(id) && id > 0)
-    .slice(0, 200);
 
   const where = {
     ...productUnitWhere(session),
     ...buildSearchWhere(q),
   };
-  if (idList.length) where.id = { in: idList };
 
   if (categoryId) where.categoryId = Number(categoryId);
   if (lineId) where.lineId = Number(lineId);
   if (condition) where.condition = condition;
   if (status) where.status = status;
+  if (voltage) where.voltage = voltage;
   if (minPrice || maxPrice) {
     where.cashPrice = {};
     if (minPrice) where.cashPrice.gte = Number(minPrice);
@@ -168,7 +169,18 @@ export async function listProducts(filters = {}, session) {
     where.lastPriceUpdateAt = { lt: cutoff };
   }
 
-  const take = idList.length ? Math.min(idList.length, 200) : Math.min(Number(pageSize) || 24, 100);
+  return where;
+}
+
+export async function listProducts(filters = {}, session) {
+  const { ids, page = 1, pageSize = ESTOQUE_PAGE_SIZE, view = "table" } = filters;
+  const idList = parseIdList(ids);
+  const where = buildProductListWhere(filters, session);
+  if (idList.length) where.id = { in: idList };
+
+  const take = idList.length
+    ? Math.min(idList.length, 200)
+    : Math.min(Number(pageSize) || ESTOQUE_PAGE_SIZE, PRODUCT_LIST_MAX_PAGE_SIZE);
   const skip = idList.length ? 0 : (Math.max(Number(page) || 1, 1) - 1) * take;
 
   const [total, rows] = await Promise.all([
@@ -193,6 +205,80 @@ export async function listProducts(filters = {}, session) {
     pageSize: take,
     view,
   };
+}
+
+const exportInclude = {
+  category: true,
+  line: true,
+  catalogModel: true,
+  location: { include: locationInclude },
+  unit: { select: unitSelect },
+};
+
+function productExportRows(items) {
+  return items.map((item) => [
+    formatProductId(item.id),
+    item.serialOnyx || "—",
+    item.catalogModel?.commercialName || "—",
+    item.category?.name || "—",
+    item.location?.locationType?.name || "—",
+    item.location?.name || "—",
+    item.supplierModelCode || "—",
+    item.ean || "—",
+    item.capacitySizeType || "—",
+    VOLTAGE_LABELS[item.voltage] || item.voltage || "—",
+    CONDITION_LABELS[item.condition] || item.condition,
+    formatCurrency(item.cashPrice),
+    formatCurrency(item.installmentPrice),
+    formatDate(item.lastPriceUpdateAt),
+    STATUS_LABELS[item.status] || item.status,
+    formatDate(item.entryDate),
+  ]);
+}
+
+export async function exportProductsWorkbook(payload = {}, session) {
+  const idList = parseIdList(payload.ids, PRODUCT_EXPORT_MAX);
+  const where = buildProductListWhere(payload, session);
+  if (idList.length) where.id = { in: idList };
+
+  const total = await prisma.product.count({ where });
+  if (!total) {
+    throw validationError("Nenhum produto encontrado para exportar.");
+  }
+  if (total > PRODUCT_EXPORT_MAX) {
+    throw validationError(`A exportação está limitada a ${PRODUCT_EXPORT_MAX} produtos. Refine o filtro.`);
+  }
+
+  const rows = await prisma.product.findMany({
+    where,
+    include: exportInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  const byId = new Map(rows.map((item) => [item.id, item]));
+  const items = idList.length ? idList.map((id) => byId.get(id)).filter(Boolean) : rows;
+
+  return toExcelBuffer({
+    title: "Produtos",
+    columns: [
+      "ID",
+      "Serial Onyx",
+      "Nome comercial",
+      "Categoria",
+      "Tipo de localização",
+      "Localização",
+      "Model Code",
+      "EAN",
+      "Capacidade",
+      "Tensão",
+      "Condição",
+      "À vista",
+      "Parcelado",
+      "Preço atualizado",
+      "Status",
+      "Entrada",
+    ],
+    rows: productExportRows(items),
+  });
 }
 
 export async function getProduct(id) {
@@ -466,10 +552,10 @@ export async function updateProduct(id, payload, user) {
   return serializeProduct(updated);
 }
 
-export async function searchProducts(query, limit = 8, session) {
-  if (!String(query || "").trim()) return [];
-  const result = await listProducts({ q: query, pageSize: limit, page: 1 }, session);
-  return result.items;
+export async function searchProducts(query, { limit, page = 1 } = {}, session) {
+  const text = String(query || "").trim();
+  if (!text) return { items: [], total: 0, page: 1, pageSize: 0 };
+  return listProducts({ q: text, pageSize: limit, page }, session);
 }
 
 export { assertCanViewProduct };

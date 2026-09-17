@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api-client";
-import { Card, PageHeader, Select } from "@/components/ui";
+import { Button, Card, PageHeader, Select } from "@/components/ui";
 import { formatCurrency, formatDateTime, formatProductId } from "@/lib/format";
 import { StatusBadge } from "@/components/badges";
 
@@ -15,18 +15,35 @@ export default function DashboardPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  async function loadDashboard() {
     const query = new URLSearchParams({ period });
     if (period === "custom" && from && to) {
       query.set("from", from);
       query.set("to", to);
     }
-    api(`/api/dashboard?${query}`).then(setData).catch(() => setData(null));
-  }, [period, from, to]);
+    setLoading(true);
+    try {
+      setData(await api(`/api/dashboard?${query}`));
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!data && loading) {
+    return <p className="text-muted">Carregando dashboard...</p>;
+  }
 
   if (!data) {
-    return <p className="text-muted">Carregando dashboard...</p>;
+    return <p className="text-muted">Não foi possível carregar o dashboard.</p>;
   }
 
   const cards = [
@@ -62,6 +79,9 @@ export default function DashboardPage() {
                 <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2 text-sm" />
               </>
             ) : null}
+            <Button type="button" onClick={() => void loadDashboard()} disabled={loading}>
+              {loading ? "Buscando..." : "Buscar"}
+            </Button>
           </div>
         }
       />

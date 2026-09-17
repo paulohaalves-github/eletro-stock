@@ -1,31 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api-client";
 import { Button, Field, Input } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export function CustomerPicker({ value, onChange, allowCreate = true }) {
+  const list = usePagedList();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", document: "", email: "", address: "" });
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const timeout = setTimeout(async () => {
-      if (!query.trim() || value) {
-        setResults([]);
-        return;
-      }
-      try {
-        const data = await api(`/api/customers?q=${encodeURIComponent(query)}&pageSize=8`);
-        setResults(data.items || []);
-      } catch {
-        setResults([]);
-      }
-    }, 180);
-    return () => clearTimeout(timeout);
-  }, [query, value]);
+  function loader(page, pageSize) {
+    return api(`/api/customers?${listQuery({ q: query }, page, pageSize)}`);
+  }
+
+  async function searchCustomers() {
+    if (!query.trim()) {
+      list.setItems([]);
+      return;
+    }
+    await list.search(loader);
+  }
 
   async function create(event) {
     event.preventDefault();
@@ -36,6 +35,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
       setCreating(false);
       setForm({ name: "", phone: "", document: "", email: "", address: "" });
       setQuery("");
+      list.setItems([]);
     } catch (err) {
       setError(err.message);
     }
@@ -57,11 +57,22 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
   return (
     <div className="space-y-3">
       <Field label="Buscar cliente">
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nome, telefone ou documento" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void searchCustomers();
+            }
+          }}
+          placeholder="Nome, telefone ou documento"
+        />
       </Field>
-      {results.length ? (
+      <SearchActions loading={list.loading} onSearch={() => void searchCustomers()} />
+      {list.items.length ? (
         <div className="divide-y divide-border rounded-xl border border-border">
-          {results.map((item) => (
+          {list.items.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -69,7 +80,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
               onClick={() => {
                 onChange(item);
                 setQuery("");
-                setResults([]);
+                list.setItems([]);
               }}
             >
               <span className="text-sm font-medium">{item.name}</span>
@@ -79,6 +90,13 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
           ))}
         </div>
       ) : null}
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
       {allowCreate ? (
         creating ? (
           <form onSubmit={create} className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2">

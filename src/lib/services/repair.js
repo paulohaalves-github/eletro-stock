@@ -12,6 +12,7 @@ import {
   WORK_ORDER_EVENT_TYPES,
 } from "../constants";
 import { emptyToNull, parseId, toNumber } from "../validations";
+import { paginationResult, parsePagination } from "../pagination";
 import {
   canViewWorkOrder,
   getLabUnit,
@@ -114,7 +115,7 @@ function assertOpen(order) {
   }
 }
 
-export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSize = 40 } = {}, session) {
+export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSize } = {}, session) {
   const where = { ...workOrderWhere(session) };
   if (status) where.status = status;
   if (servicePlace) where.servicePlace = servicePlace;
@@ -134,9 +135,7 @@ export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSi
     ];
   }
 
-  const take = Math.min(Number(pageSize) || 40, 100);
-  const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
-
+  const pagination = parsePagination({ page, pageSize });
   const [total, rows] = await Promise.all([
     prisma.workOrder.count({ where }),
     prisma.workOrder.findMany({
@@ -153,17 +152,12 @@ export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSi
         },
       },
       orderBy: { openedAt: "desc" },
-      skip,
-      take,
+      skip: pagination.skip,
+      take: pagination.take,
     }),
   ]);
 
-  return {
-    items: rows.map(serializeWorkOrder),
-    total,
-    page: Math.max(Number(page) || 1, 1),
-    pageSize: take,
-  };
+  return paginationResult(rows.map(serializeWorkOrder), total, pagination);
 }
 
 export async function getWorkOrder(id, session) {

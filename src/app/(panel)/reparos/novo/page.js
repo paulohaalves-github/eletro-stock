@@ -5,17 +5,20 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { ScanField } from "@/components/scan-field";
 import { CustomerPicker } from "@/components/customer-picker";
 import { ImagePicker } from "@/components/images";
 import { StatusBadge } from "@/components/badges";
 import { SERVICE_PLACE_LABELS, SERVICE_PLACES, WARRANTY_MONTHS } from "@/lib/constants";
 import { formatDate, formatProductId } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export default function NovaOsPage() {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
+  const results = usePagedList();
   const [product, setProduct] = useState(null);
   const [customer, setCustomer] = useState(null);
   const [warrantyMonths, setWarrantyMonths] = useState("3");
@@ -27,14 +30,13 @@ export default function NovaOsPage() {
   const [loading, setLoading] = useState(false);
 
   async function search(value) {
-    const text = String(value ?? "");
+    const text = String(value ?? query);
     setQuery(text);
     if (!text.trim()) {
-      setResults([]);
+      results.setItems([]);
       return;
     }
-    const data = await api(`/api/work-orders?lookup=1&q=${encodeURIComponent(text)}`);
-    setResults(data.items || []);
+    await results.search((page, pageSize) => api(`/api/work-orders?lookup=1&${listQuery({ q: text }, page, pageSize)}`));
   }
 
   function selectProduct(item) {
@@ -42,7 +44,7 @@ export default function NovaOsPage() {
     setCustomer(item.latestSale?.customer || null);
     setWarrantyMonths(String(item.latestSale?.warrantyMonths || 3));
     setInvoiceNumber(item.latestSale?.invoiceNumber || "");
-    setResults([]);
+    results.setItems([]);
     setQuery("");
   }
 
@@ -87,11 +89,14 @@ export default function NovaOsPage() {
       <PageHeader title="Nova ordem de serviço" subtitle="Localize o aparelho vendido na garantia e registre o defeito." />
       <Card className="mb-4">
         <Field label="Produto vendido">
-          <ScanField value={query} onChange={search} onScan={(parsed) => search(parsed.query ?? parsed.raw ?? "")} />
+          <ScanField value={query} onChange={setQuery} onScan={(parsed) => search(parsed.query ?? parsed.raw ?? "")} />
         </Field>
-        {results.length ? (
+        <div className="mt-3">
+          <SearchActions loading={results.loading} onSearch={() => void search()} />
+        </div>
+        {results.items.length ? (
           <div className="mt-3 divide-y divide-border rounded-xl border border-border">
-            {results.map((item) => (
+            {results.items.map((item) => (
               <button key={item.id} type="button" className="flex w-full items-center gap-3 p-3 text-left hover:bg-surface-2" onClick={() => selectProduct(item)}>
                 <img src={item.primaryImage?.fileUrl || "/logo.svg"} alt="" className="h-12 w-12 rounded-lg object-cover" />
                 <div className="flex-1">
@@ -103,6 +108,13 @@ export default function NovaOsPage() {
             ))}
           </div>
         ) : null}
+        <LoadMore
+          shown={results.items.length}
+          total={results.total}
+          hasMore={results.hasMore}
+          loading={results.loadingMore}
+          onClick={() => void results.loadMore()}
+        />
       </Card>
 
       {product ? (

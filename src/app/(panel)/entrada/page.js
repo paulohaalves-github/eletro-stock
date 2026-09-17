@@ -7,7 +7,7 @@ import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { ImagePicker } from "@/components/images";
 import { SpreadsheetImport } from "@/components/spreadsheet-import";
-import { CONDITIONS, CONDITION_LABELS } from "@/lib/constants";
+import { CONDITIONS, CONDITION_LABELS, VOLTAGE_LABELS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { LocationPickers } from "@/components/location-pickers";
@@ -22,6 +22,7 @@ const empty = {
   categoryId: "",
   lineId: "",
   capacitySizeType: "",
+  voltage: "",
   condition: "NOVO",
   damageDescription: "",
   description: "",
@@ -206,6 +207,14 @@ export default function EntradaPage() {
             <Field label="Capacidade / Tamanho / Tipo">
               <Input value={form.capacitySizeType} onChange={(e) => set("capacitySizeType", e.target.value)} placeholder="55 polegadas, 12 kg, 128 GB..." />
             </Field>
+            <Field label="Tensão">
+              <Select value={form.voltage} onChange={(e) => set("voltage", e.target.value)}>
+                <option value="">Não informado</option>
+                {Object.entries(VOLTAGE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </Select>
+            </Field>
             <Field label="Origem">
               <Input value={form.origin} onChange={(e) => set("origin", e.target.value)} placeholder="Fornecedor, devolução, vitrine..." />
             </Field>
@@ -273,6 +282,7 @@ export default function EntradaPage() {
             <p><strong>Serial Onyx:</strong> {form.serialOnyx || "—"}</p>
             <p><strong>Model Code:</strong> {form.supplierModelCode || "—"}</p>
             <p><strong>Nome comercial:</strong> {form.commercialName || "—"}</p>
+            <p><strong>Tensão:</strong> {VOLTAGE_LABELS[form.voltage] || "—"}</p>
             <p><strong>Condição:</strong> {CONDITION_LABELS[form.condition]}</p>
             <p><strong>À vista:</strong> {formatCurrency(form.cashPrice || 0)}</p>
             <p><strong>Localização:</strong> {locationTypes.find((item) => String(item.id) === String(form.locationTypeId))?.name || "—"} {form.locationId ? `→ ${locations.find((item) => String(item.id) === String(form.locationId))?.name || ""}` : ""}</p>

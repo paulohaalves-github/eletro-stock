@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { Modal } from "@/components/modal";
 import { cn } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export default function LocalizacoesPage() {
-  const [types, setTypes] = useState([]);
-  const [locations, setLocations] = useState([]);
+  const typesList = usePagedList();
+  const locationsList = usePagedList();
+  const [typeQ, setTypeQ] = useState("");
+  const [locationQ, setLocationQ] = useState("");
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [typeName, setTypeName] = useState("");
   const [locationName, setLocationName] = useState("");
@@ -19,24 +24,25 @@ export default function LocalizacoesPage() {
   const [locationOpen, setLocationOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const [typeData, locationData] = await Promise.all([
-      api("/api/location-types?includeCounts=true"),
-      api("/api/locations?includeCounts=true"),
-    ]);
-    setTypes(typeData.items || []);
-    setLocations(locationData.items || []);
+  function typesLoader(page, pageSize) {
+    return api(`/api/location-types?includeCounts=true&${listQuery({ q: typeQ }, page, pageSize)}`);
+  }
+
+  function locationsLoader(page, pageSize) {
+    return api(`/api/locations?includeCounts=true&${listQuery({ q: locationQ, locationTypeId: selectedTypeId }, page, pageSize)}`);
   }
 
   useEffect(() => {
-    void load().catch((error) => toast.error(error.message));
+    void typesList.search(typesLoader).catch((error) => toast.error(error.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedType = types.find((item) => String(item.id) === String(selectedTypeId)) || null;
-  const typeLocations = useMemo(
-    () => locations.filter((item) => String(item.locationTypeId) === String(selectedTypeId)),
-    [locations, selectedTypeId],
-  );
+  const selectedType = typesList.items.find((item) => String(item.id) === String(selectedTypeId)) || null;
+
+  function refresh() {
+    void typesList.search(typesLoader);
+    if (selectedTypeId) void locationsList.search(locationsLoader);
+  }
 
   function openTypeModal(item = null) {
     setEditingType(item);
@@ -80,7 +86,7 @@ export default function LocalizacoesPage() {
         toast.success("Tipo cadastrado.");
       }
       closeTypeModal();
-      load();
+      refresh();
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -92,7 +98,7 @@ export default function LocalizacoesPage() {
     try {
       await api(`/api/location-types/${item.id}`, { method: "PATCH", json: { name: item.name, active: !item.active } });
       toast.success(item.active ? "Tipo inativado." : "Tipo ativado.");
-      load();
+      refresh();
     } catch (error) {
       toast.error(error.message);
     }
@@ -103,7 +109,7 @@ export default function LocalizacoesPage() {
       await api(`/api/location-types/${item.id}`, { method: "DELETE" });
       toast.success("Tipo excluído.");
       if (String(selectedTypeId) === String(item.id)) setSelectedTypeId("");
-      load();
+      refresh();
     } catch (error) {
       toast.error(error.message);
     }
@@ -129,7 +135,7 @@ export default function LocalizacoesPage() {
         toast.success("Localização cadastrada.");
       }
       closeLocationModal();
-      load();
+      refresh();
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -144,7 +150,7 @@ export default function LocalizacoesPage() {
         json: { name: item.name, locationTypeId: item.locationTypeId, active: !item.active },
       });
       toast.success(item.active ? "Localização inativada." : "Localização ativada.");
-      load();
+      refresh();
     } catch (error) {
       toast.error(error.message);
     }
@@ -154,7 +160,7 @@ export default function LocalizacoesPage() {
     try {
       await api(`/api/locations/${item.id}`, { method: "DELETE" });
       toast.success("Localização excluída.");
-      load();
+      refresh();
     } catch (error) {
       toast.error(error.message);
     }
@@ -173,6 +179,11 @@ export default function LocalizacoesPage() {
         }
       />
 
+      <Card className="mb-0 space-y-3 p-4">
+        <Input value={typeQ} onChange={(e) => setTypeQ(e.target.value)} placeholder="Buscar tipo de localização" />
+        <SearchActions loading={typesList.loading} onSearch={() => void typesList.search(typesLoader)} />
+      </Card>
+
       <Card className="w-full overflow-hidden p-0">
         <div className="border-b border-border px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Tipos de localização</p>
@@ -189,14 +200,19 @@ export default function LocalizacoesPage() {
               </tr>
             </thead>
             <tbody>
-              {types.map((item) => (
+              {typesList.items.map((item) => (
                 <tr
                   key={item.id}
                   className={cn(
                     "cursor-pointer border-t border-border hover:bg-surface-2/80",
                     String(selectedTypeId) === String(item.id) ? "bg-accent/10" : "",
                   )}
-                  onClick={() => setSelectedTypeId(item.id)}
+                  onClick={() => {
+                    setSelectedTypeId(item.id);
+                    void locationsList.search((page, pageSize) =>
+                      api(`/api/locations?includeCounts=true&${listQuery({ q: locationQ, locationTypeId: item.id }, page, pageSize)}`),
+                    );
+                  }}
                 >
                   <td className="px-5 py-4 font-medium">{item.name}</td>
                   <td className="px-5 py-4 text-muted">{item.locationCount || 0}</td>
@@ -214,8 +230,9 @@ export default function LocalizacoesPage() {
             </tbody>
           </table>
         </div>
-        {!types.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum tipo cadastrado.</p> : null}
+        {!typesList.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum tipo cadastrado.</p> : null}
       </Card>
+      <LoadMore shown={typesList.items.length} total={typesList.total} hasMore={typesList.hasMore} loading={typesList.loadingMore} onClick={() => void typesList.loadMore()} />
 
       <Card className="w-full overflow-hidden p-0">
         <div className="border-b border-border px-5 py-4">
@@ -223,8 +240,14 @@ export default function LocalizacoesPage() {
             {selectedType ? `Localizações · ${selectedType.name}` : "Localizações"}
           </p>
           <p className="mt-1 text-sm text-muted">
-            {selectedType ? "Selecione um tipo acima para filtrar. Cadastre novas localizações pelo botão do topo." : "Selecione um tipo na tabela acima."}
+            {selectedType ? "Cadastre novas localizações pelo botão do topo." : "Selecione um tipo na tabela acima."}
           </p>
+          {selectedType ? (
+            <div className="mt-3 space-y-3">
+              <Input value={locationQ} onChange={(e) => setLocationQ(e.target.value)} placeholder="Buscar localização" />
+              <SearchActions loading={locationsList.loading} onSearch={() => void locationsList.search(locationsLoader)} />
+            </div>
+          ) : null}
         </div>
         {selectedType ? (
           <>
@@ -239,7 +262,7 @@ export default function LocalizacoesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {typeLocations.map((item) => (
+                  {locationsList.items.map((item) => (
                     <tr key={item.id} className="border-t border-border hover:bg-surface-2/80">
                       <td className="px-5 py-4 font-medium">{item.name}</td>
                       <td className="px-5 py-4 text-muted">{item.productCount || 0}</td>
@@ -256,7 +279,10 @@ export default function LocalizacoesPage() {
                 </tbody>
               </table>
             </div>
-            {!typeLocations.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma localização neste tipo.</p> : null}
+            {!locationsList.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma localização neste tipo.</p> : null}
+            <div className="px-5 pb-4">
+              <LoadMore shown={locationsList.items.length} total={locationsList.total} hasMore={locationsList.hasMore} loading={locationsList.loadingMore} onClick={() => void locationsList.loadMore()} />
+            </div>
           </>
         ) : (
           <p className="px-5 py-6 text-sm text-muted">Escolha um tipo para ver e cadastrar as localizações.</p>

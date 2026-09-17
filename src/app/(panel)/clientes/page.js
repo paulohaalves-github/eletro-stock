@@ -4,31 +4,31 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { Modal } from "@/components/modal";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
 
 const empty = { name: "", phone: "", document: "", email: "", address: "", notes: "" };
 
 export default function ClientesPage() {
-  const [items, setItems] = useState([]);
+  const list = usePagedList();
   const [q, setQ] = useState("");
   const [form, setForm] = useState(empty);
   const [me, setMe] = useState(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const [auth, data] = await Promise.all([api("/api/auth/me"), api(`/api/customers?q=${encodeURIComponent(q)}&pageSize=80`)]);
-    setMe(auth.user);
-    setItems(data.items || []);
+  function loader(page, pageSize) {
+    return api(`/api/customers?${listQuery({ q }, page, pageSize)}`);
   }
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      void load().catch((error) => toast.error(error.message));
-    }, 150);
-    return () => clearTimeout(timeout);
-  }, [q]);
+    api("/api/auth/me").then((auth) => setMe(auth.user)).catch((error) => toast.error(error.message));
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canManage = me && can(me.role, PERMISSIONS.CUSTOMER_MANAGE);
 
@@ -46,7 +46,7 @@ export default function ClientesPage() {
       toast.success(data.message);
       setForm(empty);
       setOpen(false);
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -62,10 +62,11 @@ export default function ClientesPage() {
         actions={canManage ? <Button onClick={() => { setForm(empty); setOpen(true); }}>Novo cliente</Button> : null}
       />
 
-      <Card className="mb-4">
+      <Card className="mb-4 space-y-3">
         <Field label="Buscar">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome, telefone ou documento" />
         </Field>
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
       </Card>
 
       <Card className="w-full overflow-hidden p-0">
@@ -81,7 +82,7 @@ export default function ClientesPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {list.items.map((item) => (
                 <tr key={item.id} className="border-t border-border hover:bg-surface-2/80">
                   <td className="px-5 py-4 font-medium">{item.name}</td>
                   <td className="px-5 py-4">{item.phone}</td>
@@ -93,8 +94,15 @@ export default function ClientesPage() {
             </tbody>
           </table>
         </div>
-        {!items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum cliente encontrado.</p> : null}
+        {!list.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum cliente encontrado.</p> : null}
       </Card>
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
 
       <Modal
         open={open}

@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { WorkOrderStatusBadge } from "@/components/badges";
 import { SERVICE_PLACE_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { formatDateTime, formatProductId } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
 
 const KANBAN_STATUSES = Object.keys(WORK_ORDER_STATUS_LABELS);
@@ -46,40 +49,29 @@ function WorkOrderCard({ item, onOpen }) {
 
 export default function ReparosPage() {
   const router = useRouter();
-  const [data, setData] = useState({ items: [], total: 0 });
+  const list = usePagedList();
   const [me, setMe] = useState(null);
   const [view, setView] = useState("table");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [servicePlace, setServicePlace] = useState("");
 
-  const query = useMemo(() => {
-    const search = new URLSearchParams({
-      pageSize: view === "kanban" ? "100" : "40",
-    });
-    if (q) search.set("q", q);
-    if (status) search.set("status", status);
-    if (servicePlace) search.set("servicePlace", servicePlace);
-    return search.toString();
-  }, [q, status, servicePlace, view]);
+  function loader(page, pageSize) {
+    return api(`/api/work-orders?${listQuery({ q, status, servicePlace }, page, pageSize)}`);
+  }
 
   useEffect(() => {
     api("/api/auth/me").then((auth) => setMe(auth.user)).catch((error) => toast.error(error.message));
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      api(`/api/work-orders?${query}`).then(setData).catch((error) => toast.error(error.message));
-    }, 150);
-    return () => clearTimeout(timeout);
-  }, [query]);
 
   const canCreate = me && can(me.role, PERMISSIONS.REPAIR_CREATE);
 
   const kanbanColumns = useMemo(() => {
     const statuses = status ? [status] : KANBAN_STATUSES;
     const grouped = Object.fromEntries(statuses.map((value) => [value, []]));
-    for (const item of data.items) {
+    for (const item of list.items) {
       if (grouped[item.status]) grouped[item.status].push(item);
     }
     return statuses.map((value) => ({
@@ -87,7 +79,7 @@ export default function ReparosPage() {
       label: WORK_ORDER_STATUS_LABELS[value] || value,
       items: grouped[value] || [],
     }));
-  }, [data.items, status]);
+  }, [list.items, status]);
 
   function openOrder(id) {
     router.push(`/reparos/${id}`);
@@ -110,20 +102,23 @@ export default function ReparosPage() {
           </>
         }
       />
-      <Card className="mb-4 grid gap-3 sm:grid-cols-3">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OS, serial, cliente ou defeito" />
-        <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Todos os status</option>
-          {Object.entries(WORK_ORDER_STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </Select>
-        <Select value={servicePlace} onChange={(e) => setServicePlace(e.target.value)}>
-          <option value="">Todos os locais</option>
-          {Object.entries(SERVICE_PLACE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </Select>
+      <Card className="mb-4 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OS, serial, cliente ou defeito" />
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Todos os status</option>
+            {Object.entries(WORK_ORDER_STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
+          <Select value={servicePlace} onChange={(e) => setServicePlace(e.target.value)}>
+            <option value="">Todos os locais</option>
+            {Object.entries(SERVICE_PLACE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
+        </div>
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
       </Card>
 
       {view === "kanban" ? (
@@ -154,7 +149,7 @@ export default function ReparosPage() {
               </section>
             ))}
           </div>
-          {!data.items.length ? (
+          {!list.items.length ? (
             <p className="mt-4 text-sm text-muted">Nenhuma ordem de serviço encontrada.</p>
           ) : null}
         </div>
@@ -173,7 +168,7 @@ export default function ReparosPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => (
+                {list.items.map((item) => (
                   <tr
                     key={item.id}
                     className="cursor-pointer border-t border-border hover:bg-surface-2/80"
@@ -193,9 +188,16 @@ export default function ReparosPage() {
               </tbody>
             </table>
           </div>
-          {!data.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma ordem de serviço encontrada.</p> : null}
+          {!list.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma ordem de serviço encontrada.</p> : null}
         </Card>
       )}
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
     </div>
   );
 }

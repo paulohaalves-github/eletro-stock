@@ -5,23 +5,27 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { Modal } from "@/components/modal";
 import { UNIT_TYPE_LABELS, UNIT_TYPES } from "@/lib/constants";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export default function UnidadesPage() {
   const router = useRouter();
-  const [items, setItems] = useState([]);
+  const list = usePagedList();
+  const [q, setQ] = useState("");
   const [form, setForm] = useState({ name: "", type: UNIT_TYPES.BRANCH });
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const data = await api("/api/units?all=1");
-    setItems(data.items || []);
+  function loader(page, pageSize) {
+    return api(`/api/units?all=1&${listQuery({ q }, page, pageSize)}`);
   }
 
   useEffect(() => {
-    void load().catch((error) => toast.error(error.message));
+    void list.search(loader).catch((error) => toast.error(error.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function closeModal() {
@@ -38,7 +42,7 @@ export default function UnidadesPage() {
       toast.success(data.message);
       setForm({ name: "", type: UNIT_TYPES.BRANCH });
       setOpen(false);
-      await load();
+      await list.search(loader);
       router.refresh();
     } catch (error) {
       toast.error(error.message);
@@ -51,7 +55,7 @@ export default function UnidadesPage() {
     try {
       const data = await api(`/api/units/${item.id}`, { method: "PATCH", json: payload });
       toast.success(data.message);
-      await load();
+      await list.search(loader);
       router.refresh();
     } catch (error) {
       toast.error(error.message);
@@ -65,7 +69,10 @@ export default function UnidadesPage() {
         subtitle="Cadastre matriz, filiais e o laboratório do grupo. O administrador vê todas as ativas; os demais perfis precisam ser vinculados."
         actions={<Button onClick={() => { setForm({ name: "", type: UNIT_TYPES.BRANCH }); setOpen(true); }}>Nova unidade</Button>}
       />
-
+      <Card className="mb-4 space-y-3">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar unidade" />
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+      </Card>
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
@@ -79,13 +86,14 @@ export default function UnidadesPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {list.items.map((item) => (
                 <UnitRow key={item.id} item={item} onSave={save} />
               ))}
             </tbody>
           </table>
         </div>
       </Card>
+      <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loadingMore} onClick={() => void list.loadMore()} />
 
       <Modal
         open={open}

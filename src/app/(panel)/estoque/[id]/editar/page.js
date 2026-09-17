@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
-import { CONDITIONS, CONDITION_LABELS } from "@/lib/constants";
+import { CONDITIONS, CONDITION_LABELS, VOLTAGE_LABELS } from "@/lib/constants";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { LocationPickers } from "@/components/location-pickers";
 
@@ -42,6 +42,7 @@ export default function EditarProdutoPage() {
           categoryId: product.categoryId,
           lineId: product.lineId || "",
           capacitySizeType: product.capacitySizeType || "",
+          voltage: product.voltage || "",
           condition: product.condition,
           damageDescription: product.damageDescription || "",
           description: product.description || "",
@@ -127,6 +128,14 @@ export default function EditarProdutoPage() {
             onChange={({ locationTypeId, locationId }) => setForm((current) => ({ ...current, locationTypeId, locationId }))}
           />
           <Field label="Capacidade / Tamanho / Tipo"><Input value={form.capacitySizeType} onChange={(e) => set("capacitySizeType", e.target.value)} /></Field>
+          <Field label="Tensão">
+            <Select value={form.voltage} onChange={(e) => set("voltage", e.target.value)}>
+              <option value="">Não informado</option>
+              {Object.entries(VOLTAGE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Condição">
             <Select value={form.condition} disabled={!canCondition} onChange={(e) => set("condition", e.target.value)}>
               {Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

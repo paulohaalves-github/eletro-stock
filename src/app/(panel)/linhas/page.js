@@ -4,21 +4,25 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { Modal } from "@/components/modal";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export default function LinhasPage() {
-  const [items, setItems] = useState([]);
+  const list = usePagedList();
+  const [q, setQ] = useState("");
   const [name, setName] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const data = await api("/api/lines");
-    setItems(data.items || []);
+  function loader(page, pageSize) {
+    return api(`/api/lines?${listQuery({ q }, page, pageSize)}`);
   }
 
   useEffect(() => {
-    void load();
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function closeModal() {
@@ -35,7 +39,7 @@ export default function LinhasPage() {
       toast.success(data.message);
       setName("");
       setOpen(false);
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -47,7 +51,7 @@ export default function LinhasPage() {
     try {
       await api(`/api/lines/${item.id}`, { method: "PATCH", json: { name: item.name, active: !item.active } });
       toast.success("Linha atualizada.");
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     }
@@ -60,6 +64,10 @@ export default function LinhasPage() {
         subtitle="Samsung, Linha Branca, Mobile, Wearables e novas linhas."
         actions={<Button onClick={() => { setName(""); setOpen(true); }}>Nova linha</Button>}
       />
+      <Card className="mb-4 space-y-3">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar linha" />
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+      </Card>
 
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">
@@ -72,7 +80,7 @@ export default function LinhasPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {list.items.map((item) => (
                 <tr key={item.id} className="border-t border-border hover:bg-surface-2/80">
                   <td className="px-5 py-4 font-medium">{item.name}</td>
                   <td className="px-5 py-4 text-muted">{item.active ? "Ativa" : "Inativa"}</td>
@@ -84,8 +92,9 @@ export default function LinhasPage() {
             </tbody>
           </table>
         </div>
-        {!items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma linha cadastrada.</p> : null}
+        {!list.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma linha cadastrada.</p> : null}
       </Card>
+      <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loadingMore} onClick={() => void list.loadMore()} />
 
       <Modal
         open={open}

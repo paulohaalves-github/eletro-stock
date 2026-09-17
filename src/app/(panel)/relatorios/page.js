@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, PageHeader, Select } from "@/components/ui";
+import { SearchActions } from "@/components/paged-list";
 import { formatCurrency } from "@/lib/format";
 
 const TYPES = [
@@ -21,6 +23,7 @@ export default function RelatoriosPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   function query(format) {
     const params = new URLSearchParams({ type, format });
@@ -29,12 +32,24 @@ export default function RelatoriosPage() {
     return params.toString();
   }
 
+  async function loadReport() {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ type, format: "json" });
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      setReport(await api(`/api/reports?${params}`));
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    const params = new URLSearchParams({ type, format: "json" });
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    api(`/api/reports?${params}`).then(setReport);
-  }, [type, from, to]);
+    void loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function download(format) {
     const response = await fetch(`/api/reports?${query(format)}`);
@@ -60,12 +75,15 @@ export default function RelatoriosPage() {
           </>
         }
       />
-      <Card className="mb-4 grid gap-2 sm:grid-cols-3">
-        <Select value={type} onChange={(e) => setType(e.target.value)}>
-          {TYPES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-        </Select>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+      <Card className="mb-4 space-y-3">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Select value={type} onChange={(e) => setType(e.target.value)}>
+            {TYPES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </Select>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+        </div>
+        <SearchActions loading={loading} onSearch={() => void loadReport()} />
       </Card>
       {report ? (
         <Card className="overflow-x-auto">

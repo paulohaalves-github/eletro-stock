@@ -5,13 +5,15 @@ import { createLocation, listLocations } from "@/lib/services/locations";
 export const GET = apiHandler(
   async (request, { session }) => {
     const { searchParams } = new URL(request.url);
-    const items = await listLocations({
+    return listLocations({
       locationTypeId: searchParams.get("locationTypeId") || searchParams.get("typeId"),
       active: searchParams.get("active"),
       includeCounts: searchParams.get("includeCounts") === "true",
+      q: searchParams.get("q"),
+      page: searchParams.get("page"),
+      pageSize: searchParams.get("pageSize"),
       session,
     });
-    return { items };
   },
   { permission: PERMISSIONS.PRODUCT_VIEW },
 );

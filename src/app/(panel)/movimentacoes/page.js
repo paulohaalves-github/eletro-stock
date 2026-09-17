@@ -4,36 +4,41 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { Card, Input, PageHeader, Select } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { StatusBadge } from "@/components/badges";
 import { MOVEMENT_TYPE_LABELS, STATUS_LABELS } from "@/lib/constants";
 import { formatDateTime, formatLocationPath, formatProductId } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export default function MovimentacoesPage() {
+  const list = usePagedList();
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
-  const [data, setData] = useState({ items: [], total: 0 });
+
+  function loader(page, pageSize) {
+    return api(`/api/movements?${listQuery({ q, type }, page, pageSize)}`);
+  }
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (type) params.set("type", type);
-      api(`/api/movements?${params}`).then(setData);
-    }, 180);
-    return () => clearTimeout(timeout);
-  }, [q, type]);
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="w-full">
       <PageHeader title="Movimentações" subtitle="Timeline geral de entradas, saídas e alterações." />
-      <Card className="mb-4 grid gap-2 sm:grid-cols-2">
-        <Input placeholder="Buscar produto, serial, observação..." value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Todos os tipos</option>
-          {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </Select>
+      <Card className="mb-4 space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input placeholder="Buscar produto, serial, observação..." value={q} onChange={(e) => setQ(e.target.value)} />
+          <Select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">Todos os tipos</option>
+            {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
+        </div>
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
       </Card>
 
       <Card className="w-full overflow-hidden p-0">
@@ -49,7 +54,7 @@ export default function MovimentacoesPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((item) => (
+              {list.items.map((item) => (
                 <tr key={item.id} className="border-t border-border align-top hover:bg-surface-2/80">
                   <td className="px-5 py-4">
                     <p className="font-medium">{formatDateTime(item.createdAt)}</p>
@@ -79,8 +84,15 @@ export default function MovimentacoesPage() {
             </tbody>
           </table>
         </div>
-        {!data.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma movimentação encontrada.</p> : null}
+        {!list.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhuma movimentação encontrada.</p> : null}
       </Card>
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
     </div>
   );
 }

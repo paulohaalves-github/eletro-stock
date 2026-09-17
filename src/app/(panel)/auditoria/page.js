@@ -2,19 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
-import { Card, PageHeader } from "@/components/ui";
+import { Card, Input, PageHeader } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { formatDateTime } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 export default function AuditoriaPage() {
-  const [data, setData] = useState({ items: [] });
+  const list = usePagedList();
+  const [q, setQ] = useState("");
+
+  function loader(page, pageSize) {
+    return api(`/api/audit?${listQuery({ q }, page, pageSize)}`);
+  }
 
   useEffect(() => {
-    api("/api/audit").then(setData).catch(() => setData({ items: [] }));
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="w-full">
       <PageHeader title="Auditoria" subtitle="Registro imutável para operadores comuns. Alterações relevantes ficam aqui." />
+      <Card className="mb-4 space-y-3">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ação, entidade ou usuário" />
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+      </Card>
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
@@ -28,7 +41,7 @@ export default function AuditoriaPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((item) => (
+              {list.items.map((item) => (
                 <tr key={item.id} className="border-t border-border align-top hover:bg-surface-2/80">
                   <td className="px-5 py-4 font-medium">{formatDateTime(item.createdAt)}</td>
                   <td className="px-5 py-4">{item.action}</td>
@@ -48,8 +61,15 @@ export default function AuditoriaPage() {
             </tbody>
           </table>
         </div>
-        {!data.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum registro de auditoria.</p> : null}
+        {!list.items.length ? <p className="px-5 py-6 text-sm text-muted">Nenhum registro de auditoria.</p> : null}
       </Card>
+      <LoadMore
+        shown={list.items.length}
+        total={list.total}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onClick={() => void list.loadMore()}
+      />
     </div>
   );
 }

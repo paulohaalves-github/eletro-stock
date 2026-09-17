@@ -161,6 +161,7 @@ model Product {
   lineId            Int?     @map("line_id")
   categoryId        Int      @map("category_id")
   capacitySizeType  String?  @map("capacity_size_type") @db.VarChar(120)
+  voltage           String?  @db.VarChar(20)
   condition         String   @db.VarChar(40)
   damageDescription String?  @map("damage_description") @db.Text
   description       String?  @db.Text
@@ -196,6 +197,7 @@ model Product {
   @@index([catalogModelId])
   @@index([status])
   @@index([condition])
+  @@index([voltage])
   @@index([categoryId])
   @@index([lineId])
   @@index([entryDate])

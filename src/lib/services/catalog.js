@@ -4,6 +4,7 @@ import { writeAudit } from "../audit";
 import { ROLES } from "../constants";
 import { hashPassword } from "../auth";
 import { unitSelect } from "../units";
+import { paginationResult, parsePagination } from "../pagination";
 
 const userSelect = {
   id: true,
@@ -51,12 +52,27 @@ async function replaceUserUnits(userId, unitIds) {
   }
 }
 
-export async function listUsers() {
-  const items = await prisma.user.findMany({
-    orderBy: { createdAt: "asc" },
-    select: userSelect,
-  });
-  return items.map(serializeUser);
+export async function listUsers({ q, page, pageSize } = {}) {
+  const where = {};
+  const text = String(q || "").trim();
+  if (text) {
+    where.OR = [
+      { name: { contains: text } },
+      { email: { contains: text } },
+    ];
+  }
+  const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
+  const [total, items] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      orderBy: { createdAt: "asc" },
+      select: userSelect,
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+  return paginationResult(items.map(serializeUser), total, pagination);
 }
 
 export async function createUser(payload, actor) {
@@ -154,8 +170,21 @@ export async function updateUser(id, payload, actor) {
   return updated;
 }
 
-export async function listCategories() {
-  return prisma.category.findMany({ orderBy: { name: "asc" } });
+export async function listCategories({ q, page, pageSize } = {}) {
+  const where = {};
+  const text = String(q || "").trim();
+  if (text) where.name = { contains: text };
+  const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
+  const [total, items] = await Promise.all([
+    prisma.category.count({ where }),
+    prisma.category.findMany({
+      where,
+      orderBy: { name: "asc" },
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+  return paginationResult(items, total, pagination);
 }
 
 export async function upsertCategory(payload, actor, id) {
@@ -185,8 +214,21 @@ export async function upsertCategory(payload, actor, id) {
   return category;
 }
 
-export async function listLines() {
-  return prisma.line.findMany({ orderBy: { name: "asc" } });
+export async function listLines({ q, page, pageSize } = {}) {
+  const where = {};
+  const text = String(q || "").trim();
+  if (text) where.name = { contains: text };
+  const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
+  const [total, items] = await Promise.all([
+    prisma.line.count({ where }),
+    prisma.line.findMany({
+      where,
+      orderBy: { name: "asc" },
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+  return paginationResult(items, total, pagination);
 }
 
 export async function upsertLine(payload, actor, id) {

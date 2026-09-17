@@ -5,8 +5,14 @@ import { searchProducts } from "@/lib/services/products";
 export const GET = apiHandler(
   async (request, { session }) => {
     const { searchParams } = new URL(request.url);
-    const items = await searchProducts(searchParams.get("q") || "", Number(searchParams.get("limit") || 8), session);
-    return { items };
+    return searchProducts(
+      searchParams.get("q") || "",
+      {
+        limit: Number(searchParams.get("pageSize") || searchParams.get("limit") || 50),
+        page: Number(searchParams.get("page") || 1),
+      },
+      session,
+    );
   },
   { permission: PERMISSIONS.PRODUCT_VIEW },
 );

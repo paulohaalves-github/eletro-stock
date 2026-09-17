@@ -5,18 +5,21 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { ConfirmDialog } from "@/components/modal";
 import { ScanField } from "@/components/scan-field";
 import { CLOSED_STATUSES, EXIT_REASON_LABELS, EXIT_REASONS, WARRANTY_MONTHS } from "@/lib/constants";
 import { formatCurrency, formatProductId } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 import { CustomerPicker } from "@/components/customer-picker";
 
 function SaidaContent() {
   const params = useSearchParams();
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
+  const results = usePagedList();
   const [product, setProduct] = useState(null);
   const [reason, setReason] = useState(EXIT_REASONS.SALE);
   const [observation, setObservation] = useState("");
@@ -31,17 +34,16 @@ function SaidaContent() {
     if (id) api(`/api/products/${id}`).then((data) => setProduct(data.product));
   }, [params]);
 
-  useEffect(() => {
-    const timeout = setTimeout(async () => {
-      if (!query.trim()) {
-        setResults([]);
-        return;
-      }
-      const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
-      setResults(data.items || []);
-    }, 180);
-    return () => clearTimeout(timeout);
-  }, [query]);
+  async function searchProducts(text) {
+    const value = text !== undefined ? text : query;
+    if (text !== undefined) setQuery(text);
+    if (!String(value || "").trim()) {
+      results.setItems([]);
+      return;
+    }
+    const loader = (page, pageSize) => api(`/api/search?${listQuery({ q: value }, page, pageSize)}`);
+    await results.search(loader);
+  }
 
   async function confirmExit() {
     setLoading(true);
@@ -76,18 +78,25 @@ function SaidaContent() {
       <PageHeader title="Saída de estoque" subtitle="Localize a unidade e confirme a baixa sem apagar o histórico." />
       <Card className="mb-4">
         <Field label="Localizar produto">
-          <ScanField value={query} onChange={setQuery} onScan={(parsed) => setQuery(parsed.query ?? parsed.raw ?? "")} />
+          <ScanField
+            value={query}
+            onChange={setQuery}
+            onScan={(parsed) => void searchProducts(parsed.query ?? parsed.raw ?? "")}
+          />
         </Field>
-        {results.length ? (
+        <div className="mt-3">
+          <SearchActions loading={results.loading} onSearch={() => void searchProducts()} />
+        </div>
+        {results.items.length ? (
           <div className="mt-3 divide-y divide-border rounded-xl border border-border">
-            {results.map((item) => (
+            {results.items.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 className="flex w-full items-center gap-3 p-3 text-left hover:bg-surface-2"
                 onClick={() => {
                   setProduct(item);
-                  setResults([]);
+                  results.setItems([]);
                   setQuery("");
                 }}
               >
@@ -101,6 +110,13 @@ function SaidaContent() {
             ))}
           </div>
         ) : null}
+        <LoadMore
+          shown={results.items.length}
+          total={results.total}
+          hasMore={results.hasMore}
+          loading={results.loadingMore}
+          onClick={() => void results.loadMore()}
+        />
       </Card>
 
       {product ? (

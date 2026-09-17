@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { prisma } from "../db";
-import { CONDITIONS, CONDITION_LABELS } from "../constants";
+import { CONDITIONS, CONDITION_LABELS, VOLTAGES, VOLTAGE_LABELS } from "../constants";
 import { createProduct } from "./products";
 import { emptyToNull } from "../validations";
 import { validationError } from "../errors";
@@ -13,6 +13,7 @@ export const IMPORT_COLUMNS = [
   "Categoria",
   "Linha",
   "Capacidade / Tamanho / Tipo",
+  "Tensão",
   "Condição",
   "Descrição",
   "Descrição das avarias",
@@ -37,6 +38,8 @@ const HEADER_ALIASES = {
   linha: "lineName",
   "capacidade / tamanho / tipo": "capacitySizeType",
   capacidade: "capacitySizeType",
+  tensao: "voltage",
+  voltage: "voltage",
   condicao: "condition",
   descricao: "description",
   "descricao das avarias": "damageDescription",
@@ -64,6 +67,17 @@ function normalizeHeader(value) {
     .trim();
 }
 
+function mapVoltage(value) {
+  const text = normalizeHeader(value).replace(/[\s-]/g, "");
+  if (!text) return null;
+  if (text === "110" || text === "110v") return VOLTAGES.V110;
+  if (text === "220" || text === "220v") return VOLTAGES.V220;
+  if (text === "bivolt" || text === "bivolts") return VOLTAGES.BIVOLT;
+  const upper = cellText(value).toUpperCase();
+  if (Object.values(VOLTAGES).includes(upper)) return upper;
+  return undefined;
+}
+
 function mapCondition(value) {
   const text = normalizeHeader(value).replace(/ /g, "_");
   if (!text) return CONDITIONS.NEW;
@@ -88,6 +102,7 @@ export async function buildImportTemplate() {
     "Televisão",
     "Samsung",
     "55 polegadas 4K",
+    "BIVOLT",
     "NOVO",
     "Unidade de exemplo",
     "",
@@ -107,6 +122,7 @@ export async function buildImportTemplate() {
   help.addRow(["Serial Onyx é obrigatório e não pode se repetir."]);
   help.addRow(["Nome comercial fica vinculado ao Model Code: unidades com o mesmo código compartilham o mesmo nome."]);
   help.addRow([`Condição: ${Object.values(CONDITION_LABELS).join(", ")} (ou NOVO, NOVO_COM_AVARIA, REVISADO).`]);
+  help.addRow([`Tensão (opcional): ${Object.values(VOLTAGE_LABELS).join(", ")}.`]);
   help.addRow(["Categoria e Linha devem existir no sistema."]);
   help.addRow(["Novo com avaria exige a coluna Descrição das avarias."]);
   return workbook.xlsx.writeBuffer();
@@ -160,6 +176,9 @@ export async function importProductsFromWorkbook(buffer, user) {
       const condition = mapCondition(payload.condition);
       if (!condition) throw new Error("Condição inválida.");
 
+      const voltage = mapVoltage(payload.voltage);
+      if (voltage === undefined) throw new Error("Tensão inválida. Use 110V, 220V ou BIVOLT.");
+
       const category = categoryByName[normalizeHeader(payload.categoryName)];
       if (!category) throw new Error("Categoria não encontrada.");
 
@@ -179,6 +198,7 @@ export async function importProductsFromWorkbook(buffer, user) {
           categoryId: category.id,
           lineId,
           capacitySizeType: payload.capacitySizeType,
+          voltage,
           condition,
           description: payload.description,
           damageDescription: payload.damageDescription,

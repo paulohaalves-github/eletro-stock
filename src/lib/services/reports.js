@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { prisma } from "../db";
-import { CONDITION_LABELS, MOVEMENT_TYPE_LABELS, STATUS_LABELS } from "../constants";
+import { CONDITION_LABELS, MOVEMENT_TYPE_LABELS, STATUS_LABELS, VOLTAGE_LABELS } from "../constants";
 import { formatCurrency, formatDateTime } from "../format";
 import { movementUnitWhere, requireActiveUnit } from "../units";
 
@@ -154,6 +154,7 @@ export async function buildReport(type, filters = {}, session) {
       "Nome comercial",
       "EAN",
       "Capacidade",
+      "Tensão",
       "Condição",
       "Status",
       "À vista",
@@ -171,6 +172,7 @@ export async function buildReport(type, filters = {}, session) {
       item.catalogModel?.commercialName || "—",
       item.ean || "—",
       item.capacitySizeType || "—",
+      VOLTAGE_LABELS[item.voltage] || item.voltage || "—",
       CONDITION_LABELS[item.condition] || item.condition,
       STATUS_LABELS[item.status] || item.status,
       formatCurrency(item.cashPrice),

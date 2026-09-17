@@ -177,6 +177,7 @@ export default function ProductDetailPage() {
               <Info label="Categoria" value={product.category?.name} />
               <Info label="Linha" value={product.line?.name} />
               <Info label="Capacidade / Tamanho / Tipo" value={product.capacitySizeType} />
+              <Info label="Tensão" value={product.voltage} />
               <Info label="Tipo de localização" value={product.location?.locationType?.name} />
               <Info label="Localização" value={product.location?.name} />
               <Info label="Entrada" value={formatDateTime(product.entryDate)} />

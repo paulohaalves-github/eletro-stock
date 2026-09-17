@@ -4,26 +4,35 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { Modal } from "@/components/modal";
 import { ROLE_LABELS, ROLES, UNIT_TYPE_LABELS } from "@/lib/constants";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 const emptyForm = { name: "", email: "", password: "", role: ROLES.STOCK, unitIds: [] };
 
 export default function UsuariosPage() {
-  const [items, setItems] = useState([]);
+  const list = usePagedList();
+  const [q, setQ] = useState("");
   const [units, setUnits] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const [users, unitData] = await Promise.all([api("/api/users"), api("/api/units")]);
-    setItems(users.items || []);
+  function loader(page, pageSize) {
+    return api(`/api/users?${listQuery({ q }, page, pageSize)}`);
+  }
+
+  async function loadUnits() {
+    const unitData = await api("/api/units");
     setUnits(unitData.items || []);
   }
 
   useEffect(() => {
-    void load().catch((error) => toast.error(error.message));
+    void loadUnits().catch((error) => toast.error(error.message));
+    void list.search(loader);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function toggleFormUnit(unitId) {
@@ -50,7 +59,7 @@ export default function UsuariosPage() {
       toast.success(data.message);
       setForm(emptyForm);
       setOpen(false);
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -62,7 +71,7 @@ export default function UsuariosPage() {
     try {
       await api(`/api/users/${user.id}`, { method: "PATCH", json: { active: !user.active } });
       toast.success("Usuário atualizado.");
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     }
@@ -72,7 +81,7 @@ export default function UsuariosPage() {
     try {
       await api(`/api/users/${user.id}`, { method: "PATCH", json: { unitIds } });
       toast.success("Unidades atualizadas.");
-      load();
+      void list.search(loader);
     } catch (error) {
       toast.error(error.message);
     }
@@ -91,7 +100,10 @@ export default function UsuariosPage() {
         subtitle="O administrador vê todas as unidades. Os demais perfis só operam nas lojas vinculadas."
         actions={<Button onClick={() => { setForm(emptyForm); setOpen(true); }}>Novo usuário</Button>}
       />
-
+      <Card className="mb-4 space-y-3">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome ou e-mail" />
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+      </Card>
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
@@ -106,7 +118,7 @@ export default function UsuariosPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((user) => (
+              {list.items.map((user) => (
                 <tr key={user.id} className="border-t border-border align-top hover:bg-surface-2/80">
                   <td className="px-5 py-4 font-medium">{user.name}</td>
                   <td className="px-5 py-4">{user.email}</td>
@@ -139,6 +151,7 @@ export default function UsuariosPage() {
           </table>
         </div>
       </Card>
+      <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loadingMore} onClick={() => void list.loadMore()} />
 
       <Modal
         open={open}

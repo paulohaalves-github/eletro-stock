@@ -1,23 +1,57 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
-import { CONDITION_LABELS, PRICE_STALE_DAYS, STATUS_LABELS, STATUSES } from "@/lib/constants";
+import {
+  CONDITION_LABELS,
+  ESTOQUE_PAGE_SIZE,
+  PRICE_STALE_DAYS,
+  STATUS_LABELS,
+  STATUSES,
+  VOLTAGE_LABELS,
+} from "@/lib/constants";
 import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
 import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
 import { can, PERMISSIONS } from "@/lib/permissions";
+
+const EMPTY_FILTERS = {
+  categoryId: "",
+  condition: "",
+  status: "",
+  voltage: "",
+  minPrice: "",
+  maxPrice: "",
+  from: "",
+  to: "",
+  locationTypeId: "",
+  locationId: "",
+  stalePriceDays: "",
+};
+
+function buildQuery(pageNumber, q, filters) {
+  const search = new URLSearchParams({
+    page: String(pageNumber),
+    pageSize: String(ESTOQUE_PAGE_SIZE),
+  });
+  if (q) search.set("q", q);
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) search.set(key, value);
+  }
+  return search.toString();
+}
 
 function EstoqueContent() {
   const params = useSearchParams();
   const router = useRouter();
   const [view, setView] = useState("table");
   const [data, setData] = useState({ items: [], total: 0 });
+  const [page, setPage] = useState(1);
   const [categories, setCategories] = useState([]);
   const [locationTypes, setLocationTypes] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -26,27 +60,34 @@ function EstoqueContent() {
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [labelIds, setLabelIds] = useState([]);
   const [q, setQ] = useState(params.get("q") || "");
-  const [filters, setFilters] = useState({
-    categoryId: "",
-    condition: "",
-    status: "",
-    minPrice: "",
-    maxPrice: "",
-    from: "",
-    to: "",
-    locationTypeId: "",
-    locationId: "",
-    stalePriceDays: "",
-  });
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [applied, setApplied] = useState({ q: params.get("q") || "", filters: EMPTY_FILTERS });
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const query = useMemo(() => {
-    const search = new URLSearchParams({ view, pageSize: "40" });
-    if (q) search.set("q", q);
-    for (const [key, value] of Object.entries(filters)) {
-      if (value) search.set(key, value);
+  const fetchPage = useCallback(async (pageNumber, { append = false, qValue, filterValue } = {}) => {
+    const searchQ = qValue !== undefined ? qValue : q;
+    const searchFilters = filterValue || filters;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    try {
+      const result = await api(`/api/products?${buildQuery(pageNumber, searchQ, searchFilters)}`);
+      setData((current) =>
+        append ? { ...result, items: [...current.items, ...result.items] } : result,
+      );
+      setPage(pageNumber);
+      if (!append) {
+        setSelected(new Set());
+        setApplied({ q: searchQ, filters: searchFilters });
+      }
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
-    return search.toString();
-  }, [q, view, filters]);
+  }, [q, filters]);
 
   useEffect(() => {
     Promise.all([api("/api/auth/me"), api("/api/categories"), api("/api/location-types"), api("/api/locations")]).then(([auth, c, types, locs]) => {
@@ -58,13 +99,22 @@ function EstoqueContent() {
   }, []);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      api(`/api/products?${query}`).then(setData);
-    }, 150);
-    return () => clearTimeout(timeout);
-  }, [query]);
+    void fetchPage(1, { qValue: params.get("q") || "" });
+    // Carga inicial: busca só no mount (e quando a URL já traz ?q=).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const allVisibleSelected = data.items.length > 0 && data.items.every((item) => selected.has(item.id));
+  const hasMore = data.items.length < data.total;
+  const canTransfer = me ? can(me.role, PERMISSIONS.STOCK_TRANSFER) : false;
+
+  function searchNow(qValue) {
+    if (qValue !== undefined) {
+      setQ(qValue);
+      router.push(qValue ? `/estoque?q=${encodeURIComponent(qValue)}` : "/estoque");
+    }
+    void fetchPage(1, { qValue: qValue !== undefined ? qValue : q });
+  }
 
   function toggleSelected(id, checked) {
     setSelected((current) => {
@@ -112,13 +162,39 @@ function EstoqueContent() {
     router.push(`/transferencias?ids=${ids.join(",")}`);
   }
 
-  const canTransfer = me ? can(me.role, PERMISSIONS.STOCK_TRANSFER) : false;
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const ids = [...selected];
+      const blob = await api("/api/products/export", {
+        method: "POST",
+        json: ids.length ? { ids } : { q: applied.q, ...applied.filters },
+        blob: true,
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "estoque.xlsx";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const exportLabel = selected.size
+    ? `Exportar selecionados (${selected.size})`
+    : data.total
+      ? `Exportar resultado do filtro (${data.total})`
+      : "Exportar Excel";
 
   return (
     <div>
       <PageHeader
         title="Produtos"
-        subtitle={`${data.total} aparelho(s) nesta unidade`}
+        subtitle={data.total ? `${data.total} aparelho(s) nesta unidade` : "Busque e filtre o estoque desta unidade."}
         actions={
           <>
             {canTransfer ? (
@@ -137,6 +213,13 @@ function EstoqueContent() {
             >
               Imprimir etiquetas{selected.size ? ` (${selected.size})` : ""}
             </Button>
+            <Button
+              variant="secondary"
+              disabled={exporting || (!selected.size && !data.total)}
+              onClick={exportExcel}
+            >
+              {exporting ? "Exportando..." : exportLabel}
+            </Button>
             <Button variant="secondary" onClick={() => setView(view === "table" ? "cards" : "table")}>
               {view === "table" ? "Ver cards" : "Ver tabela"}
             </Button>
@@ -153,8 +236,7 @@ function EstoqueContent() {
           onChange={setQ}
           onScan={(parsed) => {
             const text = parsed.query ?? parsed.raw ?? "";
-            setQ(text);
-            router.push(`/estoque?q=${encodeURIComponent(text)}`);
+            searchNow(text);
           }}
           placeholder="ID, Serial Onyx, EAN, model code, categoria..."
         />
@@ -174,6 +256,12 @@ function EstoqueContent() {
           <Select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
             <option value="">Status</option>
             {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
+          <Select value={filters.voltage} onChange={(e) => setFilters({ ...filters, voltage: e.target.value })}>
+            <option value="">Tensão</option>
+            {Object.entries(VOLTAGE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </Select>
@@ -211,14 +299,27 @@ function EstoqueContent() {
               ))}
           </Select>
         </div>
-        {data.items.length ? (
-          <button type="button" className="text-sm text-accent" onClick={() => toggleVisible(!allVisibleSelected)}>
-            {allVisibleSelected ? "Limpar seleção visível" : "Selecionar visíveis"}
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {data.items.length ? (
+            <button type="button" className="text-sm text-accent" onClick={() => toggleVisible(!allVisibleSelected)}>
+              {allVisibleSelected ? "Limpar seleção visível" : "Selecionar visíveis"}
+            </button>
+          ) : <span />}
+          <Button type="button" onClick={() => searchNow()} disabled={loading}>
+            {loading ? "Buscando..." : "Buscar"}
+          </Button>
+        </div>
       </Card>
 
-      {view === "cards" ? (
+      {loading && !data.items.length ? (
+        <p className="text-sm text-muted">Carregando produtos...</p>
+      ) : null}
+
+      {!loading && !data.items.length ? (
+        <p className="text-sm text-muted">Nenhum produto encontrado. Ajuste os filtros e clique em Buscar.</p>
+      ) : null}
+
+      {data.items.length && view === "cards" ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data.items.map((item) => (
             <div key={item.id} className="card relative overflow-hidden hover:border-accent/50">
@@ -237,7 +338,11 @@ function EstoqueContent() {
                     <StatusBadge status={item.status} />
                   </div>
                   <p className="font-medium">{item.commercialName || item.supplierModelCode || item.category?.name}</p>
-                  <p className="text-xs text-muted">{item.serialOnyx} · {item.category?.name}{item.locationPath ? ` · ${item.locationPath}` : ""}</p>
+                  <p className="text-xs text-muted">
+                    {item.serialOnyx} · {item.category?.name}
+                    {item.voltage ? ` · ${item.voltage}` : ""}
+                    {item.locationPath ? ` · ${item.locationPath}` : ""}
+                  </p>
                   <div className="flex items-center justify-between">
                     <ConditionBadge condition={item.condition} />
                     <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
@@ -248,9 +353,11 @@ function EstoqueContent() {
             </div>
           ))}
         </div>
-      ) : (
+      ) : null}
+
+      {data.items.length && view === "table" ? (
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-left text-sm">
+          <table className="w-full min-w-[1160px] text-left text-sm">
             <thead className="text-xs uppercase text-muted">
               <tr>
                 <th className="px-3 py-3">
@@ -261,7 +368,7 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Condição", "À vista", "Parcelado", "Preço atualizado", "Status", "Entrada"].map((col) => (
+                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Parcelado", "Preço atualizado", "Status", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
               </tr>
@@ -288,6 +395,7 @@ function EstoqueContent() {
                   <td className="px-3 py-2">{item.supplierModelCode || "—"}</td>
                   <td className="px-3 py-2">{item.ean || "—"}</td>
                   <td className="px-3 py-2">{item.capacitySizeType || "—"}</td>
+                  <td className="px-3 py-2">{item.voltage || "—"}</td>
                   <td className="px-3 py-2"><ConditionBadge condition={item.condition} /></td>
                   <td className="px-3 py-2">{formatCurrency(item.cashPrice)}</td>
                   <td className="px-3 py-2">{formatCurrency(item.installmentPrice)}</td>
@@ -299,7 +407,25 @@ function EstoqueContent() {
             </tbody>
           </table>
         </div>
-      )}
+      ) : null}
+
+      {data.items.length ? (
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <p className="text-sm text-muted">
+            Exibindo {data.items.length} de {data.total}
+          </p>
+          {hasMore ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={loadingMore}
+              onClick={() => void fetchPage(page + 1, { append: true, qValue: applied.q, filterValue: applied.filters })}
+            >
+              {loadingMore ? "Carregando..." : "Carregar mais"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <LabelModelPicker
         open={labelPickerOpen}

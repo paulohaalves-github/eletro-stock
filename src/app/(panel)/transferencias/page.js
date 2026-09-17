@@ -7,12 +7,15 @@ import { toast } from "sonner";
 import { X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/ui";
+import { LoadMore, SearchActions } from "@/components/paged-list";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { ConfirmDialog } from "@/components/modal";
 import { LocationPickers } from "@/components/location-pickers";
 import { ScanField } from "@/components/scan-field";
 import { STATUSES, UNIT_TYPE_LABELS } from "@/lib/constants";
 import { formatCurrency, formatProductId } from "@/lib/format";
+import { listQuery } from "@/lib/pagination";
+import { usePagedList } from "@/hooks/use-paged-list";
 
 function toggleId(setter, id, checked) {
   setter((current) => {
@@ -35,7 +38,7 @@ function TransferenciasContent() {
   const [me, setMe] = useState(null);
   const [units, setUnits] = useState([]);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
+  const results = usePagedList();
   const [batch, setBatch] = useState([]);
   const [toUnitId, setToUnitId] = useState("");
   const [observation, setObservation] = useState("");
@@ -98,22 +101,27 @@ function TransferenciasContent() {
       .catch((error) => toast.error(error.message));
   }, [params]);
 
-  useEffect(() => {
-    const timeout = setTimeout(async () => {
-      if (!query.trim()) {
-        setResults([]);
-        return;
-      }
-      const data = await api(`/api/search?q=${encodeURIComponent(query)}&limit=12`);
-      setResults((data.items || []).filter((item) => item.status === STATUSES.AVAILABLE));
-    }, 180);
-    return () => clearTimeout(timeout);
-  }, [query]);
-
   const destinations = units.filter((unit) => String(unit.id) !== String(me?.activeUnitId));
   const canSend = batch.length > 0 && Boolean(toUnitId) && batch.every((item) => item.status === STATUSES.AVAILABLE);
   const allIncomingSelected = incoming.length > 0 && incoming.every((item) => selectedIncoming.has(item.id));
   const allOutgoingSelected = outgoing.length > 0 && outgoing.every((item) => selectedOutgoing.has(item.id));
+
+  async function searchAvailable(text) {
+    const value = text !== undefined ? text : query;
+    if (text !== undefined) setQuery(text);
+    if (!String(value || "").trim()) {
+      results.setItems([]);
+      return [];
+    }
+    const data = await results.search(async (page, pageSize) => {
+      const payload = await api(`/api/search?${listQuery({ q: value }, page, pageSize)}`);
+      return {
+        ...payload,
+        items: (payload.items || []).filter((item) => item.status === STATUSES.AVAILABLE),
+      };
+    });
+    return data?.items || [];
+  }
 
   function addToBatch(item) {
     if (item.status !== STATUSES.AVAILABLE) {
@@ -122,12 +130,12 @@ function TransferenciasContent() {
     }
     if (batch.some((product) => product.id === item.id)) {
       toast.message(`${formatProductId(item.id)} já está no lote.`);
-      setResults([]);
+      results.setItems([]);
       setQuery("");
       return;
     }
     setBatch((current) => [...current, item]);
-    setResults([]);
+    results.setItems([]);
     setQuery("");
   }
 
@@ -138,15 +146,12 @@ function TransferenciasContent() {
   async function addFromScan(parsed) {
     const text = String(parsed?.query || parsed?.raw || "").trim();
     if (!text) return;
-    setQuery(text);
     try {
-      const data = await api(`/api/search?q=${encodeURIComponent(text)}&limit=12`);
-      const available = (data.items || []).filter((item) => item.status === STATUSES.AVAILABLE);
+      const available = await searchAvailable(text);
       if (available.length === 1) {
         addToBatch(available[0]);
         return;
       }
-      setResults(available);
       if (!available.length) toast.error("Nenhum produto disponível encontrado.");
     } catch (error) {
       toast.error(error.message);
@@ -196,9 +201,12 @@ function TransferenciasContent() {
           <Field label="Localizar e adicionar produto disponível">
             <ScanField value={query} onChange={setQuery} onScan={addFromScan} />
           </Field>
-          {results.length ? (
+          <div className="mt-3">
+            <SearchActions loading={results.loading} onSearch={() => void searchAvailable()} />
+          </div>
+          {results.items.length ? (
             <div className="mt-3 divide-y divide-border rounded-xl border border-border">
-              {results.map((item) => (
+              {results.items.map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -215,6 +223,13 @@ function TransferenciasContent() {
               ))}
             </div>
           ) : null}
+          <LoadMore
+            shown={results.items.length}
+            total={results.total}
+            hasMore={results.hasMore}
+            loading={results.loadingMore}
+            onClick={() => void results.loadMore()}
+          />
 
           {batch.length ? (
             <div className="mt-4 space-y-3">

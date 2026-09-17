@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { notFound, validationError } from "../errors";
 import { writeAudit } from "../audit";
 import { emptyToNull } from "../validations";
+import { paginationResult, parsePagination } from "../pagination";
 
 const customerSelect = {
   id: true,
@@ -50,7 +51,7 @@ function validateCustomerPayload(payload, { partial = false } = {}) {
   return data;
 }
 
-export async function listCustomers({ q, page = 1, pageSize = 40 } = {}) {
+export async function listCustomers({ q, page = 1, pageSize } = {}) {
   const where = {};
   const text = String(q || "").trim();
   if (text) {
@@ -63,21 +64,19 @@ export async function listCustomers({ q, page = 1, pageSize = 40 } = {}) {
     ];
   }
 
-  const take = Math.min(Number(pageSize) || 40, 100);
-  const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
-
+  const pagination = parsePagination({ page, pageSize });
   const [total, items] = await Promise.all([
     prisma.customer.count({ where }),
     prisma.customer.findMany({
       where,
       select: customerSelect,
       orderBy: { name: "asc" },
-      skip,
-      take,
+      skip: pagination.skip,
+      take: pagination.take,
     }),
   ]);
 
-  return { items, total, page: Math.max(Number(page) || 1, 1), pageSize: take };
+  return paginationResult(items, total, pagination);
 }
 
 export async function getCustomer(id) {
