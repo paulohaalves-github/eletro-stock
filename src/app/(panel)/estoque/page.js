@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { ActionMenu } from "@/components/action-menu";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import {
   CONDITION_LABELS,
@@ -197,32 +198,31 @@ function EstoqueContent() {
         subtitle={data.total ? `${data.total} aparelho(s) nesta unidade` : "Busque e filtre o estoque desta unidade."}
         actions={
           <>
-            {canTransfer ? (
-              <Button
-                variant="secondary"
-                disabled={!selected.size}
-                onClick={transferSelected}
-              >
-                Transferir lote{selected.size ? ` (${selected.size})` : ""}
-              </Button>
-            ) : null}
-            <Button
-              variant="secondary"
-              disabled={!selected.size}
-              onClick={() => printLabels([...selected])}
-            >
-              Imprimir etiquetas{selected.size ? ` (${selected.size})` : ""}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={exporting || (!selected.size && !data.total)}
-              onClick={exportExcel}
-            >
-              {exporting ? "Exportando..." : exportLabel}
-            </Button>
-            <Button variant="secondary" onClick={() => setView(view === "table" ? "cards" : "table")}>
-              {view === "table" ? "Ver cards" : "Ver tabela"}
-            </Button>
+            <ActionMenu
+              items={[
+                canTransfer
+                  ? {
+                      label: `Transferir lote${selected.size ? ` (${selected.size})` : ""}`,
+                      disabled: !selected.size,
+                      onClick: transferSelected,
+                    }
+                  : null,
+                {
+                  label: `Imprimir etiquetas${selected.size ? ` (${selected.size})` : ""}`,
+                  disabled: !selected.size,
+                  onClick: () => printLabels([...selected]),
+                },
+                {
+                  label: exporting ? "Exportando..." : exportLabel,
+                  disabled: exporting || (!selected.size && !data.total),
+                  onClick: exportExcel,
+                },
+                {
+                  label: view === "table" ? "Ver cards" : "Ver tabela",
+                  onClick: () => setView(view === "table" ? "cards" : "table"),
+                },
+              ]}
+            />
             <Link href="/entrada">
               <Button>Nova entrada</Button>
             </Link>
@@ -305,9 +305,24 @@ function EstoqueContent() {
               {allVisibleSelected ? "Limpar seleção visível" : "Selecionar visíveis"}
             </button>
           ) : <span />}
-          <Button type="button" onClick={() => searchNow()} disabled={loading}>
-            {loading ? "Buscando..." : "Buscar"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setQ("");
+                setFilters(EMPTY_FILTERS);
+                router.push("/estoque");
+                void fetchPage(1, { qValue: "", filterValue: EMPTY_FILTERS });
+              }}
+              disabled={loading}
+            >
+              Limpar filtros
+            </Button>
+            <Button type="button" onClick={() => searchNow()} disabled={loading}>
+              {loading ? "Buscando..." : "Buscar"}
+            </Button>
+          </div>
         </div>
       </Card>
 

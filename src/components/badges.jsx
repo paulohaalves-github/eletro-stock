@@ -4,6 +4,7 @@ import {
   WORK_ORDER_EVENT_LABELS,
   WORK_ORDER_STATUS_LABELS,
   WORK_ORDER_PART_STATUS_LABELS,
+  WORK_ORDER_TYPE_LABELS,
 } from "@/lib/constants";
 import { cn } from "@/lib/format";
 
@@ -60,6 +61,18 @@ const PART_REQUEST_STYLES = {
   ATENDIDA: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
   RECUSADA: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
 };
+
+export function WorkOrderTypeBadge({ type }) {
+  const styles = {
+    POS_VENDA: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+    REPARO_ESTOQUE: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  };
+  return (
+    <Badge className={styles[type] || "bg-surface-2 text-muted ring-border"}>
+      {WORK_ORDER_TYPE_LABELS[type] || type}
+    </Badge>
+  );
+}
 
 export function WorkOrderStatusBadge({ status }) {
   return (

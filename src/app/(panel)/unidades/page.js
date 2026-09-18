@@ -71,7 +71,14 @@ export default function UnidadesPage() {
       />
       <Card className="mb-4 space-y-3">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar unidade" />
-        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+        <SearchActions
+          loading={list.loading}
+          onSearch={() => void list.search(loader)}
+          onClear={() => {
+            setQ("");
+            void list.search((page, pageSize) => api(`/api/units?all=1&${listQuery({ q: "" }, page, pageSize)}`));
+          }}
+        />
       </Card>
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">

@@ -28,6 +28,7 @@ import {
   Wrench,
   Package,
   ClipboardList,
+  Headphones,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -72,12 +73,19 @@ const NAV_GROUPS = [
     ],
   },
   {
+    id: "atendimento",
+    label: "Atendimento",
+    icon: Headphones,
+    items: [
+      { href: "/clientes", label: "Clientes", icon: Users, permission: PERMISSIONS.CUSTOMER_VIEW },
+    ],
+  },
+  {
     id: "reparo",
     label: "Reparo Técnico",
     icon: Wrench,
     items: [
       { href: "/reparos", label: "Ordens de serviço", icon: Wrench, permission: PERMISSIONS.REPAIR_VIEW },
-      { href: "/clientes", label: "Clientes", icon: Users, permission: PERMISSIONS.CUSTOMER_VIEW },
       { href: "/pecas", label: "Peças", icon: Package, permission: PERMISSIONS.PART_VIEW },
       { href: "/pecas/solicitacoes", label: "Solicitações de peça", icon: ClipboardList, permission: PERMISSIONS.PART_VIEW },
     ],

@@ -232,7 +232,25 @@ export default function PecasPage() {
               />
             </Field>
           </div>
-          <Button type="submit" disabled={list.loading}>{list.loading ? "Buscando..." : "Buscar"}</Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={list.loading}
+              onClick={async () => {
+                setSearchText("");
+                setAppliedQuery("");
+                const result = await list.search(partsLoader(""));
+                const nextItems = result?.items || [];
+                if (selectedPartId && !nextItems.some((item) => String(item.id) === String(selectedPartId))) {
+                  selectPart("");
+                }
+              }}
+            >
+              Limpar filtros
+            </Button>
+            <Button type="submit" disabled={list.loading}>{list.loading ? "Buscando..." : "Buscar"}</Button>
+          </div>
         </form>
       </Card>
 

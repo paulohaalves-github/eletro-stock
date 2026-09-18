@@ -181,7 +181,14 @@ export default function LocalizacoesPage() {
 
       <Card className="mb-0 space-y-3 p-4">
         <Input value={typeQ} onChange={(e) => setTypeQ(e.target.value)} placeholder="Buscar tipo de localização" />
-        <SearchActions loading={typesList.loading} onSearch={() => void typesList.search(typesLoader)} />
+        <SearchActions
+          loading={typesList.loading}
+          onSearch={() => void typesList.search(typesLoader)}
+          onClear={() => {
+            setTypeQ("");
+            void typesList.search((page, pageSize) => api(`/api/location-types?includeCounts=true&${listQuery({ q: "" }, page, pageSize)}`));
+          }}
+        />
       </Card>
 
       <Card className="w-full overflow-hidden p-0">
@@ -245,7 +252,14 @@ export default function LocalizacoesPage() {
           {selectedType ? (
             <div className="mt-3 space-y-3">
               <Input value={locationQ} onChange={(e) => setLocationQ(e.target.value)} placeholder="Buscar localização" />
-              <SearchActions loading={locationsList.loading} onSearch={() => void locationsList.search(locationsLoader)} />
+              <SearchActions
+                loading={locationsList.loading}
+                onSearch={() => void locationsList.search(locationsLoader)}
+                onClear={() => {
+                  setLocationQ("");
+                  void locationsList.search((page, pageSize) => api(`/api/locations?includeCounts=true&${listQuery({ q: "", locationTypeId: selectedTypeId }, page, pageSize)}`));
+                }}
+              />
             </div>
           ) : null}
         </div>

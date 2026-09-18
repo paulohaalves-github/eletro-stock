@@ -202,7 +202,14 @@ function TransferenciasContent() {
             <ScanField value={query} onChange={setQuery} onScan={addFromScan} />
           </Field>
           <div className="mt-3">
-            <SearchActions loading={results.loading} onSearch={() => void searchAvailable()} />
+            <SearchActions
+              loading={results.loading}
+              onSearch={() => void searchAvailable()}
+              onClear={() => {
+                setQuery("");
+                results.setItems([]);
+              }}
+            />
           </div>
           {results.items.length ? (
             <div className="mt-3 divide-y divide-border rounded-xl border border-border">

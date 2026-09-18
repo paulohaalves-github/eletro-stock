@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { LoadMore, SearchActions } from "@/components/paged-list";
-import { WorkOrderStatusBadge } from "@/components/badges";
-import { SERVICE_PLACE_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/constants";
+import { WorkOrderStatusBadge, WorkOrderTypeBadge } from "@/components/badges";
+import { SERVICE_PLACE_LABELS, WORK_ORDER_STATUS_LABELS, WORK_ORDER_TYPE_LABELS, WORK_ORDER_TYPES } from "@/lib/constants";
 import { formatDateTime, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
@@ -37,12 +37,16 @@ function WorkOrderCard({ item, onOpen }) {
         <p className="font-semibold text-accent">{item.number}</p>
         <span className="text-[11px] text-muted">{SERVICE_PLACE_LABELS[item.servicePlace]}</span>
       </div>
+      <div className="mb-2">
+        <WorkOrderTypeBadge type={item.type} />
+      </div>
       <p className="line-clamp-2 text-sm font-medium">
         {item.commercialName || item.product?.serialOnyx || "—"}
       </p>
       <p className="mt-1 text-xs text-muted">{formatProductId(item.productId)}</p>
       <p className="mt-2 text-sm text-muted">{item.customer?.name || "—"}</p>
-      <p className="mt-2 text-[11px] text-muted">{formatDateTime(item.openedAt)}</p>
+      <p className="mt-2 text-[11px] text-muted">Abertura: {formatDateTime(item.openedAt)}</p>
+      <p className="text-[11px] text-muted">Encerramento: {item.closedAt ? formatDateTime(item.closedAt) : "—"}</p>
     </button>
   );
 }
@@ -55,9 +59,38 @@ export default function ReparosPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [servicePlace, setServicePlace] = useState("");
+  const [openedFrom, setOpenedFrom] = useState("");
+  const [openedTo, setOpenedTo] = useState("");
+  const [closedFrom, setClosedFrom] = useState("");
+  const [closedTo, setClosedTo] = useState("");
+  const [type, setType] = useState("");
+  const [typeCounts, setTypeCounts] = useState({
+    [WORK_ORDER_TYPES.AFTER_SALES]: 0,
+    [WORK_ORDER_TYPES.STOCK_REPAIR]: 0,
+  });
 
-  function loader(page, pageSize) {
-    return api(`/api/work-orders?${listQuery({ q, status, servicePlace }, page, pageSize)}`);
+  function currentFilters() {
+    return { q, status, servicePlace, type, openedFrom, openedTo, closedFrom, closedTo };
+  }
+
+  function loader(page, pageSize, filters = currentFilters()) {
+    return api(`/api/work-orders?${listQuery(filters, page, pageSize)}`).then((result) => {
+      if (result.typeCounts) setTypeCounts(result.typeCounts);
+      return result;
+    });
+  }
+
+  function clearFilters() {
+    const empty = { q: "", status: "", servicePlace: "", type: "", openedFrom: "", openedTo: "", closedFrom: "", closedTo: "" };
+    setQ(empty.q);
+    setStatus(empty.status);
+    setServicePlace(empty.servicePlace);
+    setType(empty.type);
+    setOpenedFrom(empty.openedFrom);
+    setOpenedTo(empty.openedTo);
+    setClosedFrom(empty.closedFrom);
+    setClosedTo(empty.closedTo);
+    void list.search((page, pageSize) => loader(page, pageSize, empty));
   }
 
   useEffect(() => {
@@ -89,7 +122,7 @@ export default function ReparosPage() {
     <div className="w-full">
       <PageHeader
         title="Ordens de serviço"
-        subtitle="Acompanhe o reparo na garantia, no laboratório do grupo ou na casa do cliente."
+        subtitle="Acompanhe OS de pós-venda e de reparo de estoque, no laboratório ou na casa do cliente."
         actions={
           <>
             <Button
@@ -102,9 +135,25 @@ export default function ReparosPage() {
           </>
         }
       />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-muted">{WORK_ORDER_TYPE_LABELS.POS_VENDA}</p>
+          <p className="mt-2 text-2xl font-semibold">{typeCounts[WORK_ORDER_TYPES.AFTER_SALES] || 0}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-muted">{WORK_ORDER_TYPE_LABELS.REPARO_ESTOQUE}</p>
+          <p className="mt-2 text-2xl font-semibold">{typeCounts[WORK_ORDER_TYPES.STOCK_REPAIR] || 0}</p>
+        </Card>
+      </div>
       <Card className="mb-4 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OS, serial, cliente ou defeito" />
+          <Select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">Todos os tipos</option>
+            {Object.entries(WORK_ORDER_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
           <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todos os status</option>
             {Object.entries(WORK_ORDER_STATUS_LABELS).map(([value, label]) => (
@@ -118,7 +167,21 @@ export default function ReparosPage() {
             ))}
           </Select>
         </div>
-        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Abertura de">
+            <Input type="date" value={openedFrom} onChange={(e) => setOpenedFrom(e.target.value)} />
+          </Field>
+          <Field label="Abertura até">
+            <Input type="date" value={openedTo} onChange={(e) => setOpenedTo(e.target.value)} />
+          </Field>
+          <Field label="Encerramento de">
+            <Input type="date" value={closedFrom} onChange={(e) => setClosedFrom(e.target.value)} />
+          </Field>
+          <Field label="Encerramento até">
+            <Input type="date" value={closedTo} onChange={(e) => setClosedTo(e.target.value)} />
+          </Field>
+        </div>
+        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} onClear={clearFilters} />
       </Card>
 
       {view === "kanban" ? (
@@ -156,14 +219,16 @@ export default function ReparosPage() {
       ) : (
         <Card className="w-full overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="px-5 py-3 font-semibold">OS</th>
+                  <th className="px-5 py-3 font-semibold">Tipo</th>
                   <th className="px-5 py-3 font-semibold">Produto</th>
                   <th className="px-5 py-3 font-semibold">Cliente</th>
                   <th className="px-5 py-3 font-semibold">Local</th>
                   <th className="px-5 py-3 font-semibold">Abertura</th>
+                  <th className="px-5 py-3 font-semibold">Encerramento</th>
                   <th className="px-5 py-3 font-semibold">Status</th>
                 </tr>
               </thead>
@@ -175,13 +240,15 @@ export default function ReparosPage() {
                     onClick={() => openOrder(item.id)}
                   >
                     <td className="px-5 py-4 font-semibold text-accent">{item.number}</td>
+                    <td className="px-5 py-4"><WorkOrderTypeBadge type={item.type} /></td>
                     <td className="px-5 py-4">
                       <p className="font-medium">{item.commercialName || item.product?.serialOnyx}</p>
                       <p className="text-xs text-muted">{formatProductId(item.productId)}</p>
                     </td>
-                    <td className="px-5 py-4">{item.customer?.name}</td>
+                    <td className="px-5 py-4">{item.customer?.name || "—"}</td>
                     <td className="px-5 py-4 text-muted">{SERVICE_PLACE_LABELS[item.servicePlace]}</td>
                     <td className="px-5 py-4 text-muted">{formatDateTime(item.openedAt)}</td>
+                    <td className="px-5 py-4 text-muted">{item.closedAt ? formatDateTime(item.closedAt) : "—"}</td>
                     <td className="px-5 py-4"><WorkOrderStatusBadge status={item.status} /></td>
                   </tr>
                 ))}

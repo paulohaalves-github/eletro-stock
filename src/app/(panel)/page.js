@@ -82,6 +82,24 @@ export default function DashboardPage() {
             <Button type="button" onClick={() => void loadDashboard()} disabled={loading}>
               {loading ? "Buscando..." : "Buscar"}
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={loading}
+              onClick={() => {
+                setPeriod("30d");
+                setFrom("");
+                setTo("");
+                const query = new URLSearchParams({ period: "30d" });
+                setLoading(true);
+                api(`/api/dashboard?${query}`)
+                  .then(setData)
+                  .catch(() => setData(null))
+                  .finally(() => setLoading(false));
+              }}
+            >
+              Limpar filtros
+            </Button>
           </div>
         }
       />

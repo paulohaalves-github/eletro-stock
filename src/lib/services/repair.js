@@ -6,10 +6,14 @@ import {
   SERVICE_PLACES,
   STATUSES,
   WORK_ORDER_CLOSED_STATUSES,
+  WORK_ORDER_OPENABLE_STATUSES,
   WORK_ORDER_PART_STATUSES,
   WORK_ORDER_STATUSES,
   WORK_ORDER_STATUS_LABELS,
+  WORK_ORDER_TYPES,
   WORK_ORDER_EVENT_TYPES,
+  isStockRepair,
+  resolveWorkOrderType,
 } from "../constants";
 import { emptyToNull, parseId, toNumber } from "../validations";
 import { paginationResult, parsePagination } from "../pagination";
@@ -18,9 +22,10 @@ import {
   getLabUnit,
   requireActiveUnit,
   unitSelect,
+  canViewProduct,
 } from "../units";
 import { movementUnitFields } from "./products";
-import { getLatestSale } from "./sales";
+import { getLatestSale, serializeSale } from "./sales";
 import { formatLocationPath } from "../format";
 
 const locationInclude = { locationType: true };
@@ -115,10 +120,40 @@ function assertOpen(order) {
   }
 }
 
-export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSize } = {}, session) {
+function parseLocalDay(value, hours, minutes, seconds, ms) {
+  const text = String(value || "").trim();
+  if (!text) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hours, minutes, seconds, ms);
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return undefined;
+  date.setHours(hours, minutes, seconds, ms);
+  return date;
+}
+
+function dateRange(from, to) {
+  if (!from && !to) return undefined;
+  const range = {};
+  const start = parseLocalDay(from, 0, 0, 0, 0);
+  const end = parseLocalDay(to, 23, 59, 59, 999);
+  if (start) range.gte = start;
+  if (end) range.lte = end;
+  return range.gte || range.lte ? range : undefined;
+}
+
+export async function listWorkOrders(
+  { q, status, servicePlace, type, openedFrom, openedTo, closedFrom, closedTo, page = 1, pageSize } = {},
+  session,
+) {
   const where = { ...workOrderWhere(session) };
   if (status) where.status = status;
   if (servicePlace) where.servicePlace = servicePlace;
+  const openedAt = dateRange(openedFrom, openedTo);
+  if (openedAt) where.openedAt = openedAt;
+  const closedAt = dateRange(closedFrom, closedTo);
+  if (closedAt) where.closedAt = closedAt;
   const text = String(q || "").trim();
   if (text) {
     where.AND = [
@@ -135,8 +170,11 @@ export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSi
     ];
   }
 
+  const countWhere = { ...where };
+  if (type && Object.values(WORK_ORDER_TYPES).includes(type)) where.type = type;
+
   const pagination = parsePagination({ page, pageSize });
-  const [total, rows] = await Promise.all([
+  const [total, rows, grouped] = await Promise.all([
     prisma.workOrder.count({ where }),
     prisma.workOrder.findMany({
       where,
@@ -155,9 +193,22 @@ export async function listWorkOrders({ q, status, servicePlace, page = 1, pageSi
       skip: pagination.skip,
       take: pagination.take,
     }),
+    prisma.workOrder.groupBy({
+      by: ["type"],
+      where: countWhere,
+      _count: { _all: true },
+    }),
   ]);
 
-  return paginationResult(rows.map(serializeWorkOrder), total, pagination);
+  const typeCounts = {
+    [WORK_ORDER_TYPES.AFTER_SALES]: 0,
+    [WORK_ORDER_TYPES.STOCK_REPAIR]: 0,
+  };
+  for (const row of grouped) {
+    if (row.type in typeCounts) typeCounts[row.type] = row._count._all;
+  }
+
+  return { ...paginationResult(rows.map(serializeWorkOrder), total, pagination), typeCounts };
 }
 
 export async function getWorkOrder(id, session) {
@@ -172,21 +223,22 @@ export async function getWorkOrder(id, session) {
 export async function createWorkOrder(payload, user) {
   const unitId = requireActiveUnit(user);
   const productId = parseId(payload.productId);
-  const servicePlace = payload.servicePlace;
   const reportedDefect = String(payload.reportedDefect || "").trim();
-
-  if (!Object.values(SERVICE_PLACES).includes(servicePlace)) {
-    throw validationError("Informe se o reparo será no laboratório ou na casa do cliente.");
-  }
-  if (!reportedDefect) throw validationError("Descreva o defeito relatado pelo cliente.");
+  if (!reportedDefect) throw validationError("Descreva o defeito relatado.");
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
     include: { catalogModel: true, unit: { select: unitSelect } },
   });
   if (!product) throw notFound("Produto não encontrado.");
-  if (product.status !== STATUSES.SOLD) {
-    throw validationError("Só é possível abrir OS de produto vendido e ainda na garantia.");
+  assertProductCanOpenWorkOrder(product);
+
+  const type = resolveWorkOrderType(product);
+  let servicePlace = payload.servicePlace;
+  if (type === WORK_ORDER_TYPES.STOCK_REPAIR) {
+    servicePlace = SERVICE_PLACES.LAB;
+  } else if (!Object.values(SERVICE_PLACES).includes(servicePlace)) {
+    throw validationError("Informe se o reparo será no laboratório ou na casa do cliente.");
   }
 
   const open = await prisma.workOrder.findFirst({
@@ -195,28 +247,32 @@ export async function createWorkOrder(payload, user) {
   });
   if (open) throw conflict(`Já existe a ordem ${open.number} aberta para este produto.`);
 
-  const saleRecord = await getLatestSale(product.id);
-  let sale = saleRecord;
-  if (!sale) {
-    if (!payload.customerId || !payload.warrantyMonths || !String(payload.invoiceNumber || "").trim()) {
-      throw validationError("Informe o cliente, os meses de garantia e o número da NF para vincular esta venda.");
+  let sale = null;
+  if (type === WORK_ORDER_TYPES.AFTER_SALES) {
+    const saleRecord = await getLatestSale(product.id);
+    sale = saleRecord;
+    if (!sale) {
+      if (!payload.customerId || !payload.warrantyMonths || !String(payload.invoiceNumber || "").trim()) {
+        throw validationError("Informe o cliente, os meses de garantia e o número da NF para vincular esta venda.");
+      }
+      const { createSale } = await import("./sales");
+      sale = await createSale({
+        productId: product.id,
+        customerId: payload.customerId,
+        warrantyMonths: payload.warrantyMonths,
+        invoiceNumber: payload.invoiceNumber,
+        soldAt: payload.soldAt,
+        user,
+        product: { ...product, status: STATUSES.SOLD },
+      });
+    } else if (!sale.warrantyValid) {
+      throw validationError("A garantia deste produto já venceu. Fora de garantia não é atendido neste módulo.");
     }
-    const { createSale } = await import("./sales");
-    sale = await createSale({
-      productId: product.id,
-      customerId: payload.customerId,
-      warrantyMonths: payload.warrantyMonths,
-      invoiceNumber: payload.invoiceNumber,
-      soldAt: payload.soldAt,
-      user,
-      product: { ...product, status: STATUSES.SOLD },
-    });
-  } else if (!sale.warrantyValid) {
-    throw validationError("A garantia deste produto já venceu. Fora de garantia não é atendido neste módulo.");
+    if (!sale.warrantyValid) {
+      throw validationError("A garantia deste produto já venceu. Fora de garantia não é atendido neste módulo.");
+    }
   }
-  if (!sale.warrantyValid) {
-    throw validationError("A garantia deste produto já venceu. Fora de garantia não é atendido neste módulo.");
-  }
+
   const lab = servicePlace === SERVICE_PLACES.LAB ? await getLabUnit() : null;
 
   const created = await prisma.$transaction(async (tx) => {
@@ -224,10 +280,11 @@ export async function createWorkOrder(payload, user) {
       data: {
         number: `TMP-${Date.now()}-${user.id}`,
         productId: product.id,
-        saleId: sale.id,
-        customerId: sale.customerId,
+        saleId: sale?.id ?? null,
+        customerId: sale?.customerId ?? null,
         unitId,
         labUnitId: lab?.id ?? null,
+        type,
         servicePlace,
         status: WORK_ORDER_STATUSES.OPEN,
         reportedDefect,
@@ -251,12 +308,13 @@ export async function createWorkOrder(payload, user) {
       data: productData,
     });
 
+    const typeLabel = type === WORK_ORDER_TYPES.STOCK_REPAIR ? "reparo de estoque" : "pós-venda";
     await addEvent(tx, {
       workOrderId: order.id,
       type: "ABERTURA",
       message: lab
-        ? `OS aberta. Aparelho encaminhado ao laboratório ${lab.name}.`
-        : "OS aberta para reparo na casa do cliente.",
+        ? `OS de ${typeLabel} aberta. Aparelho encaminhado ao laboratório ${lab.name}.`
+        : `OS de ${typeLabel} aberta para reparo na casa do cliente.`,
       userId: user.id,
     });
 
@@ -266,7 +324,7 @@ export async function createWorkOrder(payload, user) {
         type: lab ? MOVEMENT_TYPES.REPAIR_TO_LAB : MOVEMENT_TYPES.REPAIR_OPEN,
         previousStatus: product.status,
         newStatus: STATUSES.IN_REPAIR,
-        observation: `${number} · ${reportedDefect}`,
+        observation: `${number} · ${typeLabel} · ${reportedDefect}`,
         previousLocationId: product.locationId,
         newLocationId: null,
         ...movementUnitFields(product, {
@@ -286,10 +344,31 @@ export async function createWorkOrder(payload, user) {
     action: "WORK_ORDER_CREATED",
     entity: "work_order",
     entityId: created.id,
-    newData: { number: created.number, productId: product.id, servicePlace },
+    newData: { number: created.number, productId: product.id, type, servicePlace },
   });
 
   return serializeWorkOrder(created);
+}
+
+function assertProductCanOpenWorkOrder(product) {
+  if (product.status === STATUSES.IN_REPAIR) {
+    throw validationError("Este produto já está em reparo.");
+  }
+  if ([STATUSES.IN_TRANSIT, STATUSES.TRANSFERRED, STATUSES.DISCARDED].includes(product.status)) {
+    throw validationError("Não é possível abrir OS para produto em trânsito, transferido ou descartado.");
+  }
+  if (!WORK_ORDER_OPENABLE_STATUSES.includes(product.status)) {
+    throw validationError("Este produto não pode receber uma ordem de serviço.");
+  }
+}
+
+function restoreStatusForOrder(order) {
+  return isStockRepair(order) ? STATUSES.AVAILABLE : STATUSES.SOLD;
+}
+
+function restoreUnitIdForOrder(order) {
+  if (isStockRepair(order)) return order.unitId;
+  return order.sale?.unitId || order.unitId;
 }
 
 export async function updateWorkOrder(id, payload, user) {
@@ -309,7 +388,11 @@ export async function updateWorkOrder(id, payload, user) {
       throw validationError("Status da OS inválido.");
     }
     if (payload.status === WORK_ORDER_STATUSES.DELIVERED) {
-      throw validationError("Use a ação de entrega para devolver o produto ao cliente.");
+      throw validationError(
+        isStockRepair(order)
+          ? "Use a ação de devolução para devolver o produto ao estoque."
+          : "Use a ação de entrega para devolver o produto ao cliente.",
+      );
     }
     nextStatus = payload.status;
     data.status = payload.status;
@@ -361,20 +444,29 @@ export async function updateWorkOrder(id, payload, user) {
 export async function deliverWorkOrder(id, payload, user) {
   const order = await getWorkOrder(id, user);
   assertOpen(order);
+  const stockRepair = isStockRepair(order);
   if (order.status !== WORK_ORDER_STATUSES.READY && order.status !== WORK_ORDER_STATUSES.REPAIRING) {
-    throw validationError("Marque a OS como pronta antes de devolver o produto ao cliente.");
+    throw validationError(
+      stockRepair
+        ? "Marque a OS como pronta antes de devolver o produto ao estoque."
+        : "Marque a OS como pronta antes de devolver o produto ao cliente.",
+    );
   }
 
-  const originUnitId = order.sale?.unitId || order.unitId;
+  const originUnitId = restoreUnitIdForOrder(order);
+  const nextProductStatus = restoreStatusForOrder(order);
   const observation = emptyToNull(payload?.observation);
   const nextTechnicianNotes =
     payload?.technicianNotes !== undefined ? emptyToNull(payload.technicianNotes) : undefined;
+  const closeMessage = stockRepair
+    ? "Produto reparado devolvido ao estoque."
+    : "Produto reparado devolvido ao cliente.";
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.product.update({
       where: { id: order.productId },
       data: {
-        status: STATUSES.SOLD,
+        status: nextProductStatus,
         unitId: originUnitId,
         locationId: null,
         transferToUnitId: null,
@@ -404,7 +496,7 @@ export async function deliverWorkOrder(id, payload, user) {
     await addEvent(tx, {
       workOrderId: order.id,
       type: "ENTREGA",
-      message: observation || "Produto reparado devolvido ao cliente.",
+      message: observation || closeMessage,
       userId: user.id,
     });
 
@@ -413,8 +505,8 @@ export async function deliverWorkOrder(id, payload, user) {
         productId: order.productId,
         type: MOVEMENT_TYPES.REPAIR_DELIVER,
         previousStatus: STATUSES.IN_REPAIR,
-        newStatus: STATUSES.SOLD,
-        observation: `${order.number} · devolvido ao cliente`,
+        newStatus: nextProductStatus,
+        observation: `${order.number} · ${stockRepair ? "devolvido ao estoque" : "devolvido ao cliente"}`,
         previousLocationId: order.product?.locationId ?? null,
         newLocationId: null,
         ...movementUnitFields(order.product, {
@@ -529,11 +621,13 @@ export async function requestWorkOrderPart(id, payload, user) {
 
 async function restoreSoldIfClosed(tx, order, user, nextStatus) {
   if (nextStatus !== WORK_ORDER_STATUSES.UNREPAIRABLE && nextStatus !== WORK_ORDER_STATUSES.CANCELLED) return;
+  const nextProductStatus = restoreStatusForOrder(order);
+  const originUnitId = restoreUnitIdForOrder(order);
   await tx.product.update({
     where: { id: order.productId },
     data: {
-      status: STATUSES.SOLD,
-      unitId: order.sale?.unitId || order.unitId,
+      status: nextProductStatus,
+      unitId: originUnitId,
       locationId: null,
     },
   });
@@ -542,11 +636,11 @@ async function restoreSoldIfClosed(tx, order, user, nextStatus) {
       productId: order.productId,
       type: MOVEMENT_TYPES.REPAIR_DELIVER,
       previousStatus: STATUSES.IN_REPAIR,
-      newStatus: STATUSES.SOLD,
+      newStatus: nextProductStatus,
       observation: `${order.number} encerrada (${WORK_ORDER_STATUS_LABELS[nextStatus]}).`,
       ...movementUnitFields(order.product, {
         previousUnitId: order.product?.unitId,
-        newUnitId: order.sale?.unitId || order.unitId,
+        newUnitId: originUnitId,
       }),
       userId: user.id,
     },
@@ -582,7 +676,11 @@ export async function addWorkOrderInteraction(id, payload, user) {
       throw validationError("Status da OS inválido.");
     }
     if (nextStatus === WORK_ORDER_STATUSES.DELIVERED) {
-      throw validationError("Use a ação de entrega para devolver o produto ao cliente.");
+      throw validationError(
+        isStockRepair(order)
+          ? "Use a ação de devolução para devolver o produto ao estoque."
+          : "Use a ação de entrega para devolver o produto ao cliente.",
+      );
     }
   }
   if (!message && !files.length && !nextStatus) {
@@ -647,35 +745,63 @@ export async function addWorkOrderImages(id, files, user, { eventId, message } =
   return getWorkOrder(id, user);
 }
 
-export async function lookupSoldProduct(query, session) {
+export async function lookupSoldProduct(query, session, { productId } = {}) {
+  const lookupInclude = {
+    catalogModel: true,
+    category: true,
+    images: { where: { isPrimary: true }, take: 1 },
+    sales: { orderBy: { soldAt: "desc" }, take: 1, include: { customer: true } },
+  };
+
+  function serializeLookup(item) {
+    return {
+      ...item,
+      commercialName: item.catalogModel?.commercialName || null,
+      primaryImage: item.images?.[0] || null,
+      latestSale: item.sales?.[0] ? serializeSale(item.sales[0]) : null,
+      workOrderType: resolveWorkOrderType(item),
+    };
+  }
+
+  if (productId) {
+    const id = Number(String(productId).replace(/^#/, ""));
+    if (!Number.isInteger(id) || id < 1) return [];
+    const item = await prisma.product.findUnique({
+      where: { id },
+      include: lookupInclude,
+    });
+    if (!item || !canViewProduct(session, item)) return [];
+    const open = await prisma.workOrder.findFirst({
+      where: { productId: item.id, status: { notIn: WORK_ORDER_CLOSED_STATUSES } },
+      select: { id: true },
+    });
+    if (open) return [];
+    return [serializeLookup(item)];
+  }
+
   const text = String(query || "").trim();
   if (!text) return [];
   const unitId = requireActiveUnit(session);
+  const numeric = Number(text.replace(/^#/, ""));
+  const or = [
+    { serialOnyx: { contains: text } },
+    { ean: { contains: text } },
+    { supplierModelCode: { contains: text } },
+    { catalogModel: { commercialName: { contains: text } } },
+  ];
+  if (Number.isInteger(numeric) && numeric > 0) {
+    or.push({ id: numeric });
+  }
   const items = await prisma.product.findMany({
     where: {
       unitId,
-      status: STATUSES.SOLD,
-      OR: [
-        { serialOnyx: { contains: text } },
-        { ean: { contains: text } },
-        { supplierModelCode: { contains: text } },
-        { catalogModel: { commercialName: { contains: text } } },
-      ],
+      status: { in: WORK_ORDER_OPENABLE_STATUSES },
+      OR: or,
     },
-    include: {
-      catalogModel: true,
-      category: true,
-      images: { where: { isPrimary: true }, take: 1 },
-      sales: { orderBy: { soldAt: "desc" }, take: 1, include: { customer: true } },
-    },
+    include: lookupInclude,
     take: 12,
     orderBy: { updatedAt: "desc" },
   });
 
-  return items.map((item) => ({
-    ...item,
-    commercialName: item.catalogModel?.commercialName || null,
-    primaryImage: item.images?.[0] || null,
-    latestSale: item.sales?.[0] || null,
-  }));
+  return items.map(serializeLookup);
 }

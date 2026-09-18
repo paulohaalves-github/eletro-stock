@@ -38,7 +38,15 @@ export default function MovimentacoesPage() {
             ))}
           </Select>
         </div>
-        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+        <SearchActions
+          loading={list.loading}
+          onSearch={() => void list.search(loader)}
+          onClear={() => {
+            setQ("");
+            setType("");
+            void list.search((page, pageSize) => api(`/api/movements?${listQuery({ q: "", type: "" }, page, pageSize)}`));
+          }}
+        />
       </Card>
 
       <Card className="w-full overflow-hidden p-0">

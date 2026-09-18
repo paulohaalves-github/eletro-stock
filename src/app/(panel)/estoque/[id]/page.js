@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/ui";
+import { ActionMenu } from "@/components/action-menu";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { RemoteGallery } from "@/components/images";
 import { Timeline } from "@/components/timeline";
@@ -18,6 +19,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
+  const router = useRouter();
   const [product, setProduct] = useState(null);
   const [me, setMe] = useState(null);
   const [locationTypes, setLocationTypes] = useState([]);
@@ -125,30 +127,22 @@ export default function ProductDetailPage() {
         subtitle={product.commercialName || product.supplierModelCode || product.serialOnyx}
         actions={
           <>
-            {canEdit && operable ? <Link href={`/estoque/${product.id}/editar`}><Button variant="secondary">Editar</Button></Link> : null}
-            <Link href={`/estoque/${product.id}/imprimir`} target="_blank"><Button variant="secondary">Imprimir ficha</Button></Link>
-            <Button variant="secondary" onClick={() => setLabelPickerOpen(true)}>Imprimir etiqueta</Button>
-            {canAssignLocation && operable ? (
-              <Button variant="secondary" onClick={() => setLocationOpen(true)}>Localização</Button>
-            ) : null}
-            {canMutate && operable && product.status === STATUSES.AVAILABLE ? <Button variant="secondary" onClick={() => runReserve()}>Reservar</Button> : null}
-            {canMutate && operable && product.status === STATUSES.RESERVED ? <Button variant="secondary" onClick={() => runReserve("unreserve")}>Liberar reserva</Button> : null}
-            {canTransfer && inActiveUnit && product.status === STATUSES.AVAILABLE ? (
-              <Button variant="secondary" onClick={() => setTransferOpen(true)}>Transferir</Button>
-            ) : null}
-            {canTransfer && inActiveUnit && product.status === STATUSES.IN_TRANSIT ? (
-              <Button variant="secondary" onClick={() => runTransfer("cancel")}>Cancelar envio</Button>
-            ) : null}
-            {canTransfer && incomingHere ? (
-              <Button variant="secondary" onClick={() => setReceiveOpen(true)}>Receber</Button>
-            ) : null}
+            <ActionMenu
+              items={[
+                canEdit && operable ? { label: "Editar", onClick: () => router.push(`/estoque/${product.id}/editar`) } : null,
+                { label: "Imprimir ficha", onClick: () => window.open(`/estoque/${product.id}/imprimir`, "_blank", "noopener,noreferrer") },
+                { label: "Imprimir etiqueta", onClick: () => setLabelPickerOpen(true) },
+                canAssignLocation && operable ? { label: "Localização", onClick: () => setLocationOpen(true) } : null,
+                canMutate && operable && product.status === STATUSES.AVAILABLE ? { label: "Reservar", onClick: () => runReserve() } : null,
+                canMutate && operable && product.status === STATUSES.RESERVED ? { label: "Liberar reserva", onClick: () => runReserve("unreserve") } : null,
+                canTransfer && inActiveUnit && product.status === STATUSES.AVAILABLE ? { label: "Transferir", onClick: () => setTransferOpen(true) } : null,
+                canTransfer && inActiveUnit && product.status === STATUSES.IN_TRANSIT ? { label: "Cancelar envio", onClick: () => runTransfer("cancel") } : null,
+                canTransfer && incomingHere ? { label: "Receber", onClick: () => setReceiveOpen(true) } : null,
+                can(me.role, PERMISSIONS.REPAIR_CREATE) && !product.openWorkOrder ? { label: "Abrir OS", onClick: () => router.push(`/reparos/novo?productId=${product.id}`) } : null,
+                canRepair && product.openWorkOrder ? { label: `Ver OS ${product.openWorkOrder.number}`, onClick: () => router.push(`/reparos/${product.openWorkOrder.id}`) } : null,
+              ]}
+            />
             {canMutate && operable && !closed ? <Link href={`/saida?id=${product.id}`}><Button>Dar baixa</Button></Link> : null}
-            {canRepair && product.status === STATUSES.SOLD ? (
-              <Link href="/reparos/novo"><Button variant="secondary">Abrir OS</Button></Link>
-            ) : null}
-            {canRepair && product.status === STATUSES.IN_REPAIR ? (
-              <Link href="/reparos"><Button variant="secondary">Ver reparos</Button></Link>
-            ) : null}
           </>
         }
       />

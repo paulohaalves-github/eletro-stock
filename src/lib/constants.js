@@ -171,6 +171,27 @@ export const SERVICE_PLACE_LABELS = {
   CASA_CLIENTE: "Casa do cliente",
 };
 
+export const WORK_ORDER_TYPES = {
+  AFTER_SALES: "POS_VENDA",
+  STOCK_REPAIR: "REPARO_ESTOQUE",
+};
+
+export const WORK_ORDER_TYPE_LABELS = {
+  POS_VENDA: "Pós-venda",
+  REPARO_ESTOQUE: "Reparo de estoque",
+};
+
+export const WORK_ORDER_OPENABLE_STATUSES = ["DISPONIVEL", "RESERVADO", "DEVOLVIDO", "VENDIDO"];
+
+export function resolveWorkOrderType(product) {
+  if (product?.status === STATUSES.SOLD) return WORK_ORDER_TYPES.AFTER_SALES;
+  return WORK_ORDER_TYPES.STOCK_REPAIR;
+}
+
+export function isStockRepair(order) {
+  return (order?.type || WORK_ORDER_TYPES.AFTER_SALES) === WORK_ORDER_TYPES.STOCK_REPAIR;
+}
+
 export const WORK_ORDER_STATUSES = {
   OPEN: "ABERTA",
   ANALYSIS: "EM_ANALISE",

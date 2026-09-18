@@ -6,7 +6,9 @@ export const GET = apiHandler(
   async (request, { session }) => {
     const { searchParams } = new URL(request.url);
     if (searchParams.get("lookup")) {
-      const items = await lookupSoldProduct(searchParams.get("q") || searchParams.get("lookup"), session);
+      const items = await lookupSoldProduct(searchParams.get("q"), session, {
+        productId: searchParams.get("productId"),
+      });
       return { items };
     }
     return listWorkOrders(
@@ -14,6 +16,11 @@ export const GET = apiHandler(
         q: searchParams.get("q"),
         status: searchParams.get("status"),
         servicePlace: searchParams.get("servicePlace"),
+        type: searchParams.get("type"),
+        openedFrom: searchParams.get("openedFrom"),
+        openedTo: searchParams.get("openedTo"),
+        closedFrom: searchParams.get("closedFrom"),
+        closedTo: searchParams.get("closedTo"),
         page: searchParams.get("page"),
         pageSize: searchParams.get("pageSize"),
       },

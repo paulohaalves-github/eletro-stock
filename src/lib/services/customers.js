@@ -1,8 +1,10 @@
 import { prisma } from "../db";
 import { notFound, validationError } from "../errors";
 import { writeAudit } from "../audit";
+import { WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { emptyToNull } from "../validations";
 import { paginationResult, parsePagination } from "../pagination";
+import { serializeSale } from "./sales";
 
 const customerSelect = {
   id: true,
@@ -86,7 +88,7 @@ export async function getCustomer(id) {
       ...customerSelect,
       sales: {
         orderBy: { soldAt: "desc" },
-        take: 20,
+        take: 50,
         include: {
           product: {
             select: {
@@ -99,10 +101,43 @@ export async function getCustomer(id) {
           unit: { select: { id: true, name: true, type: true } },
         },
       },
+      workOrders: {
+        orderBy: { openedAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          number: true,
+          type: true,
+          status: true,
+          servicePlace: true,
+          reportedDefect: true,
+          openedAt: true,
+          closedAt: true,
+          deliveredAt: true,
+          productId: true,
+          product: {
+            select: {
+              id: true,
+              serialOnyx: true,
+              catalogModel: { select: { commercialName: true } },
+            },
+          },
+          unit: { select: { id: true, name: true } },
+          labUnit: { select: { id: true, name: true } },
+        },
+      },
     },
   });
   if (!customer) throw notFound("Cliente não encontrado.");
-  return customer;
+  return {
+    ...customer,
+    sales: customer.sales.map((sale) => serializeSale(sale)),
+    workOrders: customer.workOrders.map((order) => ({
+      ...order,
+      commercialName: order.product?.catalogModel?.commercialName || null,
+      closed: WORK_ORDER_CLOSED_STATUSES.includes(order.status),
+    })),
+  };
 }
 
 export async function createCustomer(payload, actor) {

@@ -2,13 +2,20 @@
 
 import { Button } from "@/components/ui";
 
-export function SearchActions({ onSearch, loading, children }) {
+export function SearchActions({ onSearch, onClear, loading, children }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       {children || <span />}
-      <Button type="button" onClick={onSearch} disabled={loading}>
-        {loading ? "Buscando..." : "Buscar"}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        {onClear ? (
+          <Button type="button" variant="secondary" onClick={onClear} disabled={loading}>
+            Limpar filtros
+          </Button>
+        ) : null}
+        <Button type="button" onClick={onSearch} disabled={loading}>
+          {loading ? "Buscando..." : "Buscar"}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -13,6 +15,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 const empty = { name: "", phone: "", document: "", email: "", address: "", notes: "" };
 
 export default function ClientesPage() {
+  const router = useRouter();
   const list = usePagedList();
   const [q, setQ] = useState("");
   const [form, setForm] = useState(empty);
@@ -58,7 +61,7 @@ export default function ClientesPage() {
     <div className="w-full">
       <PageHeader
         title="Clientes"
-        subtitle="Cadastro usado na venda com garantia e nas ordens de serviço."
+        subtitle="Cadastro, ficha e histórico de vendas e ordens de serviço."
         actions={canManage ? <Button onClick={() => { setForm(empty); setOpen(true); }}>Novo cliente</Button> : null}
       />
 
@@ -66,7 +69,14 @@ export default function ClientesPage() {
         <Field label="Buscar">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome, telefone ou documento" />
         </Field>
-        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+        <SearchActions
+          loading={list.loading}
+          onSearch={() => void list.search(loader)}
+          onClear={() => {
+            setQ("");
+            void list.search((page, pageSize) => api(`/api/customers?${listQuery({ q: "" }, page, pageSize)}`));
+          }}
+        />
       </Card>
 
       <Card className="w-full overflow-hidden p-0">
@@ -83,8 +93,16 @@ export default function ClientesPage() {
             </thead>
             <tbody>
               {list.items.map((item) => (
-                <tr key={item.id} className="border-t border-border hover:bg-surface-2/80">
-                  <td className="px-5 py-4 font-medium">{item.name}</td>
+                <tr
+                  key={item.id}
+                  className="cursor-pointer border-t border-border hover:bg-surface-2/80"
+                  onClick={() => router.push(`/clientes/${item.id}`)}
+                >
+                  <td className="px-5 py-4 font-medium">
+                    <Link href={`/clientes/${item.id}`} className="hover:text-accent" onClick={(event) => event.stopPropagation()}>
+                      {item.name}
+                    </Link>
+                  </td>
                   <td className="px-5 py-4">{item.phone}</td>
                   <td className="px-5 py-4 text-muted">{item.document || "—"}</td>
                   <td className="px-5 py-4 text-muted">{item.address || "—"}</td>

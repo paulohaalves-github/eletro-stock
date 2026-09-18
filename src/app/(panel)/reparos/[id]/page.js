@@ -8,7 +8,7 @@ import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/ui";
 import { LocationPickers } from "@/components/location-pickers";
 import { ImagePicker } from "@/components/images";
-import { PartRequestBadge, StatusBadge, WorkOrderStatusBadge } from "@/components/badges";
+import { PartRequestBadge, StatusBadge, WorkOrderStatusBadge, WorkOrderTypeBadge } from "@/components/badges";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { WorkOrderTimeline } from "@/components/work-order-timeline";
 import {
@@ -18,6 +18,7 @@ import {
   WORK_ORDER_EVENT_LABELS,
   WORK_ORDER_STATUSES,
   WORK_ORDER_STATUS_LABELS,
+  isStockRepair,
 } from "@/lib/constants";
 import { formatDate, formatLocationPath, formatProductId } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
@@ -77,6 +78,7 @@ export default function WorkOrderDetailPage() {
 
   const canUpdate = can(me.role, PERMISSIONS.REPAIR_UPDATE) && !order.closed;
   const atLab = order.servicePlace === SERVICE_PLACES.LAB && Number(me.activeUnitId) === Number(order.labUnitId);
+  const stockRepair = isStockRepair(order);
   const sale = order.sale;
   const hasNotes = Boolean(interactionMessage.trim() || interactionFiles.length || status !== order.status);
   const hasPart = Boolean(partId);
@@ -168,7 +170,9 @@ export default function WorkOrderDetailPage() {
           <>
             <Link href={`/estoque/${order.productId}`}><Button variant="secondary">Ver produto</Button></Link>
             {canUpdate && (order.status === WORK_ORDER_STATUSES.READY || order.status === WORK_ORDER_STATUSES.REPAIRING) ? (
-              <Button variant="secondary" onClick={() => setDeliverOpen(true)}>Devolver ao cliente</Button>
+              <Button variant="secondary" onClick={() => setDeliverOpen(true)}>
+                {stockRepair ? "Devolver ao estoque" : "Devolver ao cliente"}
+              </Button>
             ) : null}
             {canUpdate ? <Button onClick={openInteraction}>Nova interação</Button> : null}
           </>
@@ -177,13 +181,25 @@ export default function WorkOrderDetailPage() {
 
       <Card className="mb-4 space-y-4">
         <div className="flex flex-wrap gap-2">
+          <WorkOrderTypeBadge type={order.type} />
           <WorkOrderStatusBadge status={order.status} />
           <StatusBadge status={order.product?.status} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Info label="Cliente" value={`${order.customer?.name} · ${order.customer?.phone}`} />
+          <Info
+            label="Cliente"
+            value={
+              order.customer?.id ? (
+                <Link href={`/clientes/${order.customer.id}`} className="text-accent hover:underline">
+                  {`${order.customer.name} · ${order.customer.phone}`}
+                </Link>
+              ) : stockRepair ? "—" : `${order.customer?.name || "—"} · ${order.customer?.phone || ""}`
+            }
+          />
           <Info label="Produto" value={`${formatProductId(order.productId)} · ${order.product?.serialOnyx}`} />
-          <Info label="NF / garantia" value={`${sale?.invoiceNumber || "—"} · ${sale?.warrantyMonths || "—"} meses · venda em ${formatDate(sale?.soldAt)}`} />
+          {!stockRepair ? (
+            <Info label="NF / garantia" value={`${sale?.invoiceNumber || "—"} · ${sale?.warrantyMonths || "—"} meses · venda em ${formatDate(sale?.soldAt)}`} />
+          ) : null}
           <Info label="Unidade" value={order.labUnit ? `${order.unit?.name} → ${order.labUnit.name}` : order.unit?.name} />
           <Info label="Defeito relatado" value={order.reportedDefect} className="sm:col-span-2 xl:col-span-2" />
           {order.customer?.address ? <Info label="Endereço" value={order.customer.address} /> : null}
@@ -310,9 +326,13 @@ export default function WorkOrderDetailPage() {
 
       <ConfirmDialog
         open={deliverOpen}
-        title="Devolver ao cliente"
-        message="O aparelho voltará ao status vendido e a ordem será encerrada."
-        confirmLabel="Confirmar entrega"
+        title={stockRepair ? "Devolver ao estoque" : "Devolver ao cliente"}
+        message={
+          stockRepair
+            ? "O aparelho voltará ao estoque como disponível e a ordem será encerrada."
+            : "O aparelho voltará ao status vendido e a ordem será encerrada."
+        }
+        confirmLabel={stockRepair ? "Confirmar devolução" : "Confirmar entrega"}
         loading={loading}
         onClose={() => setDeliverOpen(false)}
         onConfirm={deliver}

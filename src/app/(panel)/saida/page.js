@@ -85,7 +85,14 @@ function SaidaContent() {
           />
         </Field>
         <div className="mt-3">
-          <SearchActions loading={results.loading} onSearch={() => void searchProducts()} />
+          <SearchActions
+            loading={results.loading}
+            onSearch={() => void searchProducts()}
+            onClear={() => {
+              setQuery("");
+              results.setItems([]);
+            }}
+          />
         </div>
         {results.items.length ? (
           <div className="mt-3 divide-y divide-border rounded-xl border border-border">

@@ -69,7 +69,14 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
           placeholder="Nome, telefone ou documento"
         />
       </Field>
-      <SearchActions loading={list.loading} onSearch={() => void searchCustomers()} />
+      <SearchActions
+        loading={list.loading}
+        onSearch={() => void searchCustomers()}
+        onClear={() => {
+          setQuery("");
+          list.setItems([]);
+        }}
+      />
       {list.items.length ? (
         <div className="divide-y divide-border rounded-xl border border-border">
           {list.items.map((item) => (

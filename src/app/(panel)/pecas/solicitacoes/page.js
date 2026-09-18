@@ -106,7 +106,15 @@ export default function SolicitacoesPecasPage() {
             ))}
           </Select>
         </div>
-        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+        <SearchActions
+          loading={list.loading}
+          onSearch={() => void list.search(loader)}
+          onClear={() => {
+            setQ("");
+            setStatus(WORK_ORDER_PART_STATUSES.REQUESTED);
+            void list.search((page, pageSize) => api(`/api/parts/requests?${listQuery({ q: "", status: WORK_ORDER_PART_STATUSES.REQUESTED }, page, pageSize)}`));
+          }}
+        />
       </Card>
       <Card className="w-full overflow-hidden p-0">
         <div className="overflow-x-auto">

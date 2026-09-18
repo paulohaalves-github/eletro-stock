@@ -66,7 +66,14 @@ export default function LinhasPage() {
       />
       <Card className="mb-4 space-y-3">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar linha" />
-        <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} />
+        <SearchActions
+          loading={list.loading}
+          onSearch={() => void list.search(loader)}
+          onClear={() => {
+            setQ("");
+            void list.search((page, pageSize) => api(`/api/lines?${listQuery({ q: "" }, page, pageSize)}`));
+          }}
+        />
       </Card>
 
       <Card className="w-full overflow-hidden p-0">

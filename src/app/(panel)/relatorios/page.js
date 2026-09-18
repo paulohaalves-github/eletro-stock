@@ -83,7 +83,20 @@ export default function RelatoriosPage() {
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
         </div>
-        <SearchActions loading={loading} onSearch={() => void loadReport()} />
+        <SearchActions
+          loading={loading}
+          onSearch={() => void loadReport()}
+          onClear={() => {
+            setType("stock");
+            setFrom("");
+            setTo("");
+            setLoading(true);
+            api("/api/reports?type=stock&format=json")
+              .then(setReport)
+              .catch((error) => toast.error(error.message))
+              .finally(() => setLoading(false));
+          }}
+        />
       </Card>
       {report ? (
         <Card className="overflow-x-auto">

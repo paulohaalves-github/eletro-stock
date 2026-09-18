@@ -1,3 +1,5 @@
+import { warrantyExpiresAt } from "./constants";
+
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -32,6 +34,32 @@ export function formatDateTime(value) {
 export function formatDate(value) {
   if (!value) return "—";
   return dateOnly.format(new Date(value));
+}
+
+function describeRemaining(from, to) {
+  let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  let days = to.getDate() - from.getDate();
+  if (days < 0) {
+    months -= 1;
+    days += new Date(to.getFullYear(), to.getMonth(), 0).getDate();
+  }
+  if (months < 0) return "";
+  const parts = [];
+  if (months > 0) parts.push(months === 1 ? "1 mês" : `${months} meses`);
+  if (days > 0) parts.push(days === 1 ? "1 dia" : `${days} dias`);
+  return parts.join(" e ");
+}
+
+export function formatWarrantyRemaining(soldAt, months, at = new Date()) {
+  if (!soldAt || months == null || months === "") return null;
+  const expiresAt = warrantyExpiresAt(soldAt, Number(months));
+  if (Number.isNaN(expiresAt.getTime())) return null;
+  if (expiresAt < at) {
+    return `Garantia vencida em ${formatDate(expiresAt)}`;
+  }
+  const remaining = describeRemaining(at, expiresAt);
+  if (!remaining) return `Vence hoje (${formatDate(expiresAt)})`;
+  return `Restam ${remaining} de garantia · vence em ${formatDate(expiresAt)}`;
 }
 
 export function formatProductId(id) {

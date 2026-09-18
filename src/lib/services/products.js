@@ -1,7 +1,7 @@
 import { prisma } from "../db";
 import { conflict, notFound, validationError } from "../errors";
 import { writeAudit, writeMovement } from "../audit";
-import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS } from "../constants";
+import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { formatCurrency, formatDate, formatProductId } from "../format";
 import { emptyToNull, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
@@ -32,11 +32,13 @@ const productListInclude = {
 function serializeProduct(product) {
   if (!product) return null;
   const primary = product.images?.find((image) => image.isPrimary) || product.images?.[0] || null;
+  const { workOrders, ...rest } = product;
   return {
-    ...product,
+    ...rest,
     commercialName: product.catalogModel?.commercialName || null,
     primaryImage: primary,
     locationPath: formatLocationPath(product.location),
+    openWorkOrder: Array.isArray(workOrders) ? workOrders[0] || null : null,
   };
 }
 
@@ -309,6 +311,12 @@ export async function getProduct(id) {
           newUnit: { select: unitSelect },
         },
         orderBy: { createdAt: "desc" },
+      },
+      workOrders: {
+        where: { status: { notIn: WORK_ORDER_CLOSED_STATUSES } },
+        orderBy: { openedAt: "desc" },
+        take: 1,
+        select: { id: true, number: true, status: true, type: true },
       },
     },
   });
