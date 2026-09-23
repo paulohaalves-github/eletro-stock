@@ -1,11 +1,11 @@
 import ExcelJS from "exceljs";
 import { prisma } from "../db";
 import { CONDITION_LABELS, MOVEMENT_TYPE_LABELS, STATUS_LABELS, VOLTAGE_LABELS } from "../constants";
-import { formatCurrency, formatDateTime } from "../format";
+import { formatCurrency, formatDateTime, periodRange } from "../format";
 import { movementUnitWhere, requireActiveUnit } from "../units";
 
 function productWhere(filters = {}, unitId) {
-  const where = { unitId };
+  const where = { unitId, deletedAt: null };
   if (filters.status) where.status = filters.status;
   if (filters.condition) where.condition = filters.condition;
   if (filters.categoryId) where.categoryId = Number(filters.categoryId);
@@ -34,7 +34,17 @@ function dateRangeWhere(filters) {
 }
 
 export async function buildReport(type, filters = {}, session) {
+  const { expireExpiredReservations } = await import("./sale-orders");
+  await expireExpiredReservations();
   const unitId = requireActiveUnit(session);
+  if (type === "sales") {
+    const range = filters.from || filters.to
+      ? periodRange("custom", filters.from || "2000-01-01", filters.to || new Date().toISOString().slice(0, 10))
+      : periodRange("30d");
+    const { commercialReportRows, listSoldCommercialRows } = await import("./sale-dashboard");
+    const rows = await listSoldCommercialRows(session, range);
+    return commercialReportRows(rows);
+  }
   if (type === "movements") {
     const where = {
       AND: [movementUnitWhere(unitId), dateRangeWhere(filters)],

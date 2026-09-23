@@ -8,9 +8,11 @@ const ENTRY_TYPES = ["ENTRADA", "TRANSFERENCIA_RECEBIMENTO"];
 const EXIT_TYPES = ["SAIDA", "TRANSFERENCIA", "TRANSFERENCIA_ENVIO"];
 
 export async function getDashboard(period = "30d", from, to, session) {
+  const { expireExpiredReservations } = await import("./sale-orders");
+  await expireExpiredReservations();
   const range = periodRange(period, from, to);
   const unitId = requireActiveUnit(session);
-  const unitWhere = { unitId };
+  const unitWhere = { unitId, deletedAt: null };
 
   const [
     byStatus,
@@ -38,7 +40,7 @@ export async function getDashboard(period = "30d", from, to, session) {
       select: { cashPrice: true, installmentPrice: true, marketPrice: true, status: true },
     }),
     prisma.product.count({
-      where: { transferToUnitId: unitId, status: STATUSES.IN_TRANSIT },
+      where: { transferToUnitId: unitId, status: STATUSES.IN_TRANSIT, deletedAt: null },
     }),
     prisma.stockMovement.findMany({
       where: { type: { in: ENTRY_TYPES }, newUnitId: unitId },

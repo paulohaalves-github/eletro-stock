@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/constants";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth/login"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth/login", "/api/integrations/whatsapp"];
 
 export function proxy(request) {
   const { pathname } = request.nextUrl;

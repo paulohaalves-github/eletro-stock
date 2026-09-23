@@ -18,6 +18,7 @@ model User {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   productsCreated Product[]      @relation("ProductCreatedBy")
+  productsDeleted Product[]      @relation("ProductDeletedBy")
   imagesUploaded  ProductImage[] @relation("ImageUploadedBy")
   filesUploaded   ProductFile[]  @relation("FileUploadedBy")
   movements       StockMovement[]
@@ -35,6 +36,16 @@ model User {
   partMovements    PartMovement[]
   partTransfersSent PartTransfer[]    @relation("PartTransferCreatedBy")
   partTransfersReceived PartTransfer[] @relation("PartTransferReceivedBy")
+  inboxTeamMemberships InboxTeamMember[]
+  inboxConversationsAsAgent InboxConversation[] @relation("ConversationAgent")
+  inboxConversationsAccepted InboxConversation[] @relation("ConversationAcceptedBy")
+  inboxConversationsClosed InboxConversation[] @relation("ConversationClosedBy")
+  inboxMessages InboxMessage[]
+  inboxConversationEvents InboxConversationEvent[]
+  saleOrdersCreated SaleOrder[]       @relation("SaleOrderCreatedBy")
+  saleOrdersAsSeller SaleOrder[]      @relation("SaleOrderSeller")
+  saleOrderEvents   SaleOrderEvent[]
+  saleOrderItemsSold SaleOrderItem[]  @relation("SaleOrderItemSoldBy")
 
   @@map("users")
 }
@@ -55,6 +66,7 @@ model Unit {
   movementsFrom    StockMovement[]  @relation("MovementFromUnit")
   movementsTo      StockMovement[]  @relation("MovementToUnit")
   sales            Sale[]
+  saleOrders       SaleOrder[]
   workOrders       WorkOrder[]      @relation("WorkOrderUnit")
   workOrdersLab    WorkOrder[]      @relation("WorkOrderLabUnit")
   partStocks       PartStock[]
@@ -176,6 +188,8 @@ model Product {
   transferToUnitId  Int?     @map("transfer_to_unit_id")
   locationId        Int?     @map("location_id")
   createdById       Int      @map("created_by")
+  deletedAt         DateTime? @map("deleted_at")
+  deletedById       Int?     @map("deleted_by")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -183,6 +197,7 @@ model Product {
   category       Category      @relation(fields: [categoryId], references: [id])
   catalogModel   CatalogModel? @relation(fields: [catalogModelId], references: [id])
   createdBy      User          @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  deletedBy      User?         @relation("ProductDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
   unit           Unit          @relation("ProductUnit", fields: [unitId], references: [id])
   transferToUnit Unit?         @relation("ProductTransferTo", fields: [transferToUnitId], references: [id], onDelete: SetNull)
   location       Location?     @relation(fields: [locationId], references: [id])
@@ -190,6 +205,7 @@ model Product {
   files          ProductFile[]
   movements      StockMovement[]
   sales          Sale[]
+  saleOrderItems SaleOrderItem[]
   workOrders     WorkOrder[]
 
   @@index([ean])
@@ -205,6 +221,8 @@ model Product {
   @@index([locationId])
   @@index([unitId])
   @@index([transferToUnitId])
+  @@index([deletedAt])
+  @@index([deletedById])
   @@map("products")
 }
 
@@ -305,14 +323,34 @@ model Customer {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  createdBy  User        @relation("CustomerCreatedBy", fields: [createdById], references: [id])
-  sales      Sale[]
-  workOrders WorkOrder[]
+  createdBy     User                @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  phones        CustomerPhone[]
+  sales         Sale[]
+  saleOrders    SaleOrder[]
+  workOrders    WorkOrder[]
+  conversations InboxConversation[]
 
   @@index([name])
   @@index([phone])
   @@index([document])
   @@map("customers")
+}
+
+model CustomerPhone {
+  id         Int      @id @default(autoincrement())
+  customerId Int      @map("customer_id")
+  phone      String   @db.VarChar(40)
+  digits     String   @db.VarChar(20)
+  label      String?  @db.VarChar(40)
+  primary    Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, digits])
+  @@index([digits])
+  @@index([customerId])
+  @@map("customer_phones")
 }
 
 model Sale {
@@ -324,21 +362,100 @@ model Sale {
   warrantyMonths Int      @map("warranty_months")
   invoiceNumber  String?  @map("invoice_number") @db.VarChar(40)
   observation    String?  @db.Text
+  cashPrice      Float    @default(0) @map("cash_price")
   createdById    Int      @map("created_by")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  product    Product     @relation(fields: [productId], references: [id])
-  customer   Customer    @relation(fields: [customerId], references: [id])
-  unit       Unit        @relation(fields: [unitId], references: [id])
-  createdBy  User        @relation("SaleCreatedBy", fields: [createdById], references: [id])
-  workOrders WorkOrder[]
+  product        Product         @relation(fields: [productId], references: [id])
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  unit           Unit            @relation(fields: [unitId], references: [id])
+  createdBy      User            @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  workOrders     WorkOrder[]
+  saleOrderItems SaleOrderItem[]
 
   @@index([productId])
   @@index([customerId])
   @@index([unitId])
   @@index([soldAt])
   @@map("sales")
+}
+
+model SaleOrder {
+  id           Int       @id @default(autoincrement())
+  number       String    @unique @db.VarChar(40)
+  customerId   Int       @map("customer_id")
+  unitId       Int       @map("unit_id")
+  sellerId       Int       @map("seller_id")
+  conversationId Int?      @map("conversation_id")
+  status         String    @db.VarChar(40)
+  observation    String?   @db.Text
+  createdById    Int       @map("created_by")
+  orderedAt    DateTime? @map("ordered_at")
+  closedAt     DateTime? @map("closed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  customer     Customer            @relation(fields: [customerId], references: [id])
+  unit         Unit                @relation(fields: [unitId], references: [id])
+  seller       User                @relation("SaleOrderSeller", fields: [sellerId], references: [id])
+  createdBy    User                @relation("SaleOrderCreatedBy", fields: [createdById], references: [id])
+  conversation InboxConversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  items        SaleOrderItem[]
+  events       SaleOrderEvent[]
+
+  @@index([customerId])
+  @@index([unitId])
+  @@index([sellerId])
+  @@index([conversationId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sale_orders")
+}
+
+model SaleOrderItem {
+  id             Int       @id @default(autoincrement())
+  saleOrderId    Int       @map("sale_order_id")
+  productId      Int       @map("product_id")
+  status         String    @db.VarChar(40)
+  cashPrice      Float?    @map("cash_price")
+  saleId         Int?      @map("sale_id")
+  warrantyMonths Int?      @map("warranty_months")
+  invoiceNumber  String?   @map("invoice_number") @db.VarChar(40)
+  reservedAt     DateTime? @map("reserved_at")
+  reservedUntil  DateTime? @map("reserved_until")
+  soldAt         DateTime? @map("sold_at")
+  soldById       Int?      @map("sold_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  saleOrder SaleOrder @relation(fields: [saleOrderId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+  sale      Sale?     @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  soldBy    User?     @relation("SaleOrderItemSoldBy", fields: [soldById], references: [id], onDelete: SetNull)
+
+  @@unique([saleOrderId, productId])
+  @@index([productId])
+  @@index([status])
+  @@index([saleId])
+  @@index([reservedUntil])
+  @@map("sale_order_items")
+}
+
+model SaleOrderEvent {
+  id          Int      @id @default(autoincrement())
+  saleOrderId Int      @map("sale_order_id")
+  type        String   @db.VarChar(40)
+  message     String   @db.Text
+  userId      Int      @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  saleOrder SaleOrder @relation(fields: [saleOrderId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([saleOrderId])
+  @@index([createdAt])
+  @@map("sale_order_events")
 }
 
 model WorkOrder {
@@ -545,4 +662,161 @@ model PartTransfer {
   @@index([toUnitId])
   @@index([status])
   @@map("part_transfers")
+}
+
+model InboxTeam {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(120)
+  slug      String   @unique @db.VarChar(80)
+  color     String   @default("#22d3ee") @db.VarChar(20)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members       InboxTeamMember[]
+  channels      InboxChannel[]
+  conversations InboxConversation[]
+
+  @@map("inbox_teams")
+}
+
+model InboxTeamMember {
+  teamId            Int    @map("team_id")
+  userId            Int    @map("user_id")
+  role              String @default("AGENT") @db.VarChar(40)
+  conversationLimit Int    @default(0) @map("conversation_limit")
+
+  team InboxTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@map("inbox_team_members")
+}
+
+model InboxChannel {
+  id               Int      @id @default(autoincrement())
+  name             String   @db.VarChar(120)
+  type             String   @default("WHATSAPP") @db.VarChar(40)
+  provider         String   @db.VarChar(40)
+  phoneNumber      String?  @map("phone_number") @db.VarChar(40)
+  externalId       String?  @map("external_id") @db.VarChar(120)
+  apiKey           String?  @map("api_key") @db.Text
+  webhookSecret    String?  @map("webhook_secret") @db.VarChar(255)
+  connectionStatus String   @default("DISCONNECTED") @map("connection_status") @db.VarChar(40)
+  connectionError  String?  @map("connection_error") @db.Text
+  qrPayload        String?  @map("qr_payload") @db.LongText
+  defaultTeamId    Int      @map("default_team_id")
+  active           Boolean  @default(true)
+  businessHoursEnabled     Boolean  @default(false) @map("business_hours_enabled")
+  timezone                 String   @default("America/Sao_Paulo") @db.VarChar(60)
+  businessHours            Json?    @map("business_hours")
+  afterHoursReplyEnabled   Boolean  @default(false) @map("after_hours_reply_enabled")
+  afterHoursMessage        String?  @map("after_hours_message") @db.Text
+  greetingEnabled          Boolean  @default(false) @map("greeting_enabled")
+  greetingMode             String   @default("FIRST_CONTACT") @map("greeting_mode") @db.VarChar(40)
+  greetingMessage          String?  @map("greeting_message") @db.Text
+  unansweredEnabled        Boolean  @default(false) @map("unanswered_enabled")
+  unansweredMinutes        Int      @default(5) @map("unanswered_minutes")
+  unansweredMessage        String?  @map("unanswered_message") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  defaultTeam   InboxTeam           @relation(fields: [defaultTeamId], references: [id])
+  conversations InboxConversation[]
+
+  @@index([provider])
+  @@index([defaultTeamId])
+  @@index([phoneNumber])
+  @@map("inbox_channels")
+}
+
+model InboxConversation {
+  id                    Int       @id @default(autoincrement())
+  channelId             Int       @map("channel_id")
+  teamId                Int       @map("team_id")
+  customerId            Int?      @map("customer_id")
+  agentId               Int?      @map("agent_id")
+  acceptedById          Int?      @map("accepted_by")
+  closedById            Int?      @map("closed_by")
+  phone                 String    @db.VarChar(40)
+  whatsappJid           String?   @map("whatsapp_jid") @db.VarChar(120)
+  contactName           String?   @map("contact_name") @db.VarChar(190)
+  status                String    @db.VarChar(40)
+  lastMessagePreview    String?   @map("last_message_preview") @db.VarChar(255)
+  lastMessageDirection  String?   @map("last_message_direction") @db.VarChar(20)
+  lastMessageAt         DateTime? @map("last_message_at")
+  lastCustomerMessageAt DateTime? @map("last_customer_message_at")
+  lastAgentMessageAt    DateTime? @map("last_agent_message_at")
+  queuedAt              DateTime  @default(now()) @map("queued_at")
+  acceptedAt            DateTime? @map("accepted_at")
+  firstResponseAt       DateTime? @map("first_response_at")
+  closedAt              DateTime? @map("closed_at")
+  reopenedAt            DateTime? @map("reopened_at")
+  waitingSince          DateTime? @map("waiting_since")
+  unreadCount           Int       @default(0) @map("unread_count")
+  greetingSentAt        DateTime? @map("greeting_sent_at")
+  afterHoursSentAt      DateTime? @map("after_hours_sent_at")
+  unansweredNotifiedAt  DateTime? @map("unanswered_notified_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  channel    InboxChannel             @relation(fields: [channelId], references: [id])
+  team       InboxTeam                @relation(fields: [teamId], references: [id])
+  customer   Customer?                @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  agent      User?                    @relation("ConversationAgent", fields: [agentId], references: [id], onDelete: SetNull)
+  acceptedBy User?                    @relation("ConversationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  closedBy   User?                    @relation("ConversationClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  messages   InboxMessage[]
+  events     InboxConversationEvent[]
+  saleOrders SaleOrder[]
+
+  @@unique([channelId, phone])
+  @@index([teamId])
+  @@index([customerId])
+  @@index([agentId])
+  @@index([status])
+  @@index([lastMessageAt])
+  @@index([whatsappJid])
+  @@map("inbox_conversations")
+}
+
+model InboxMessage {
+  id             Int       @id @default(autoincrement())
+  conversationId Int       @map("conversation_id")
+  userId         Int?      @map("user_id")
+  direction      String    @db.VarChar(20)
+  body           String?   @db.Text
+  mediaUrl       String?   @map("media_url") @db.VarChar(500)
+  mediaType      String?   @map("media_type") @db.VarChar(80)
+  fileName       String?   @map("file_name") @db.VarChar(255)
+  externalId     String?   @unique @map("external_id") @db.VarChar(190)
+  status         String    @default("SENT") @db.VarChar(40)
+  sentAt         DateTime  @default(now()) @map("sent_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  readAt         DateTime? @map("read_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([sentAt])
+  @@map("inbox_messages")
+}
+
+model InboxConversationEvent {
+  id             Int      @id @default(autoincrement())
+  conversationId Int      @map("conversation_id")
+  type           String   @db.VarChar(40)
+  message        String   @db.Text
+  userId         Int?     @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("inbox_conversation_events")
 }

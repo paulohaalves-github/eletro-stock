@@ -4,12 +4,21 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.inboxMessage.deleteMany();
+  await prisma.inboxConversationEvent.deleteMany();
+  await prisma.inboxConversation.deleteMany();
+  await prisma.inboxChannel.deleteMany();
+  await prisma.inboxTeamMember.deleteMany();
+  await prisma.inboxTeam.deleteMany();
   await prisma.workOrderEvent.deleteMany();
   await prisma.workOrderImage.deleteMany();
   await prisma.workOrderPart.deleteMany();
   await prisma.partMovement.deleteMany();
   await prisma.partTransfer.deleteMany();
   await prisma.workOrder.deleteMany();
+  await prisma.saleOrderEvent.deleteMany();
+  await prisma.saleOrderItem.deleteMany();
+  await prisma.saleOrder.deleteMany();
   await prisma.sale.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.partStock.deleteMany();

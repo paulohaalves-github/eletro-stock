@@ -6,11 +6,12 @@ import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
-import { WorkOrderStatusBadge, WorkOrderTypeBadge } from "@/components/badges";
+import { SaleOrderStatusBadge, WorkOrderStatusBadge, WorkOrderTypeBadge } from "@/components/badges";
 import { Modal } from "@/components/modal";
 import { SERVICE_PLACE_LABELS } from "@/lib/constants";
 import { formatDate, formatDateTime, formatProductId, formatWarrantyRemaining } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
+import { CustomerPhonesFields, phonesFromCustomer } from "@/components/customer-phones";
 
 export default function ClienteDetailPage() {
   const { id } = useParams();
@@ -30,7 +31,7 @@ export default function ClienteDetailPage() {
     setMe(user);
     setForm({
       name: item.name || "",
-      phone: item.phone || "",
+      phones: phonesFromCustomer(item),
       document: item.document || "",
       email: item.email || "",
       address: item.address || "",
@@ -51,7 +52,10 @@ export default function ClienteDetailPage() {
   const canManage = can(me.role, PERMISSIONS.CUSTOMER_MANAGE);
   const canViewProduct = can(me.role, PERMISSIONS.PRODUCT_VIEW);
   const canViewRepair = can(me.role, PERMISSIONS.REPAIR_VIEW);
+  const canViewSales = can(me.role, PERMISSIONS.SALE_VIEW);
+  const canCreateSale = can(me.role, PERMISSIONS.SALE_CREATE);
   const sales = customer.sales || [];
+  const saleOrders = customer.saleOrders || [];
   const workOrders = customer.workOrders || [];
 
   function closeModal() {
@@ -59,7 +63,7 @@ export default function ClienteDetailPage() {
     setOpen(false);
     setForm({
       name: customer.name || "",
-      phone: customer.phone || "",
+      phones: phonesFromCustomer(customer),
       document: customer.document || "",
       email: customer.email || "",
       address: customer.address || "",
@@ -86,10 +90,13 @@ export default function ClienteDetailPage() {
     <div className="w-full">
       <PageHeader
         title={customer.name}
-        subtitle={`${customer.phone}${customer.document ? ` · ${customer.document}` : ""}`}
+        subtitle={`${customer.phoneLabel || customer.phone}${customer.document ? ` · ${customer.document}` : ""}`}
         actions={
           <>
             <Link href="/clientes"><Button variant="secondary">Voltar</Button></Link>
+            {canCreateSale ? (
+              <Link href={`/vendas/novo?customerId=${customer.id}`}><Button variant="secondary">Nova venda</Button></Link>
+            ) : null}
             {canManage ? <Button onClick={() => setOpen(true)}>Editar</Button> : null}
           </>
         }
@@ -99,8 +106,22 @@ export default function ClienteDetailPage() {
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">Dados de contato</p>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Info
-            label="Telefone"
-            value={customer.phone ? <a href={`tel:${customer.phone}`} className="hover:text-accent">{customer.phone}</a> : null}
+            label="Telefones"
+            value={
+              customer.phones?.length ? (
+                <span className="flex flex-col gap-1">
+                  {customer.phones.map((item) => (
+                    <a key={item.id || item.phone} href={`tel:${item.phone}`} className="hover:text-accent">
+                      {item.display || item.phone}
+                      {item.label ? <span className="ml-1 font-normal text-muted">· {item.label}</span> : null}
+                      {item.primary ? <span className="ml-1 font-normal text-muted">· principal</span> : null}
+                    </a>
+                  ))}
+                </span>
+              ) : customer.phone ? (
+                <a href={`tel:${customer.phone}`} className="hover:text-accent">{customer.phone}</a>
+              ) : null
+            }
           />
           <Info
             label="E-mail"
@@ -118,6 +139,47 @@ export default function ClienteDetailPage() {
           </div>
         ) : null}
       </Card>
+
+      {canViewSales ? (
+        <HistoryCard
+          title="Pedidos de venda"
+          description="Interesse, reserva e concretização vinculados a este cliente."
+          truncated={saleOrders.length >= 50}
+        >
+          {saleOrders.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-muted">
+                  <tr>
+                    <th className="px-5 py-3 font-semibold">Venda</th>
+                    <th className="px-5 py-3 font-semibold">Vendedor</th>
+                    <th className="px-5 py-3 font-semibold">Itens</th>
+                    <th className="px-5 py-3 font-semibold">Unidade</th>
+                    <th className="px-5 py-3 font-semibold">Abertura</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {saleOrders.map((item) => (
+                    <tr key={item.id} className="border-t border-border">
+                      <td className="px-5 py-4 font-medium">
+                        <Link href={`/vendas/${item.id}`} className="text-accent hover:underline">{item.number}</Link>
+                      </td>
+                      <td className="px-5 py-4 text-muted">{item.seller?.name || "—"}</td>
+                      <td className="px-5 py-4 text-muted">{item.itemCount || 0}</td>
+                      <td className="px-5 py-4 text-muted">{item.unit?.name || "—"}</td>
+                      <td className="px-5 py-4 text-muted">{formatDateTime(item.createdAt)}</td>
+                      <td className="px-5 py-4"><SaleOrderStatusBadge status={item.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="px-5 py-6 text-sm text-muted">Nenhum pedido de venda encontrado.</p>
+          )}
+        </HistoryCard>
+      ) : null}
 
       <HistoryCard
         title="Histórico de vendas"
@@ -225,7 +287,7 @@ export default function ClienteDetailPage() {
       >
         <form id="customer-edit-form" onSubmit={save} className="space-y-3">
           <Field label="Nome" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Telefone" required><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+          <CustomerPhonesFields value={form.phones} onChange={(phones) => setForm({ ...form, phones })} />
           <Field label="CPF/CNPJ"><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></Field>
           <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Endereço" required><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número, bairro, cidade" /></Field>

@@ -87,14 +87,16 @@ export function Card({ className, children, ...props }) {
   return <div className={cn("card p-5", className)} {...props}>{children}</div>;
 }
 
-export function PageHeader({ title, subtitle, actions }) {
+export function PageHeader({ title, subtitle, actions, kicker = "Eletro-Stock" }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Eletro-Stock</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
-      </div>
+      {title || subtitle || kicker ? (
+        <div>
+          {kicker ? <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">{kicker}</p> : null}
+          {title ? <h1 className={cn("text-2xl font-semibold tracking-tight sm:text-3xl", kicker ? "mt-1" : "")}>{title}</h1> : null}
+          {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
+        </div>
+      ) : <div />}
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
   );

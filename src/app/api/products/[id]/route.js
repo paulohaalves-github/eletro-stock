@@ -1,12 +1,14 @@
 import { apiHandler, readJson } from "@/lib/api";
-import { PERMISSIONS, assertCan } from "@/lib/permissions";
+import { PERMISSIONS, assertCan, can } from "@/lib/permissions";
 import { getProduct, updateProduct, assertCanViewProduct } from "@/lib/services/products";
 import { parseId } from "@/lib/validations";
 
 export const GET = apiHandler(
   async (_request, { params, session }) => {
     const { id } = await params;
-    const product = await getProduct(parseId(id));
+    const product = await getProduct(parseId(id), {
+      includeDeleted: can(session.role, PERMISSIONS.PRODUCT_TRASH),
+    });
     assertCanViewProduct(session, product);
     return { product };
   },

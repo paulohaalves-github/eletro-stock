@@ -11,8 +11,9 @@ import { Modal } from "@/components/modal";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
+import { CustomerPhonesFields, emptyPhoneRow } from "@/components/customer-phones";
 
-const empty = { name: "", phone: "", document: "", email: "", address: "", notes: "" };
+const empty = { name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "", notes: "" };
 
 export default function ClientesPage() {
   const router = useRouter();
@@ -103,7 +104,7 @@ export default function ClientesPage() {
                       {item.name}
                     </Link>
                   </td>
-                  <td className="px-5 py-4">{item.phone}</td>
+                  <td className="px-5 py-4">{item.phoneLabel || item.phone}</td>
                   <td className="px-5 py-4 text-muted">{item.document || "—"}</td>
                   <td className="px-5 py-4 text-muted">{item.address || "—"}</td>
                   <td className="px-5 py-4 text-muted">{item.email || "—"}</td>
@@ -136,7 +137,7 @@ export default function ClientesPage() {
       >
         <form id="customer-form" onSubmit={create} className="space-y-3">
           <Field label="Nome" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Telefone" required><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+          <CustomerPhonesFields value={form.phones} onChange={(phones) => setForm({ ...form, phones })} />
           <Field label="CPF/CNPJ"><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></Field>
           <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Endereço" required><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número, bairro, cidade" /></Field>

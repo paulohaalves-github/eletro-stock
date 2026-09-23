@@ -1,14 +1,15 @@
 import { prisma } from "../db";
 import { conflict, notFound, validationError } from "../errors";
 import { writeAudit, writeMovement } from "../audit";
-import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
+import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, SALE_ORDER_CLOSED_STATUSES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { formatCurrency, formatDate, formatProductId } from "../format";
-import { emptyToNull, validateProductPayload } from "../validations";
+import { emptyToNull, parseProductIds, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
 import { toExcelBuffer } from "./reports";
 import {
   assertCanViewProduct,
+  assertProductInActiveUnit,
   assertProductWritable,
   canViewProduct,
   productUnitWhere,
@@ -16,7 +17,21 @@ import {
   unitSelect,
 } from "../units";
 
+export const PRODUCT_ACTIVE_WHERE = { deletedAt: null };
+
 const locationInclude = { locationType: true };
+
+const openSaleOrderItemsInclude = {
+  saleOrderItems: {
+    where: {
+      status: { in: ["INTERESSE", "RESERVADO", "PEDIDO"] },
+      saleOrder: { closedAt: null, status: { notIn: SALE_ORDER_CLOSED_STATUSES } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    include: { saleOrder: { select: { id: true, number: true, status: true, sellerId: true } } },
+  },
+};
 
 const productListInclude = {
   category: true,
@@ -27,18 +42,28 @@ const productListInclude = {
   transferToUnit: { select: unitSelect },
   images: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
   createdBy: { select: { id: true, name: true } },
+  ...openSaleOrderItemsInclude,
 };
+
+function pickOpenSaleItem(items) {
+  if (!Array.isArray(items) || !items.length) return null;
+  return items.find((item) => item.status === "PEDIDO" || item.status === "RESERVADO") || items[0];
+}
 
 function serializeProduct(product) {
   if (!product) return null;
   const primary = product.images?.find((image) => image.isPrimary) || product.images?.[0] || null;
-  const { workOrders, ...rest } = product;
+  const { workOrders, saleOrderItems, ...rest } = product;
+  const openItem = pickOpenSaleItem(saleOrderItems);
   return {
     ...rest,
     commercialName: product.catalogModel?.commercialName || null,
     primaryImage: primary,
     locationPath: formatLocationPath(product.location),
     openWorkOrder: Array.isArray(workOrders) ? workOrders[0] || null : null,
+    openSaleOrder: openItem
+      ? { ...openItem.saleOrder, reservedUntil: openItem.reservedUntil, itemStatus: openItem.status }
+      : null,
   };
 }
 
@@ -135,6 +160,7 @@ function buildProductListWhere(filters = {}, session) {
 
   const where = {
     ...productUnitWhere(session),
+    ...PRODUCT_ACTIVE_WHERE,
     ...buildSearchWhere(q),
   };
 
@@ -175,6 +201,8 @@ function buildProductListWhere(filters = {}, session) {
 }
 
 export async function listProducts(filters = {}, session) {
+  const { expireExpiredReservations } = await import("./sale-orders");
+  await expireExpiredReservations();
   const { ids, page = 1, pageSize = ESTOQUE_PAGE_SIZE, view = "table" } = filters;
   const idList = parseIdList(ids);
   const where = buildProductListWhere(filters, session);
@@ -283,7 +311,9 @@ export async function exportProductsWorkbook(payload = {}, session) {
   });
 }
 
-export async function getProduct(id) {
+export async function getProduct(id, { includeDeleted = false } = {}) {
+  const { expireExpiredReservations } = await import("./sale-orders");
+  await expireExpiredReservations();
   const product = await prisma.product.findUnique({
     where: { id: Number(id) },
     include: {
@@ -292,6 +322,7 @@ export async function getProduct(id) {
       catalogModel: true,
       location: { include: locationInclude },
       createdBy: { select: { id: true, name: true, email: true } },
+      deletedBy: { select: { id: true, name: true } },
       unit: { select: unitSelect },
       transferToUnit: { select: unitSelect },
       images: {
@@ -318,10 +349,12 @@ export async function getProduct(id) {
         take: 1,
         select: { id: true, number: true, status: true, type: true },
       },
+      ...openSaleOrderItemsInclude,
     },
   });
 
   if (!product) throw notFound("Produto não encontrado.");
+  if (product.deletedAt && !includeDeleted) throw notFound("Produto não encontrado.");
   return serializeProduct(product);
 }
 
@@ -330,7 +363,7 @@ export async function getProductsByIds(ids, session) {
   if (!unique.length) return [];
 
   const items = await prisma.product.findMany({
-    where: { id: { in: unique } },
+    where: { id: { in: unique }, ...PRODUCT_ACTIVE_WHERE },
     include: {
       catalogModel: true,
       location: { include: locationInclude },
@@ -564,6 +597,152 @@ export async function searchProducts(query, { limit, page = 1 } = {}, session) {
   const text = String(query || "").trim();
   if (!text) return { items: [], total: 0, page: 1, pageSize: 0 };
   return listProducts({ q: text, pageSize: limit, page }, session);
+}
+
+const trashListInclude = {
+  ...productListInclude,
+  deletedBy: { select: { id: true, name: true } },
+};
+
+export async function listTrashedProducts(filters = {}, session) {
+  const { page = 1, pageSize = ESTOQUE_PAGE_SIZE } = filters;
+  const where = {
+    ...productUnitWhere(session),
+    deletedAt: { not: null },
+    ...buildSearchWhere(filters.q),
+  };
+
+  const take = Math.min(Number(pageSize) || ESTOQUE_PAGE_SIZE, PRODUCT_LIST_MAX_PAGE_SIZE);
+  const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
+
+  const [total, rows] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      include: trashListInclude,
+      orderBy: { deletedAt: "desc" },
+      skip,
+      take,
+    }),
+  ]);
+
+  return {
+    items: rows.map(serializeProduct),
+    total,
+    page: Math.max(Number(page) || 1, 1),
+    pageSize: take,
+  };
+}
+
+async function loadTrashProduct(id, session) {
+  const product = await prisma.product.findUnique({
+    where: { id: Number(id) },
+    include: {
+      catalogModel: true,
+      unit: { select: unitSelect },
+      deletedBy: { select: { id: true, name: true } },
+    },
+  });
+  if (!product) throw notFound("Produto não encontrado.");
+  assertCanViewProduct(session, product);
+  assertProductInActiveUnit(session, product);
+  return product;
+}
+
+export async function moveProductsToTrash(payload, user) {
+  const ids = parseProductIds(payload);
+  const observation = emptyToNull(payload.observation);
+  const now = new Date();
+  const products = [];
+
+  for (const id of ids) {
+    const current = await loadTrashProduct(id, user);
+    if (current.deletedAt) throw conflict(`${formatProductId(id)} já está na lixeira.`);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.product.update({
+        where: { id: current.id },
+        data: { deletedAt: now, deletedById: user.id },
+      });
+      await writeMovement(
+        {
+          productId: current.id,
+          type: MOVEMENT_TYPES.TRASH,
+          previousStatus: current.status,
+          newStatus: current.status,
+          observation: observation || "Movido para a lixeira",
+          ...movementUnitFields(current),
+          userId: user.id,
+        },
+        tx,
+      );
+      return saved;
+    });
+
+    await writeAudit({
+      userId: user.id,
+      action: "PRODUCT_TRASHED",
+      entity: "product",
+      entityId: current.id,
+      oldData: { status: current.status, deletedAt: null },
+      newData: { status: current.status, deletedAt: updated.deletedAt, observation },
+    });
+    products.push(updated);
+  }
+
+  const count = products.length;
+  return {
+    products,
+    count,
+    message: count === 1 ? "Produto movido para a lixeira." : `${count} produtos movidos para a lixeira.`,
+  };
+}
+
+export async function restoreProductsFromTrash(payload, user) {
+  const ids = parseProductIds(payload);
+  const products = [];
+
+  for (const id of ids) {
+    const current = await loadTrashProduct(id, user);
+    if (!current.deletedAt) throw conflict(`${formatProductId(id)} não está na lixeira.`);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.product.update({
+        where: { id: current.id },
+        data: { deletedAt: null, deletedById: null },
+      });
+      await writeMovement(
+        {
+          productId: current.id,
+          type: MOVEMENT_TYPES.RESTORE,
+          previousStatus: current.status,
+          newStatus: current.status,
+          observation: "Restaurado da lixeira",
+          ...movementUnitFields(current),
+          userId: user.id,
+        },
+        tx,
+      );
+      return saved;
+    });
+
+    await writeAudit({
+      userId: user.id,
+      action: "PRODUCT_RESTORED",
+      entity: "product",
+      entityId: current.id,
+      oldData: { deletedAt: current.deletedAt, deletedById: current.deletedById },
+      newData: { deletedAt: null },
+    });
+    products.push(updated);
+  }
+
+  const count = products.length;
+  return {
+    products,
+    count,
+    message: count === 1 ? "Produto restaurado." : `${count} produtos restaurados.`,
+  };
 }
 
 export { assertCanViewProduct };

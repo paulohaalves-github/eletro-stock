@@ -2,6 +2,7 @@ export const ROLES = {
   ADMIN: "ADMINISTRADOR",
   GESTOR: "GESTOR",
   STOCK: "ESTOQUE",
+  SELLER: "VENDEDOR",
   TECHNICIAN: "TECNICO",
   VIEWER: "CONSULTA",
 };
@@ -22,6 +23,7 @@ export const ROLE_LABELS = {
   ADMINISTRADOR: "Administrador",
   GESTOR: "Gestor",
   ESTOQUE: "Estoque",
+  VENDEDOR: "Vendedor",
   TECNICO: "Técnico",
   CONSULTA: "Consulta",
 };
@@ -93,6 +95,8 @@ export const MOVEMENT_TYPES = {
   REPAIR_OPEN: "REPARO_ABERTURA",
   REPAIR_TO_LAB: "REPARO_ENVIO_LAB",
   REPAIR_DELIVER: "REPARO_ENTREGA",
+  TRASH: "LIXEIRA",
+  RESTORE: "RESTAURACAO",
 };
 
 export const MOVEMENT_TYPE_LABELS = {
@@ -116,6 +120,8 @@ export const MOVEMENT_TYPE_LABELS = {
   REPARO_ABERTURA: "Aberto para reparo técnico",
   REPARO_ENVIO_LAB: "Enviado ao laboratório",
   REPARO_ENTREGA: "Devolvido ao cliente após reparo",
+  LIXEIRA: "Movido para a lixeira",
+  RESTAURACAO: "Restaurado da lixeira",
 };
 
 export const EXIT_REASONS = {
@@ -135,6 +141,10 @@ export const EXIT_REASON_LABELS = {
   DESCARTE: "Descarte",
   OUTRO: "Outro",
 };
+
+export const STOCK_EXIT_REASON_LABELS = Object.fromEntries(
+  Object.entries(EXIT_REASON_LABELS).filter(([value]) => value !== EXIT_REASONS.SALE),
+);
 
 export const EXIT_REASON_TO_STATUS = {
   VENDA: "VENDIDO",
@@ -160,6 +170,72 @@ export function canOperateStock(status) {
 }
 
 export const WARRANTY_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+export const SALE_ORDER_STATUSES = {
+  INTEREST: "INTERESSE",
+  RESERVED: "RESERVADA",
+  ORDER: "PEDIDO",
+  PARTIAL: "PARCIAL",
+  COMPLETED: "CONCRETIZADA",
+  LOST: "PERDIDA",
+  CANCELLED: "CANCELADA",
+};
+
+export const SALE_ORDER_STATUS_LABELS = {
+  INTERESSE: "Interesse",
+  RESERVADA: "Reservada",
+  PEDIDO: "Pedido gerado",
+  PARCIAL: "Parcialmente concretizada",
+  CONCRETIZADA: "Concretizada",
+  PERDIDA: "Perdida",
+  CANCELADA: "Cancelada",
+};
+
+export const SALE_ORDER_CLOSED_STATUSES = ["CONCRETIZADA", "PERDIDA", "CANCELADA"];
+
+export const SALE_ORDER_ITEM_STATUSES = {
+  INTEREST: "INTERESSE",
+  RESERVED: "RESERVADO",
+  ORDERED: "PEDIDO",
+  SOLD: "VENDIDO",
+  REMOVED: "REMOVIDO",
+};
+
+export const SALE_ORDER_ITEM_STATUS_LABELS = {
+  INTERESSE: "Interesse",
+  RESERVADO: "Reservado",
+  PEDIDO: "No pedido",
+  VENDIDO: "Vendido",
+  REMOVIDO: "Removido",
+};
+
+export const SALE_ORDER_EVENT_TYPES = {
+  OPEN: "ABERTURA",
+  PRODUCT: "PRODUTO",
+  RESERVE: "RESERVA",
+  ORDER: "PEDIDO",
+  CHECKOUT: "BAIXA",
+  STATUS: "STATUS",
+  NOTE: "NOTA",
+  CLOSE: "ENCERRAMENTO",
+};
+
+export const SALE_ORDER_EVENT_LABELS = {
+  ABERTURA: "Abertura",
+  PRODUTO: "Produto",
+  RESERVA: "Reserva",
+  PEDIDO: "Pedido",
+  BAIXA: "Baixa no caixa",
+  STATUS: "Status",
+  NOTA: "Comentário",
+  ENCERRAMENTO: "Encerramento",
+};
+
+export function isSaleOrderClosed(order) {
+  if (!order) return false;
+  if (order.closedAt) return true;
+  return SALE_ORDER_CLOSED_STATUSES.includes(order.status);
+}
 
 export const SERVICE_PLACES = {
   LAB: "LABORATORIO",
@@ -313,6 +389,17 @@ export const DOCUMENT_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 export const DOCUMENT_EXTENSIONS = [".pdf", ".doc", ".docx"];
+export const INBOX_VIDEO_MIME_TYPES = ["video/mp4", "video/3gpp", "video/quicktime"];
+export const INBOX_VIDEO_EXTENSIONS = [".mp4", ".3gp", ".mov"];
+export const INBOX_DOCUMENT_MIME_TYPES = [
+  ...DOCUMENT_MIME_TYPES,
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "application/zip",
+];
+export const INBOX_DOCUMENT_EXTENSIONS = [...DOCUMENT_EXTENSIONS, ".xls", ".xlsx", ".txt", ".zip"];
+export const INBOX_MAX_UPLOAD_BYTES = Number(process.env.INBOX_MAX_UPLOAD_MB || 16) * 1024 * 1024;
 
 export const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_MB || 8) * 1024 * 1024;
 export const MAX_IMAGES_PER_PRODUCT = 20;
@@ -370,4 +457,129 @@ export const LABEL_MODEL_OPTIONS = [
 export function resolveLabelModel(value) {
   const model = String(value || LABEL_MODELS.PRECOS_01);
   return model === LABEL_MODELS.PRECOS_02 ? LABEL_MODELS.PRECOS_02 : LABEL_MODELS.PRECOS_01;
+}
+
+export const INBOX_CHANNEL_TYPES = {
+  WHATSAPP: "WHATSAPP",
+};
+
+export const INBOX_CHANNEL_TYPE_LABELS = {
+  WHATSAPP: "WhatsApp",
+};
+
+export const INBOX_PROVIDERS = {
+  DIALOG_360: "DIALOG_360",
+  UNOFFICIAL: "UNOFFICIAL",
+};
+
+export const INBOX_PROVIDER_LABELS = {
+  DIALOG_360: "WhatsApp oficial (360dialog)",
+  UNOFFICIAL: "WhatsApp não oficial",
+};
+
+export const INBOX_CONNECTION_STATUSES = {
+  DISCONNECTED: "DISCONNECTED",
+  QR_PENDING: "QR_PENDING",
+  CONNECTED: "CONNECTED",
+  ERROR: "ERROR",
+};
+
+export const INBOX_CONNECTION_STATUS_LABELS = {
+  DISCONNECTED: "Desconectado",
+  QR_PENDING: "Aguardando QR Code",
+  CONNECTED: "Conectado",
+  ERROR: "Erro",
+};
+
+export const INBOX_TEAM_MEMBER_ROLES = {
+  AGENT: "AGENT",
+  SUPERVISOR: "SUPERVISOR",
+};
+
+export const INBOX_TEAM_MEMBER_ROLE_LABELS = {
+  AGENT: "Agente",
+  SUPERVISOR: "Supervisor",
+};
+
+export const CONVERSATION_STATUSES = {
+  WAITING_AGENT: "AGUARDANDO_AGENTE",
+  AGENT_REPLIED: "AGENTE_RESPONDEU",
+  CLOSED: "ENCERRADA",
+};
+
+export const CONVERSATION_STATUS_LABELS = {
+  AGUARDANDO_AGENTE: "Cliente aguardando resposta do agente",
+  AGENTE_RESPONDEU: "Agente respondeu",
+  ENCERRADA: "Conversa encerrada",
+};
+
+export const MESSAGE_DIRECTIONS = {
+  IN: "IN",
+  OUT: "OUT",
+  INTERNAL: "INTERNAL",
+};
+
+export const MESSAGE_STATUSES = {
+  PENDING: "PENDING",
+  SENT: "SENT",
+  DELIVERED: "DELIVERED",
+  READ: "READ",
+  FAILED: "FAILED",
+};
+
+export const CONVERSATION_EVENT_TYPES = {
+  CREATED: "CRIADA",
+  ACCEPTED: "ACEITA",
+  TRANSFERRED: "TRANSFERIDA",
+  CLOSED: "ENCERRADA",
+  REOPENED: "REABERTA",
+  NOTE: "NOTA",
+  CUSTOMER: "CLIENTE",
+  AUTOMATION: "AUTOMACAO",
+};
+
+export const CONVERSATION_EVENT_LABELS = {
+  CRIADA: "Conversa iniciada",
+  ACEITA: "Agente entrou na conversa",
+  TRANSFERIDA: "Conversa transferida",
+  ENCERRADA: "Conversa encerrada",
+  REABERTA: "Conversa reaberta",
+  NOTA: "Nota interna",
+  CLIENTE: "Cliente vinculado",
+  AUTOMACAO: "Resposta automática",
+};
+
+export const GREETING_MODES = {
+  FIRST_CONTACT: "FIRST_CONTACT",
+  EVERY_NEW_CONVERSATION: "EVERY_NEW_CONVERSATION",
+};
+
+export const GREETING_MODE_LABELS = {
+  FIRST_CONTACT: "Apenas uma vez no contato inicial",
+  EVERY_NEW_CONVERSATION: "Sempre que o cliente começar uma nova conversa",
+};
+
+export const INBOX_TIMEZONES = [
+  { value: "America/Sao_Paulo", label: "Brasília (UTC−3)" },
+  { value: "America/Fortaleza", label: "Fortaleza (UTC−3)" },
+  { value: "America/Recife", label: "Recife (UTC−3)" },
+  { value: "America/Belem", label: "Belém (UTC−3)" },
+  { value: "America/Manaus", label: "Manaus (UTC−4)" },
+  { value: "America/Cuiaba", label: "Cuiabá (UTC−4)" },
+  { value: "America/Porto_Velho", label: "Porto Velho (UTC−4)" },
+  { value: "America/Rio_Branco", label: "Rio Branco (UTC−5)" },
+  { value: "America/Noronha", label: "Fernando de Noronha (UTC−2)" },
+];
+
+export const WEEKDAY_LABELS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+export const UNANSWERED_MINUTE_OPTIONS = [2, 5, 10, 15, 30, 60];
+
+export function defaultBusinessHours() {
+  return WEEKDAY_LABELS.map((_, weekday) => ({
+    weekday,
+    enabled: weekday >= 1 && weekday <= 6,
+    start: "08:00",
+    end: weekday === 6 ? "12:00" : "18:00",
+  }));
 }

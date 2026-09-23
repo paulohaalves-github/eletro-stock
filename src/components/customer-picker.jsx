@@ -6,12 +6,13 @@ import { Button, Field, Input } from "@/components/ui";
 import { LoadMore, SearchActions } from "@/components/paged-list";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
+import { CustomerPhonesFields, emptyPhoneRow } from "@/components/customer-phones";
 
 export function CustomerPicker({ value, onChange, allowCreate = true }) {
   const list = usePagedList();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", document: "", email: "", address: "" });
+  const [form, setForm] = useState({ name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "" });
   const [error, setError] = useState("");
 
   function loader(page, pageSize) {
@@ -33,7 +34,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
       const data = await api("/api/customers", { method: "POST", json: form });
       onChange(data.customer);
       setCreating(false);
-      setForm({ name: "", phone: "", document: "", email: "", address: "" });
+      setForm({ name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "" });
       setQuery("");
       list.setItems([]);
     } catch (err) {
@@ -45,7 +46,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
     return (
       <div className="rounded-xl border border-border bg-surface-2 p-3">
         <p className="font-medium">{value.name}</p>
-        <p className="text-sm text-muted">{value.phone}{value.document ? ` · ${value.document}` : ""}</p>
+        <p className="text-sm text-muted">{value.phoneLabel || value.phone}{value.document ? ` · ${value.document}` : ""}</p>
         {value.address ? <p className="text-sm text-muted">{value.address}</p> : null}
         <Button type="button" variant="ghost" className="mt-2 px-0" onClick={() => onChange(null)}>
           Trocar cliente
@@ -91,7 +92,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
               }}
             >
               <span className="text-sm font-medium">{item.name}</span>
-              <span className="text-xs text-muted">{item.phone}{item.document ? ` · ${item.document}` : ""}</span>
+              <span className="text-xs text-muted">{item.phoneLabel || item.phone}{item.document ? ` · ${item.document}` : ""}</span>
               {item.address ? <span className="text-xs text-muted">{item.address}</span> : null}
             </button>
           ))}
@@ -108,7 +109,9 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
         creating ? (
           <form onSubmit={create} className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2">
             <Field label="Nome" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-            <Field label="Telefone" required><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+            <div className="sm:col-span-2">
+              <CustomerPhonesFields value={form.phones} onChange={(phones) => setForm({ ...form, phones })} />
+            </div>
             <Field label="CPF/CNPJ"><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></Field>
             <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
             <div className="sm:col-span-2">

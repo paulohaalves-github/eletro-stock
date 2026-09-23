@@ -4,6 +4,7 @@ export const PERMISSIONS = {
   PRODUCT_CREATE: "product:create",
   PRODUCT_EDIT: "product:edit",
   PRODUCT_VIEW: "product:view",
+  PRODUCT_TRASH: "product:trash",
   STOCK_ENTRY: "stock:entry",
   STOCK_EXIT: "stock:exit",
   STOCK_TRANSFER: "stock:transfer",
@@ -23,12 +24,20 @@ export const PERMISSIONS = {
   AUDIT_VIEW: "audit:view",
   CUSTOMER_VIEW: "customer:view",
   CUSTOMER_MANAGE: "customer:manage",
+  SALE_VIEW: "sale:view",
+  SALE_CREATE: "sale:create",
+  SALE_CHECKOUT: "sale:checkout",
   REPAIR_VIEW: "repair:view",
   REPAIR_CREATE: "repair:create",
   REPAIR_UPDATE: "repair:update",
   PART_VIEW: "part:view",
   PART_MANAGE: "part:manage",
   PART_STOCK: "part:stock",
+  INBOX_VIEW: "inbox:view",
+  INBOX_REPLY: "inbox:reply",
+  INBOX_ASSIGN: "inbox:assign",
+  INBOX_TEAM_MANAGE: "inbox:team_manage",
+  INBOX_CHANNEL_MANAGE: "inbox:channel_manage",
 };
 
 const ROLE_PERMISSIONS = {
@@ -52,12 +61,30 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.REPORT_VIEW,
     PERMISSIONS.CUSTOMER_VIEW,
     PERMISSIONS.CUSTOMER_MANAGE,
+    PERMISSIONS.SALE_VIEW,
+    PERMISSIONS.SALE_CHECKOUT,
     PERMISSIONS.REPAIR_VIEW,
     PERMISSIONS.REPAIR_CREATE,
     PERMISSIONS.REPAIR_UPDATE,
     PERMISSIONS.PART_VIEW,
     PERMISSIONS.PART_MANAGE,
     PERMISSIONS.PART_STOCK,
+    PERMISSIONS.INBOX_VIEW,
+    PERMISSIONS.INBOX_REPLY,
+    PERMISSIONS.INBOX_ASSIGN,
+  ],
+  [ROLES.SELLER]: [
+    PERMISSIONS.PRODUCT_VIEW,
+    PERMISSIONS.HISTORY_VIEW,
+    PERMISSIONS.DASHBOARD_VIEW,
+    PERMISSIONS.REPORT_VIEW,
+    PERMISSIONS.CUSTOMER_VIEW,
+    PERMISSIONS.CUSTOMER_MANAGE,
+    PERMISSIONS.SALE_VIEW,
+    PERMISSIONS.SALE_CREATE,
+    PERMISSIONS.INBOX_VIEW,
+    PERMISSIONS.INBOX_REPLY,
+    PERMISSIONS.INBOX_ASSIGN,
   ],
   [ROLES.TECHNICIAN]: [
     PERMISSIONS.PRODUCT_VIEW,
@@ -66,10 +93,15 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.CUSTOMER_VIEW,
     PERMISSIONS.CUSTOMER_MANAGE,
+    PERMISSIONS.SALE_VIEW,
+    PERMISSIONS.SALE_CREATE,
     PERMISSIONS.REPAIR_VIEW,
     PERMISSIONS.REPAIR_CREATE,
     PERMISSIONS.REPAIR_UPDATE,
     PERMISSIONS.PART_VIEW,
+    PERMISSIONS.INBOX_VIEW,
+    PERMISSIONS.INBOX_REPLY,
+    PERMISSIONS.INBOX_ASSIGN,
   ],
   [ROLES.VIEWER]: [
     PERMISSIONS.PRODUCT_VIEW,
@@ -77,6 +109,7 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.REPORT_VIEW,
     PERMISSIONS.CUSTOMER_VIEW,
+    PERMISSIONS.SALE_VIEW,
     PERMISSIONS.REPAIR_VIEW,
     PERMISSIONS.PART_VIEW,
   ],
@@ -97,4 +130,18 @@ export function assertCan(role, permission) {
     error.code = "FORBIDDEN";
     throw error;
   }
+}
+
+export function canManageAllSaleOrders(role) {
+  return role === ROLES.ADMIN || role === ROLES.GESTOR;
+}
+
+export function canViewAllSaleOrders(role) {
+  return canManageAllSaleOrders(role) || can(role, PERMISSIONS.SALE_CHECKOUT);
+}
+
+export function canAccessSaleOrderRecord(user, saleOrder) {
+  if (!user || !saleOrder) return false;
+  if (canViewAllSaleOrders(user.role)) return true;
+  return Number(saleOrder.sellerId) === Number(user.id);
 }

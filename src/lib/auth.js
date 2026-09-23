@@ -7,6 +7,7 @@ import { SESSION_COOKIE, SESSION_MAX_AGE, UNIT_COOKIE } from "./constants";
 import { unauthorized, forbidden } from "./errors";
 import { can } from "./permissions";
 import { resolveAllowedUnits, serializeUnit } from "./units";
+import { resolveInboxSupervisor } from "./services/inbox-access";
 
 function getSecret() {
   const secret = process.env.AUTH_SECRET;
@@ -101,6 +102,7 @@ export const getSession = cache(async () => {
     const units = await resolveAllowedUnits(user);
     const requestedId = Number(cookieStore.get(UNIT_COOKIE)?.value);
     const activeUnit = units.find((unit) => unit.id === requestedId) || units[0] || null;
+    const inboxSupervisor = await resolveInboxSupervisor(user);
 
     return {
       id: user.id,
@@ -111,6 +113,7 @@ export const getSession = cache(async () => {
       units,
       activeUnit,
       activeUnitId: activeUnit?.id ?? null,
+      inboxSupervisor,
     };
   } catch {
     return null;
@@ -139,5 +142,6 @@ export function publicUser(user) {
     units: (user.units || []).map(serializeUnit),
     activeUnit: serializeUnit(user.activeUnit),
     activeUnitId: user.activeUnitId ?? user.activeUnit?.id ?? null,
+    inboxSupervisor: Boolean(user.inboxSupervisor),
   };
 }

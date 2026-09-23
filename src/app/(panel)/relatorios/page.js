@@ -11,6 +11,7 @@ const TYPES = [
   { id: "stock", label: "Estoque atual" },
   { id: "entries", label: "Entradas por período" },
   { id: "exits", label: "Saídas por período" },
+  { id: "sales", label: "Faturamento comercial" },
   { id: "sold", label: "Produtos vendidos" },
   { id: "condition", label: "Produtos por condição" },
   { id: "category", label: "Produtos por categoria" },
@@ -66,7 +67,7 @@ export default function RelatoriosPage() {
     <div>
       <PageHeader
         title="Relatórios"
-        subtitle="Exporte o estoque e o histórico para Excel, CSV ou PDF (impressão)."
+        subtitle="Exporte estoque, movimentações e o faturamento comercial (vendedor, pedido e período)."
         actions={
           <>
             <Button variant="secondary" onClick={() => download("csv")}>CSV</Button>
@@ -103,7 +104,9 @@ export default function RelatoriosPage() {
           <h2 className="mb-3 text-lg font-semibold">{report.title}</h2>
           {report.summary ? (
             <p className="mb-3 text-sm text-muted">
-              {report.summary.count} itens · à vista {formatCurrency(report.summary.cash)} · parcelado {formatCurrency(report.summary.installment)} · mercado {formatCurrency(report.summary.market)}
+              {report.summary.count} itens · à vista {formatCurrency(report.summary.cash)}
+              {report.summary.installment ? ` · parcelado ${formatCurrency(report.summary.installment)}` : ""}
+              {report.summary.market ? ` · mercado ${formatCurrency(report.summary.market)}` : ""}
             </p>
           ) : null}
           <table className="w-full min-w-[800px] text-left text-sm">

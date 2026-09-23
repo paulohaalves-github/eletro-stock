@@ -156,6 +156,7 @@ export async function listWorkOrders(
   if (closedAt) where.closedAt = closedAt;
   const text = String(q || "").trim();
   if (text) {
+    const phoneDigits = text.replace(/\D/g, "");
     where.AND = [
       ...(where.AND || []),
       {
@@ -164,6 +165,8 @@ export async function listWorkOrders(
           { reportedDefect: { contains: text } },
           { customer: { name: { contains: text } } },
           { customer: { phone: { contains: text } } },
+          { customer: { phones: { some: { phone: { contains: text } } } } },
+          ...(phoneDigits ? [{ customer: { phones: { some: { digits: { contains: phoneDigits } } } } }] : []),
           { product: { serialOnyx: { contains: text } } },
         ],
       },
@@ -230,7 +233,7 @@ export async function createWorkOrder(payload, user) {
     where: { id: productId },
     include: { catalogModel: true, unit: { select: unitSelect } },
   });
-  if (!product) throw notFound("Produto não encontrado.");
+  if (!product || product.deletedAt) throw notFound("Produto não encontrado.");
   assertProductCanOpenWorkOrder(product);
 
   const type = resolveWorkOrderType(product);
@@ -770,7 +773,7 @@ export async function lookupSoldProduct(query, session, { productId } = {}) {
       where: { id },
       include: lookupInclude,
     });
-    if (!item || !canViewProduct(session, item)) return [];
+    if (!item || item.deletedAt || !canViewProduct(session, item)) return [];
     const open = await prisma.workOrder.findFirst({
       where: { productId: item.id, status: { notIn: WORK_ORDER_CLOSED_STATUSES } },
       select: { id: true },
@@ -795,6 +798,7 @@ export async function lookupSoldProduct(query, session, { productId } = {}) {
   const items = await prisma.product.findMany({
     where: {
       unitId,
+      deletedAt: null,
       status: { in: WORK_ORDER_OPENABLE_STATUSES },
       OR: or,
     },

@@ -1,19 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/ui";
 import { LoadMore, SearchActions } from "@/components/paged-list";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { ConfirmDialog } from "@/components/modal";
 import { ScanField } from "@/components/scan-field";
-import { CLOSED_STATUSES, EXIT_REASON_LABELS, EXIT_REASONS, WARRANTY_MONTHS } from "@/lib/constants";
-import { formatCurrency, formatProductId } from "@/lib/format";
+import { CLOSED_STATUSES, EXIT_REASONS, STOCK_EXIT_REASON_LABELS } from "@/lib/constants";
+import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
-import { CustomerPicker } from "@/components/customer-picker";
+import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
 
 function SaidaContent() {
   const params = useSearchParams();
@@ -21,15 +22,14 @@ function SaidaContent() {
   const [query, setQuery] = useState("");
   const results = usePagedList();
   const [product, setProduct] = useState(null);
-  const [reason, setReason] = useState(EXIT_REASONS.SALE);
+  const [reason, setReason] = useState(EXIT_REASONS.RETURN);
   const [observation, setObservation] = useState("");
-  const [customer, setCustomer] = useState(null);
-  const [warrantyMonths, setWarrantyMonths] = useState("3");
-  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [me, setMe] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    api("/api/auth/me").then((data) => setMe(data.user)).catch(() => {});
     const id = params.get("id");
     if (id) api(`/api/products/${id}`).then((data) => setProduct(data.product));
   }, [params]);
@@ -50,14 +50,11 @@ function SaidaContent() {
     try {
       const data = await api("/api/stock/exit", {
         method: "POST",
-        json: {
-          productId: product.id,
-          reason,
-          observation,
-          ...(reason === EXIT_REASONS.SALE
-            ? { customerId: customer?.id, warrantyMonths: Number(warrantyMonths), invoiceNumber }
-            : {}),
-        },
+          json: {
+            productId: product.id,
+            reason,
+            observation,
+          },
       });
       toast.success(data.message);
       setConfirmOpen(false);
@@ -69,13 +66,15 @@ function SaidaContent() {
     }
   }
 
+  const commercialLock = Boolean(product?.openSaleOrder);
   const blocked = product && (["VENDIDO", "TRANSFERIDO", "DESCARTADO", "EM_TRANSITO", "EM_REPARO"].includes(product.status)
-    || (CLOSED_STATUSES.includes(product.status) && product.status !== "DEVOLVIDO"));
-  const saleIncomplete = reason === EXIT_REASONS.SALE && (!customer || !invoiceNumber.trim());
+    || (CLOSED_STATUSES.includes(product.status) && product.status !== "DEVOLVIDO")
+    || commercialLock);
+  const saleIncomplete = reason === EXIT_REASONS.OTHER && !observation.trim();
 
   return (
     <div>
-      <PageHeader title="Saída de estoque" subtitle="Localize a unidade e confirme a baixa sem apagar o histórico." />
+      <PageHeader title="Saída de estoque" subtitle="Baixa por devolução, avaria ou descarte. Venda de produto é feita em Comercial > Vendas." />
       <Card className="mb-4">
         <Field label="Localizar produto">
           <ScanField
@@ -142,7 +141,14 @@ function SaidaContent() {
               <p className="text-lg font-semibold">{formatCurrency(product.cashPrice)}</p>
             </div>
           </div>
-          {blocked ? (
+          {commercialLock ? (
+            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+              Este produto está em uma venda comercial
+              {me && can(me.role, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder)
+                ? <> ({product.openSaleOrder.number}{product.openSaleOrder.reservedUntil ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}` : ""}). <Link className="text-accent underline" href={`/vendas/${product.openSaleOrder.id}`}>Abrir venda</Link></>
+                : ". Conclua ou libere pelo fluxo comercial."}
+            </p>
+          ) : blocked ? (
             <p className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm">
               Não é permitido dar baixa em produto vendido, descartado ou transferido.
             </p>
@@ -150,28 +156,11 @@ function SaidaContent() {
             <>
               <Field label="Motivo da saída" required>
                 <Select value={reason} onChange={(e) => setReason(e.target.value)}>
-                  {Object.entries(EXIT_REASON_LABELS).map(([value, label]) => (
+                  {Object.entries(STOCK_EXIT_REASON_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </Select>
               </Field>
-              {reason === EXIT_REASONS.SALE ? (
-                <>
-                  <Field label="Cliente" required>
-                    <CustomerPicker value={customer} onChange={setCustomer} />
-                  </Field>
-                  <Field label="Número NF" required hint="Número da nota fiscal da venda.">
-                    <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="Ex.: 123456" />
-                  </Field>
-                  <Field label="Garantia" required hint="Prazo escolhido na venda, de 1 a 12 meses.">
-                    <Select value={warrantyMonths} onChange={(e) => setWarrantyMonths(e.target.value)}>
-                      {WARRANTY_MONTHS.map((months) => (
-                        <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>
-                      ))}
-                    </Select>
-                  </Field>
-                </>
-              ) : null}
               <Field label="Observação" required={reason === EXIT_REASONS.OTHER}>
                 <Textarea value={observation} onChange={(e) => setObservation(e.target.value)} />
               </Field>

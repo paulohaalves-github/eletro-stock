@@ -4,7 +4,8 @@
  *
  * - ERP / Onyx: sincronizar serial, preços e status
  * - Leitor de código: src/lib/scanner.js + componente ScanField
- * - WhatsApp / Bitrix24 / marketplaces: disparar eventos a partir de writeMovement/writeAudit
+ * - WhatsApp (360dialog oficial e sessão não oficial): Contact Center
+ * - Bitrix24 / marketplaces: disparar eventos a partir de writeMovement/writeAudit
  * - Etiquetas QR: ficha de impressão já reserva o ID interno
  */
 

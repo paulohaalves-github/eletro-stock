@@ -12,11 +12,22 @@ import { usePagedList } from "@/hooks/use-paged-list";
 
 const emptyForm = { name: "", email: "", password: "", role: ROLES.STOCK, unitIds: [] };
 
+function formFromUser(user) {
+  return {
+    name: user.name || "",
+    email: user.email || "",
+    password: "",
+    role: user.role || ROLES.STOCK,
+    unitIds: user.unitIds || [],
+  };
+}
+
 export default function UsuariosPage() {
   const list = usePagedList();
   const [q, setQ] = useState("");
   const [units, setUnits] = useState([]);
   const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -48,17 +59,40 @@ export default function UsuariosPage() {
   function closeModal() {
     if (saving) return;
     setOpen(false);
+    setEditing(null);
     setForm(emptyForm);
   }
 
-  async function create(event) {
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
+    setOpen(true);
+  }
+
+  function openEdit(user) {
+    setEditing(user);
+    setForm(formFromUser(user));
+    setOpen(true);
+  }
+
+  async function save(event) {
     event.preventDefault();
     setSaving(true);
     try {
-      const data = await api("/api/users", { method: "POST", json: form });
+      const payload = {
+        name: form.name,
+        email: form.email,
+        role: form.role,
+        unitIds: form.role === ROLES.ADMIN ? [] : form.unitIds,
+      };
+      if (form.password.trim()) payload.password = form.password;
+      const data = editing
+        ? await api(`/api/users/${editing.id}`, { method: "PATCH", json: payload })
+        : await api("/api/users", { method: "POST", json: { ...payload, password: form.password } });
       toast.success(data.message);
-      setForm(emptyForm);
       setOpen(false);
+      setEditing(null);
+      setForm(emptyForm);
       void list.search(loader);
     } catch (error) {
       toast.error(error.message);
@@ -98,7 +132,7 @@ export default function UsuariosPage() {
       <PageHeader
         title="Usuários"
         subtitle="O administrador vê todas as unidades. Os demais perfis só operam nas lojas vinculadas."
-        actions={<Button onClick={() => { setForm(emptyForm); setOpen(true); }}>Novo usuário</Button>}
+        actions={<Button onClick={openCreate}>Novo usuário</Button>}
       />
       <Card className="mb-4 space-y-3">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome ou e-mail" />
@@ -129,7 +163,7 @@ export default function UsuariosPage() {
                 <tr key={user.id} className="border-t border-border align-top hover:bg-surface-2/80">
                   <td className="px-5 py-4 font-medium">{user.name}</td>
                   <td className="px-5 py-4">{user.email}</td>
-                  <td className="px-5 py-4">{ROLE_LABELS[user.role]}</td>
+                  <td className="px-5 py-4">{ROLE_LABELS[user.role] || user.role}</td>
                   <td className="px-5 py-4">
                     {user.role === ROLES.ADMIN ? (
                       <span className="text-muted">Todas</span>
@@ -150,7 +184,10 @@ export default function UsuariosPage() {
                   </td>
                   <td className="px-5 py-4">{user.active ? "Ativo" : "Inativo"}</td>
                   <td className="px-5 py-4 text-right">
-                    <Button variant="ghost" onClick={() => toggle(user)}>{user.active ? "Desativar" : "Ativar"}</Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" onClick={() => openEdit(user)}>Editar</Button>
+                      <Button variant="ghost" onClick={() => toggle(user)}>{user.active ? "Desativar" : "Ativar"}</Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -162,20 +199,22 @@ export default function UsuariosPage() {
 
       <Modal
         open={open}
-        title="Novo usuário"
+        title={editing ? "Editar usuário" : "Novo usuário"}
         onClose={closeModal}
         className="max-w-xl"
         footer={
           <>
             <Button type="button" variant="secondary" onClick={closeModal} disabled={saving}>Cancelar</Button>
-            <Button type="submit" form="user-form" disabled={saving}>{saving ? "Salvando..." : "Cadastrar"}</Button>
+            <Button type="submit" form="user-form" disabled={saving}>{saving ? "Salvando..." : editing ? "Salvar" : "Cadastrar"}</Button>
           </>
         }
       >
-        <form id="user-form" onSubmit={create} className="space-y-3">
-          <Field label="Nome"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Senha"><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
+        <form id="user-form" onSubmit={save} className="space-y-3">
+          <Field label="Nome" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+          <Field label="E-mail" required><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Senha" required={!editing} hint={editing ? "Deixe em branco para manter a senha atual." : "Mínimo de 6 caracteres."}>
+            <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </Field>
           <Field label="Perfil">
             <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

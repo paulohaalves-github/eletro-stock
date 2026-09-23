@@ -4,9 +4,9 @@ import { getCustomer, updateCustomer } from "@/lib/services/customers";
 import { parseId } from "@/lib/validations";
 
 export const GET = apiHandler(
-  async (_request, { params }) => {
+  async (_request, { params, session }) => {
     const { id } = await params;
-    const customer = await getCustomer(parseId(id));
+    const customer = await getCustomer(parseId(id), session);
     return { customer };
   },
   { permission: PERMISSIONS.CUSTOMER_VIEW },

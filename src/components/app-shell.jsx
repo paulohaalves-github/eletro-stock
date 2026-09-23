@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/theme-provider";
 import { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard,
@@ -28,11 +28,18 @@ import {
   Wrench,
   Package,
   ClipboardList,
-  Headphones,
+  Headset,
+  Inbox,
+  Radio,
+  UsersRound,
+  ShoppingCart,
+  Handshake,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { can, PERMISSIONS } from "@/lib/permissions";
+import { canAccessAnyDashboard } from "@/lib/dashboards";
 import { cn } from "@/lib/format";
 import { GlobalSearch } from "./global-search";
 import { ROLE_LABELS, UNIT_TYPE_LABELS } from "@/lib/constants";
@@ -44,6 +51,7 @@ const NAV_GROUPS = [
     icon: Boxes,
     items: [
       { href: "/estoque", label: "Produtos", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
+      { href: "/lixeira", label: "Lixeira", icon: Trash2, permission: PERMISSIONS.PRODUCT_TRASH },
       { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
       { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
       { href: "/transferencias", label: "Transferências", icon: ArrowRightLeft, permission: PERMISSIONS.STOCK_TRANSFER },
@@ -58,7 +66,7 @@ const NAV_GROUPS = [
     label: "Gestão",
     icon: LayoutDashboard,
     items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD_VIEW },
+      { href: "/dashboards", label: "Dashboards", icon: LayoutDashboard, anyDashboard: true },
       { href: "/relatorios", label: "Relatórios", icon: BarChart3, permission: PERMISSIONS.REPORT_VIEW },
     ],
   },
@@ -73,11 +81,22 @@ const NAV_GROUPS = [
     ],
   },
   {
-    id: "atendimento",
-    label: "Atendimento",
-    icon: Headphones,
+    id: "comercial",
+    label: "Comercial",
+    icon: Handshake,
     items: [
       { href: "/clientes", label: "Clientes", icon: Users, permission: PERMISSIONS.CUSTOMER_VIEW },
+      { href: "/vendas", label: "Vendas", icon: ShoppingCart, permission: PERMISSIONS.SALE_VIEW },
+    ],
+  },
+  {
+    id: "contact-center",
+    label: "Contact Center",
+    icon: Headset,
+    items: [
+      { href: "/contact-center", label: "Conversas", icon: Inbox, permission: PERMISSIONS.INBOX_VIEW },
+      { href: "/contact-center/equipes", label: "Equipes", icon: UsersRound, permission: PERMISSIONS.INBOX_TEAM_MANAGE },
+      { href: "/contact-center/canais", label: "Canais", icon: Radio, permission: PERMISSIONS.INBOX_CHANNEL_MANAGE },
     ],
   },
   {
@@ -93,7 +112,7 @@ const NAV_GROUPS = [
 ];
 
 const MOBILE_SHORTCUTS = [
-  { href: "/", label: "Home", icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD_VIEW },
+  { href: "/dashboards", label: "Home", icon: LayoutDashboard, anyDashboard: true },
   { href: "/estoque", label: "Produtos", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
   { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
   { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
@@ -102,13 +121,23 @@ const MOBILE_SHORTCUTS = [
 
 function isItemActive(pathname, href) {
   if (href === "/") return pathname === "/";
+  if (href === "/dashboards") return pathname === "/dashboards" || pathname.startsWith("/dashboards");
+  if (href === "/contact-center") return pathname === "/contact-center";
+  if (href === "/vendas") {
+    return pathname === "/vendas" || (pathname.startsWith("/vendas/") && !pathname.startsWith("/vendas/dashboard"));
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function visibleGroups(role) {
+function visibleGroups(user) {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => can(role, item.permission)),
+    items: group.items.filter((item) => {
+      if (item.anyDashboard) return canAccessAnyDashboard(user);
+      if (!can(user.role, item.permission)) return false;
+      if (item.supervisor && !user.inboxSupervisor) return false;
+      return true;
+    }),
   })).filter((group) => group.items.length > 0);
 }
 
@@ -166,10 +195,10 @@ function SideNav({ groups, expanded, activeGroupId, pathname, onToggle, onNaviga
 export function AppShell({ user, children }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, ready: themeReady } = useTheme();
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const groups = useMemo(() => visibleGroups(user.role), [user.role]);
+  const groups = useMemo(() => visibleGroups(user), [user]);
   const activeGroupId = groups.find((group) => group.items.some((item) => isItemActive(pathname, item.href)))?.id ?? null;
   const [expanded, setExpanded] = useState(() => new Set(activeGroupId ? [activeGroupId] : []));
   const units = user.units || [];
@@ -241,7 +270,7 @@ export function AppShell({ user, children }) {
           <button className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} aria-label="Fechar menu" />
           <aside className="relative z-10 flex h-full w-72 flex-col overflow-y-auto border-r border-border bg-surface p-4 shadow-2xl">
             <div className="mb-6 flex items-center justify-between">
-              <Link href="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
+              <Link href="/dashboards" className="flex items-center gap-3" onClick={() => setOpen(false)}>
                 <img src="/logo.svg" alt="Eletro-Stock" className="h-10 w-10" />
                 <div>
                   <p className="text-sm font-semibold tracking-wide">ELETRO-STOCK</p>
@@ -274,7 +303,7 @@ export function AppShell({ user, children }) {
           <button className="rounded-lg p-2 hover:bg-surface-2" onClick={() => setOpen(true)} aria-label="Abrir menu">
             <Menu size={18} />
           </button>
-          <Link href="/" className="hidden min-w-0 items-center gap-2 sm:flex">
+          <Link href="/dashboards" className="hidden min-w-0 items-center gap-2 sm:flex">
             <img src="/logo.svg" alt="" className="h-8 w-8 shrink-0" />
             <span className="truncate text-sm font-semibold">{activeUnit?.name || "Eletro-Stock"}</span>
           </Link>
@@ -285,7 +314,11 @@ export function AppShell({ user, children }) {
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             aria-label="Alternar tema"
           >
-            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+            {themeReady ? (
+              theme === "light" ? <Moon size={18} /> : <Sun size={18} />
+            ) : (
+              <span className="inline-block h-[18px] w-[18px]" aria-hidden="true" />
+            )}
           </button>
           <button className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-text" onClick={logout} aria-label="Sair">
             <LogOut size={18} />
@@ -295,7 +328,7 @@ export function AppShell({ user, children }) {
           {children}
         </main>
         <nav className="no-print fixed bottom-0 left-0 right-0 z-20 grid grid-cols-5 border-t border-border bg-surface/95 p-2 lg:hidden">
-          {MOBILE_SHORTCUTS.filter((item) => can(user.role, item.permission)).map((item) => {
+          {MOBILE_SHORTCUTS.filter((item) => item.anyDashboard ? canAccessAnyDashboard(user) : can(user.role, item.permission)).map((item) => {
             const Icon = item.icon;
             const active = isItemActive(pathname, item.href);
             return (

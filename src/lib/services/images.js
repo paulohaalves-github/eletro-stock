@@ -298,3 +298,5 @@ export function resolveUploadPath(relativePath) {
   }
   return full;
 }
+
+export { saveBuffer, uploadRoot, extFromName };

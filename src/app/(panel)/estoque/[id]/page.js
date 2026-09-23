@@ -11,11 +11,12 @@ import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { RemoteGallery } from "@/components/images";
 import { Timeline } from "@/components/timeline";
 import { LocationPickers } from "@/components/location-pickers";
-import { Modal } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
 import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
+import { ProductTrashDialog } from "@/components/product-trash-dialog";
 import { CLOSED_STATUSES, STATUSES, UNIT_TYPE_LABELS, canOperateStock } from "@/lib/constants";
-import { formatCurrency, formatDateTime, formatProductId } from "@/lib/format";
-import { can, PERMISSIONS } from "@/lib/permissions";
+import { formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
+import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -34,6 +35,8 @@ export default function ProductDetailPage() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [{ product: item }, { user }, types, locs, unitData] = await Promise.all([
@@ -66,6 +69,9 @@ export default function ProductDetailPage() {
   const canPhoto = can(me.role, PERMISSIONS.PHOTO_UPLOAD);
   const canTransfer = can(me.role, PERMISSIONS.STOCK_TRANSFER);
   const canRepair = can(me.role, PERMISSIONS.REPAIR_CREATE) || can(me.role, PERMISSIONS.REPAIR_VIEW);
+  const canOpenSale = can(me.role, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder);
+  const canTrash = can(me.role, PERMISSIONS.PRODUCT_TRASH);
+  const inTrash = Boolean(product.deletedAt);
   const closed = CLOSED_STATUSES.includes(product.status);
   const inActiveUnit = Number(me.activeUnitId) === Number(product.unitId);
   const incomingHere = product.status === STATUSES.IN_TRANSIT && Number(product.transferToUnitId) === Number(me.activeUnitId);
@@ -120,6 +126,40 @@ export default function ProductDetailPage() {
     }
   }
 
+  async function moveToTrash(observation) {
+    setSaving(true);
+    try {
+      const data = await api("/api/products/trash", {
+        method: "POST",
+        json: { productIds: [product.id], observation },
+      });
+      toast.success(data.message);
+      setTrashOpen(false);
+      router.push("/lixeira");
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function restoreFromTrash() {
+    setSaving(true);
+    try {
+      const data = await api("/api/products/trash/restore", {
+        method: "POST",
+        json: { productIds: [product.id] },
+      });
+      toast.success(data.message);
+      setRestoreOpen(false);
+      load();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="w-full">
       <PageHeader
@@ -129,23 +169,37 @@ export default function ProductDetailPage() {
           <>
             <ActionMenu
               items={[
-                canEdit && operable ? { label: "Editar", onClick: () => router.push(`/estoque/${product.id}/editar`) } : null,
+                canEdit && operable && !inTrash ? { label: "Editar", onClick: () => router.push(`/estoque/${product.id}/editar`) } : null,
                 { label: "Imprimir ficha", onClick: () => window.open(`/estoque/${product.id}/imprimir`, "_blank", "noopener,noreferrer") },
                 { label: "Imprimir etiqueta", onClick: () => setLabelPickerOpen(true) },
-                canAssignLocation && operable ? { label: "Localização", onClick: () => setLocationOpen(true) } : null,
-                canMutate && operable && product.status === STATUSES.AVAILABLE ? { label: "Reservar", onClick: () => runReserve() } : null,
-                canMutate && operable && product.status === STATUSES.RESERVED ? { label: "Liberar reserva", onClick: () => runReserve("unreserve") } : null,
-                canTransfer && inActiveUnit && product.status === STATUSES.AVAILABLE ? { label: "Transferir", onClick: () => setTransferOpen(true) } : null,
-                canTransfer && inActiveUnit && product.status === STATUSES.IN_TRANSIT ? { label: "Cancelar envio", onClick: () => runTransfer("cancel") } : null,
-                canTransfer && incomingHere ? { label: "Receber", onClick: () => setReceiveOpen(true) } : null,
-                can(me.role, PERMISSIONS.REPAIR_CREATE) && !product.openWorkOrder ? { label: "Abrir OS", onClick: () => router.push(`/reparos/novo?productId=${product.id}`) } : null,
+                canAssignLocation && operable && !inTrash ? { label: "Localização", onClick: () => setLocationOpen(true) } : null,
+                canMutate && operable && !inTrash && product.status === STATUSES.RESERVED && !["RESERVADO", "PEDIDO"].includes(product.openSaleOrder?.itemStatus)
+                  ? { label: "Liberar reserva", onClick: () => runReserve("unreserve") }
+                  : null,
+                canTransfer && inActiveUnit && !inTrash && product.status === STATUSES.AVAILABLE ? { label: "Transferir", onClick: () => setTransferOpen(true) } : null,
+                canTransfer && inActiveUnit && !inTrash && product.status === STATUSES.IN_TRANSIT ? { label: "Cancelar envio", onClick: () => runTransfer("cancel") } : null,
+                canTransfer && incomingHere && !inTrash ? { label: "Receber", onClick: () => setReceiveOpen(true) } : null,
+                can(me.role, PERMISSIONS.REPAIR_CREATE) && !inTrash && !product.openWorkOrder ? { label: "Abrir OS", onClick: () => router.push(`/reparos/novo?productId=${product.id}`) } : null,
                 canRepair && product.openWorkOrder ? { label: `Ver OS ${product.openWorkOrder.number}`, onClick: () => router.push(`/reparos/${product.openWorkOrder.id}`) } : null,
+                canOpenSale ? { label: `Ver venda ${product.openSaleOrder.number}`, onClick: () => router.push(`/vendas/${product.openSaleOrder.id}`) } : null,
+                canTrash && inActiveUnit && !inTrash ? { label: "Mover para a lixeira", danger: true, onClick: () => setTrashOpen(true) } : null,
+                canTrash && inActiveUnit && inTrash ? { label: "Restaurar", onClick: () => setRestoreOpen(true) } : null,
               ]}
             />
-            {canMutate && operable && !closed ? <Link href={`/saida?id=${product.id}`}><Button>Dar baixa</Button></Link> : null}
+            {canMutate && operable && !closed && !inTrash && !product.openSaleOrder ? <Link href={`/saida?id=${product.id}`}><Button>Dar baixa</Button></Link> : null}
           </>
         }
       />
+
+      {inTrash ? (
+        <Card className="mb-4 border-rose-500/30 bg-rose-500/10">
+          <p className="text-sm font-medium text-rose-300">Este produto está na lixeira.</p>
+          <p className="mt-1 text-sm text-muted">
+            Excluído em {formatDateTime(product.deletedAt)}
+            {product.deletedBy?.name ? ` por ${product.deletedBy.name}` : ""}. Restaure para voltar ao estoque.
+          </p>
+        </Card>
+      ) : null}
 
       <Card className="mb-4">
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
@@ -176,6 +230,18 @@ export default function ProductDetailPage() {
               <Info label="Localização" value={product.location?.name} />
               <Info label="Entrada" value={formatDateTime(product.entryDate)} />
               <Info label="Cadastrado por" value={product.createdBy?.name} />
+              {product.openSaleOrder ? (
+                <Info
+                  label="Venda em andamento"
+                  value={
+                    canOpenSale
+                      ? `${product.openSaleOrder.number}${product.openSaleOrder.reservedUntil ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}` : product.openSaleOrder.itemStatus === "INTERESSE" ? " · interesse" : ""}`
+                      : product.openSaleOrder.reservedUntil
+                        ? `Reservado até ${formatDate(product.openSaleOrder.reservedUntil)}`
+                        : "Em outra venda"
+                  }
+                />
+              ) : null}
             </div>
             {!inActiveUnit && !incomingHere ? (
               <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -229,13 +295,13 @@ export default function ProductDetailPage() {
         <h2 className="mb-3 font-semibold">Galeria</h2>
         <RemoteGallery
           product={product}
-          canEdit={canPhoto && operable}
+          canEdit={canPhoto && operable && !inTrash}
           onChanged={async () => {
             toast.success("Imagem atualizada.");
             load();
           }}
         />
-        {canPhoto && operable ? (
+        {canPhoto && operable && !inTrash ? (
           <div className="mt-4">
             <p className="mb-2 text-sm text-muted">Documentos / anexos</p>
             <input
@@ -354,6 +420,21 @@ export default function ProductDetailPage() {
           openLabelPrint({ productIds: [product.id], model });
           setLabelPickerOpen(false);
         }}
+      />
+      <ProductTrashDialog
+        open={trashOpen}
+        loading={saving}
+        onConfirm={moveToTrash}
+        onClose={() => !saving && setTrashOpen(false)}
+      />
+      <ConfirmDialog
+        open={restoreOpen}
+        title="Restaurar produto"
+        message="O aparelho volta ao estoque no mesmo status de quando foi para a lixeira."
+        confirmLabel="Restaurar"
+        loading={saving}
+        onConfirm={restoreFromTrash}
+        onClose={() => !saving && setRestoreOpen(false)}
       />
     </div>
   );

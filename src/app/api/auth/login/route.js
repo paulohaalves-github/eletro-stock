@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { createSessionToken, publicUser, setActiveUnitCookie, setSessionCookie, verifyPassword } from "@/lib/auth";
 import { jsonError, unauthorized, validationError } from "@/lib/errors";
 import { resolveAllowedUnits } from "@/lib/units";
+import { resolveInboxSupervisor } from "@/lib/services/inbox-access";
 
 export async function POST(request) {
   try {
@@ -32,6 +33,7 @@ export async function POST(request) {
         units,
         activeUnit,
         activeUnitId: activeUnit?.id ?? null,
+        inboxSupervisor: await resolveInboxSupervisor(user),
       }),
     });
   } catch (error) {

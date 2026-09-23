@@ -106,6 +106,7 @@ export async function createSale({
       warrantyMonths: parseWarrantyMonths(warrantyMonths),
       invoiceNumber: invoice,
       observation: emptyToNull(observation),
+      cashPrice: Number(product.cashPrice || 0),
       createdById: user.id,
     },
     include: saleInclude,

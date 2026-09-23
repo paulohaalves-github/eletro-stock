@@ -124,8 +124,21 @@ export async function updateUser(id, payload, actor) {
   if (!user) throw notFound("Usuário não encontrado.");
 
   const data = {};
-  if (payload.name !== undefined) data.name = String(payload.name).trim();
-  if (payload.email !== undefined) data.email = String(payload.email).trim().toLowerCase();
+  if (payload.name !== undefined) {
+    const name = String(payload.name).trim();
+    if (!name) throw validationError("Informe o nome.");
+    data.name = name;
+  }
+  if (payload.email !== undefined) {
+    const email = String(payload.email).trim().toLowerCase();
+    if (!email) throw validationError("Informe o e-mail.");
+    const exists = await prisma.user.findFirst({
+      where: { email, id: { not: user.id } },
+      select: { id: true },
+    });
+    if (exists) throw conflict("Já existe um usuário com este e-mail.");
+    data.email = email;
+  }
   if (payload.role !== undefined) {
     if (!Object.values(ROLES).includes(payload.role)) throw validationError("Perfil inválido.");
     data.role = payload.role;
@@ -151,10 +164,12 @@ export async function updateUser(id, payload, actor) {
     await replaceUserUnits(user.id, unitIds);
   }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data,
-  });
+  if (Object.keys(data).length) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data,
+    });
+  }
 
   const updated = serializeUser(await prisma.user.findUnique({ where: { id: user.id }, select: userSelect }));
 

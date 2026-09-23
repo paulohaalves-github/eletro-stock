@@ -45,6 +45,7 @@ export function ActionMenu({ items = [], label = "Ações" }) {
               className={cn(
                 "block w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-surface-2",
                 item.disabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+                item.danger && !item.disabled && "text-rose-400 hover:bg-rose-500/10",
               )}
               onClick={() => {
                 if (item.disabled) return;

@@ -46,13 +46,23 @@ function assertOpenForExit(product) {
   }
 }
 
-export async function exitProduct({ productId, reason, observation, user, customerId, warrantyMonths, invoiceNumber, soldAt }) {
+export async function exitProduct({ productId, reason, observation, user, customerId, warrantyMonths, invoiceNumber, soldAt, fromSaleOrder = false }) {
   const product = await getProduct(productId);
   assertProductWritable(user, product);
   assertOpenForExit(product);
 
   if (!Object.values(EXIT_REASONS).includes(reason)) {
     throw validationError("Informe um motivo de saída válido.");
+  }
+  if (reason === EXIT_REASONS.SALE && !fromSaleOrder) {
+    throw conflict("A venda deve ser concluída pelo caixa comercial, a partir do pedido gerado em Vendas.");
+  }
+  if (!fromSaleOrder) {
+    const { findOpenSaleOrderItem } = await import("./sale-orders");
+    const openItem = await findOpenSaleOrderItem(product.id);
+    if (openItem?.saleOrder?.number) {
+      throw conflict(`Este produto está na venda ${openItem.saleOrder.number}. Libere ou conclua a venda comercial antes de dar baixa.`);
+    }
   }
   if (reason === EXIT_REASONS.OTHER && !String(observation || "").trim()) {
     throw validationError("Informe uma observação para o motivo Outro.");
@@ -100,6 +110,8 @@ export async function exitProduct({ productId, reason, observation, user, custom
       product: { ...product, status: STATUSES.SOLD },
       fromExit: true,
     });
+    const { syncSaleOrderAfterSale } = await import("./sale-orders");
+    await syncSaleOrderAfterSale(product.id, user);
   }
 
   await writeAudit({
@@ -114,9 +126,12 @@ export async function exitProduct({ productId, reason, observation, user, custom
   return updated;
 }
 
-export async function reserveProduct(productId, observation, user) {
+export async function reserveProduct(productId, observation, user, { fromSaleOrder = false } = {}) {
   const product = await getProduct(productId);
   assertProductWritable(user, product);
+  if (!fromSaleOrder) {
+    throw conflict("Reserve o produto pelo fluxo comercial da venda, com prazo e vendedor.");
+  }
   if (product.status !== STATUSES.AVAILABLE) {
     throw conflict("Somente produtos disponíveis podem ser reservados.");
   }
@@ -148,11 +163,18 @@ export async function reserveProduct(productId, observation, user) {
   return updated;
 }
 
-export async function unreserveProduct(productId, observation, user) {
+export async function unreserveProduct(productId, observation, user, { fromSaleOrder = false } = {}) {
   const product = await getProduct(productId);
   assertProductWritable(user, product);
   if (product.status !== STATUSES.RESERVED) {
     throw conflict("Este produto não está reservado.");
+  }
+  if (!fromSaleOrder) {
+    const { findOpenSaleOrderItem } = await import("./sale-orders");
+    const openItem = await findOpenSaleOrderItem(product.id, { lockingOnly: true });
+    if (openItem?.saleOrder?.number) {
+      throw conflict(`Este produto está reservado na venda ${openItem.saleOrder.number}. Libere a reserva por lá.`);
+    }
   }
 
   const updated = await prisma.product.update({
@@ -179,12 +201,15 @@ export async function unreserveProduct(productId, observation, user) {
     newData: { status: STATUSES.AVAILABLE },
   });
 
+  const { syncSaleOrderAfterUnreserve } = await import("./sale-orders");
+  await syncSaleOrderAfterUnreserve(product.id, user);
+
   return updated;
 }
 
 async function assertBatchProducts(ids, check) {
   const found = await prisma.product.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, deletedAt: null },
     select: { id: true, status: true, unitId: true, transferToUnitId: true },
   });
   const byId = new Map(found.map((item) => [item.id, item]));
@@ -443,12 +468,12 @@ export async function listTransfers(session) {
   const unitId = requireActiveUnit(session);
   const [outgoing, incoming] = await Promise.all([
     prisma.product.findMany({
-      where: { unitId, status: STATUSES.IN_TRANSIT },
+      where: { unitId, status: STATUSES.IN_TRANSIT, deletedAt: null },
       include: transferProductInclude,
       orderBy: { updatedAt: "desc" },
     }),
     prisma.product.findMany({
-      where: { transferToUnitId: unitId, status: STATUSES.IN_TRANSIT },
+      where: { transferToUnitId: unitId, status: STATUSES.IN_TRANSIT, deletedAt: null },
       include: transferProductInclude,
       orderBy: { updatedAt: "desc" },
     }),

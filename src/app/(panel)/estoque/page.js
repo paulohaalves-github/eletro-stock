@@ -19,7 +19,8 @@ import {
 import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
 import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
-import { can, PERMISSIONS } from "@/lib/permissions";
+import { ProductTrashDialog } from "@/components/product-trash-dialog";
+import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
 
 const EMPTY_FILTERS = {
   categoryId: "",
@@ -66,6 +67,8 @@ function EstoqueContent() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [trashing, setTrashing] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   const fetchPage = useCallback(async (pageNumber, { append = false, qValue, filterValue } = {}) => {
     const searchQ = qValue !== undefined ? qValue : q;
@@ -108,6 +111,7 @@ function EstoqueContent() {
   const allVisibleSelected = data.items.length > 0 && data.items.every((item) => selected.has(item.id));
   const hasMore = data.items.length < data.total;
   const canTransfer = me ? can(me.role, PERMISSIONS.STOCK_TRANSFER) : false;
+  const canTrash = me ? can(me.role, PERMISSIONS.PRODUCT_TRASH) : false;
 
   function searchNow(qValue) {
     if (qValue !== undefined) {
@@ -163,6 +167,23 @@ function EstoqueContent() {
     router.push(`/transferencias?ids=${ids.join(",")}`);
   }
 
+  async function trashSelected(observation) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setTrashing(true);
+    try {
+      const data = await api("/api/products/trash", { method: "POST", json: { productIds: ids, observation } });
+      toast.success(data.message);
+      setTrashOpen(false);
+      setSelected(new Set());
+      await fetchPage(1, { qValue: applied.q, filterValue: applied.filters });
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setTrashing(false);
+    }
+  }
+
   async function exportExcel() {
     setExporting(true);
     try {
@@ -205,6 +226,14 @@ function EstoqueContent() {
                       label: `Transferir lote${selected.size ? ` (${selected.size})` : ""}`,
                       disabled: !selected.size,
                       onClick: transferSelected,
+                    }
+                  : null,
+                canTrash
+                  ? {
+                      label: `Mover para a lixeira${selected.size ? ` (${selected.size})` : ""}`,
+                      disabled: !selected.size || trashing,
+                      danger: true,
+                      onClick: () => setTrashOpen(true),
                     }
                   : null,
                 {
@@ -363,6 +392,7 @@ function EstoqueContent() {
                     <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
                   </div>
                   <p className="text-xs text-muted">Preço atualizado em {formatDate(item.lastPriceUpdateAt)}</p>
+                  {item.openSaleOrder ? <p className="text-xs text-muted">{saleOrderCell(item, me)}</p> : null}
                 </div>
               </Link>
             </div>
@@ -383,7 +413,7 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Parcelado", "Preço atualizado", "Status", "Entrada"].map((col) => (
+                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Parcelado", "Preço atualizado", "Status", "Venda", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
               </tr>
@@ -416,6 +446,7 @@ function EstoqueContent() {
                   <td className="px-3 py-2">{formatCurrency(item.installmentPrice)}</td>
                   <td className="px-3 py-2">{formatDate(item.lastPriceUpdateAt)}</td>
                   <td className="px-3 py-2"><StatusBadge status={item.status} /></td>
+                  <td className="px-3 py-2 text-xs text-muted">{saleOrderCell(item, me)}</td>
                   <td className="px-3 py-2">{formatDate(item.entryDate)}</td>
                 </tr>
               ))}
@@ -450,6 +481,13 @@ function EstoqueContent() {
         }}
         onSelect={confirmLabelModel}
       />
+      <ProductTrashDialog
+        open={trashOpen}
+        count={selected.size}
+        loading={trashing}
+        onConfirm={trashSelected}
+        onClose={() => !trashing && setTrashOpen(false)}
+      />
     </div>
   );
 }
@@ -460,4 +498,18 @@ export default function EstoquePage() {
       <EstoqueContent />
     </Suspense>
   );
+}
+
+function saleOrderCell(item, me) {
+  if (!item.openSaleOrder) return "—";
+  const canSee = me && canAccessSaleOrderRecord(me, item.openSaleOrder);
+  if (canSee) {
+    if (item.openSaleOrder.reservedUntil) {
+      return `${item.openSaleOrder.number} · até ${formatDate(item.openSaleOrder.reservedUntil)}`;
+    }
+    return item.openSaleOrder.itemStatus === "INTERESSE"
+      ? `${item.openSaleOrder.number} · interesse`
+      : item.openSaleOrder.number;
+  }
+  return item.openSaleOrder.reservedUntil ? "Reservado em outra venda" : "Em outra venda";
 }

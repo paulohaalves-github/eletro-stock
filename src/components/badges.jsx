@@ -5,6 +5,12 @@ import {
   WORK_ORDER_STATUS_LABELS,
   WORK_ORDER_PART_STATUS_LABELS,
   WORK_ORDER_TYPE_LABELS,
+  CONVERSATION_STATUS_LABELS,
+  INBOX_PROVIDER_LABELS,
+  INBOX_CONNECTION_STATUS_LABELS,
+  SALE_ORDER_STATUS_LABELS,
+  SALE_ORDER_ITEM_STATUS_LABELS,
+  SALE_ORDER_EVENT_LABELS,
 } from "@/lib/constants";
 import { cn } from "@/lib/format";
 
@@ -90,6 +96,48 @@ export function PartRequestBadge({ status }) {
   );
 }
 
+const CONVERSATION_STYLES = {
+  AGUARDANDO_AGENTE: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  AGENTE_RESPONDEU: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  ENCERRADA: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+};
+
+const CHANNEL_PROVIDER_STYLES = {
+  DIALOG_360: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+  UNOFFICIAL: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+};
+
+const CONNECTION_STYLES = {
+  CONNECTED: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  QR_PENDING: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  DISCONNECTED: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+  ERROR: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
+};
+
+export function ConversationStatusBadge({ status }) {
+  return (
+    <Badge className={CONVERSATION_STYLES[status] || "bg-surface-2 text-muted ring-border"}>
+      {CONVERSATION_STATUS_LABELS[status] || status}
+    </Badge>
+  );
+}
+
+export function InboxProviderBadge({ provider }) {
+  return (
+    <Badge className={CHANNEL_PROVIDER_STYLES[provider] || "bg-surface-2 text-muted ring-border"}>
+      {INBOX_PROVIDER_LABELS[provider] || provider}
+    </Badge>
+  );
+}
+
+export function InboxConnectionBadge({ status }) {
+  return (
+    <Badge className={CONNECTION_STYLES[status] || "bg-surface-2 text-muted ring-border"}>
+      {INBOX_CONNECTION_STATUS_LABELS[status] || status}
+    </Badge>
+  );
+}
+
 const WORK_ORDER_EVENT_STYLES = {
   ABERTURA: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
   STATUS: "bg-cyan-500/15 text-cyan-300 ring-cyan-500/30",
@@ -106,6 +154,59 @@ export function WorkOrderEventBadge({ type }) {
   return (
     <Badge className={WORK_ORDER_EVENT_STYLES[type] || "bg-surface-2 text-muted ring-border"}>
       {WORK_ORDER_EVENT_LABELS[type] || type}
+    </Badge>
+  );
+}
+
+const SALE_ORDER_STYLES = {
+  INTERESSE: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+  RESERVADA: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  PEDIDO: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  PARCIAL: "bg-orange-500/15 text-orange-300 ring-orange-500/30",
+  CONCRETIZADA: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  PERDIDA: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
+  CANCELADA: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+};
+
+const SALE_ORDER_ITEM_STYLES = {
+  INTERESSE: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+  RESERVADO: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  PEDIDO: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  VENDIDO: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  REMOVIDO: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+};
+
+const SALE_ORDER_EVENT_STYLES = {
+  ABERTURA: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+  PRODUTO: "bg-cyan-500/15 text-cyan-300 ring-cyan-500/30",
+  RESERVA: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  PEDIDO: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  BAIXA: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  STATUS: "bg-cyan-500/15 text-cyan-300 ring-cyan-500/30",
+  NOTA: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+  ENCERRAMENTO: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
+};
+
+export function SaleOrderStatusBadge({ status }) {
+  return (
+    <Badge className={SALE_ORDER_STYLES[status] || "bg-surface-2 text-muted ring-border"}>
+      {SALE_ORDER_STATUS_LABELS[status] || status}
+    </Badge>
+  );
+}
+
+export function SaleOrderItemBadge({ status }) {
+  return (
+    <Badge className={SALE_ORDER_ITEM_STYLES[status] || "bg-surface-2 text-muted ring-border"}>
+      {SALE_ORDER_ITEM_STATUS_LABELS[status] || status}
+    </Badge>
+  );
+}
+
+export function SaleOrderEventBadge({ type }) {
+  return (
+    <Badge className={SALE_ORDER_EVENT_STYLES[type] || "bg-surface-2 text-muted ring-border"}>
+      {SALE_ORDER_EVENT_LABELS[type] || type}
     </Badge>
   );
 }

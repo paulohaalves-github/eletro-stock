@@ -56,6 +56,7 @@ export async function listLocationTypes({ active, includeCounts = false, session
     ? await prisma.product.groupBy({
         by: ["locationId"],
         where: {
+          deletedAt: null,
           ...(unitId ? { unitId } : {}),
           location: { locationTypeId: { in: typeIds } },
         },
@@ -170,7 +171,7 @@ export async function listLocations({ locationTypeId, active, includeCounts = fa
       where,
       include: {
         ...locationInclude,
-        ...(includeCounts ? { _count: { select: { products: true } } } : {}),
+        ...(includeCounts ? { _count: { select: { products: { where: { deletedAt: null } } } } } : {}),
       },
       orderBy: [{ locationTypeId: "asc" }, { name: "asc" }],
       skip: pagination.skip,

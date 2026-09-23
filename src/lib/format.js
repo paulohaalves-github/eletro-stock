@@ -36,6 +36,36 @@ export function formatDate(value) {
   return dateOnly.format(new Date(value));
 }
 
+export function formatRelativeTime(value, at = new Date()) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const diff = Math.floor((at.getTime() - date.getTime()) / 1000);
+  if (diff < 45) return "agora";
+  if (diff < 90) return "há 1 min";
+  if (diff < 3600) return `há ${Math.floor(diff / 60)} min`;
+  if (diff < 5400) return "há 1 h";
+  if (diff < 86400) return `há ${Math.floor(diff / 3600)} h`;
+  if (diff < 172800) return "ontem";
+  return formatDateTime(date);
+}
+
+export function formatDuration(from, to = new Date()) {
+  if (!from) return "—";
+  const start = new Date(from);
+  if (Number.isNaN(start.getTime())) return "—";
+  const seconds = Math.max(0, Math.floor((new Date(to).getTime() - start.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (hours < 24) return restMinutes ? `${hours} h ${restMinutes} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days} d ${restHours} h` : `${days} d`;
+}
+
 function describeRemaining(from, to) {
   let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
   let days = to.getDate() - from.getDate();
