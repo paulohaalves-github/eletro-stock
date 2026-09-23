@@ -51,7 +51,6 @@ const NAV_GROUPS = [
     icon: Boxes,
     items: [
       { href: "/estoque", label: "Produtos", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
-      { href: "/lixeira", label: "Lixeira", icon: Trash2, permission: PERMISSIONS.PRODUCT_TRASH },
       { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
       { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
       { href: "/transferencias", label: "Transferências", icon: ArrowRightLeft, permission: PERMISSIONS.STOCK_TRANSFER },
@@ -68,6 +67,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/dashboards", label: "Dashboards", icon: LayoutDashboard, anyDashboard: true },
       { href: "/relatorios", label: "Relatórios", icon: BarChart3, permission: PERMISSIONS.REPORT_VIEW },
+      { href: "/lixeira", label: "Lixeira", icon: Trash2, permission: PERMISSIONS.PRODUCT_TRASH },
     ],
   },
   {
