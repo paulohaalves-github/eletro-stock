@@ -17,8 +17,10 @@ import {
 import { getProduct, movementUnitFields } from "./products";
 import { assertProductWritable } from "../units";
 
+const UPLOADS_DIR = "uploads";
+
 function uploadRoot() {
-  return path.join(process.cwd(), process.env.UPLOAD_DIR || "uploads");
+  return path.join(process.cwd(), UPLOADS_DIR);
 }
 
 function extFromName(name = "") {
@@ -47,9 +49,9 @@ function assertDocument(file) {
 }
 
 async function saveBuffer(relativeDir, filename, buffer) {
-  const dir = path.join(uploadRoot(), relativeDir);
+  const dir = path.join(process.cwd(), UPLOADS_DIR, relativeDir);
   await mkdir(dir, { recursive: true });
-  const full = path.join(dir, filename);
+  const full = path.join(process.cwd(), UPLOADS_DIR, relativeDir, filename);
   await writeFile(full, buffer);
   return `/api/files/${relativeDir}/${filename}`.replaceAll("\\", "/");
 }
@@ -175,7 +177,7 @@ export async function deleteProductImage(productId, imageId, user) {
 
   try {
     const relative = image.fileUrl.replace(/^\/api\/files\//, "");
-    await unlink(path.join(uploadRoot(), relative));
+    await unlink(path.join(process.cwd(), UPLOADS_DIR, relative));
   } catch {
     // arquivo já pode ter sido removido
   }
@@ -246,7 +248,7 @@ export async function deleteProductFile(productId, fileId, user) {
   await prisma.productFile.delete({ where: { id: file.id } });
   try {
     const relative = file.fileUrl.replace(/^\/api\/files\//, "");
-    await unlink(path.join(uploadRoot(), relative));
+    await unlink(path.join(process.cwd(), UPLOADS_DIR, relative));
   } catch {
     // ignore
   }
@@ -291,7 +293,7 @@ export async function addWorkOrderImageFiles(workOrderId, files, user) {
 }
 
 export function resolveUploadPath(relativePath) {
-  const root = path.resolve(uploadRoot());
+  const root = path.resolve(process.cwd(), UPLOADS_DIR);
   const full = path.resolve(root, relativePath);
   if (!full.startsWith(root)) {
     throw conflict("Caminho de arquivo inválido.");
