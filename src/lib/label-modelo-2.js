@@ -2,17 +2,17 @@ import { formatCurrency } from "@/lib/format";
 
 /**
  * Rolo 2 colunas (Zebra GC420t):
- * - Cada etiqueta: 5,0 × 2,5 cm
- * - Gap entre colunas: 0,3 cm
- * - Página (= largura do estoque na ZDesigner): 10,3 × 2,5 cm
+ * - Página na ZDesigner: 10,30 × 2,50 cm
+ * - Gap físico entre colunas: 0,4 cm
+ * - Cada etiqueta: (10,30 − 0,40) / 2 = 4,95 × 2,50 cm
  *
  * Na ZDesigner: Largura 10,30 | Altura 2,50 | retrato
  * “rotate 180°” só se a etiqueta sair invertida (não giramos no app).
  */
 export const LABEL_02_CM = {
-  width: 5,
+  width: 4.95,
   height: 2.5,
-  gap: 0.3,
+  gap: 0.4,
   get pageWidth() {
     return this.width * 2 + this.gap;
   },
@@ -47,6 +47,80 @@ function fitText(ctx, text, maxWidth) {
     out = out.slice(0, -1);
   }
   return `${out}…`;
+}
+
+/** Quebra o texto em linhas sem ultrapassar maxWidth (quebra palavra longa por caractere). */
+function wrapText(ctx, text, maxWidth) {
+  const value = String(text || "—").trim() || "—";
+  const words = value.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  function pushLongWord(word) {
+    let chunk = "";
+    for (const char of word) {
+      const next = chunk + char;
+      if (chunk && ctx.measureText(next).width > maxWidth) {
+        lines.push(chunk);
+        chunk = char;
+      } else {
+        chunk = next;
+      }
+    }
+    if (chunk) current = chunk;
+  }
+
+  for (const word of words) {
+    if (!current) {
+      if (ctx.measureText(word).width <= maxWidth) {
+        current = word;
+      } else {
+        pushLongWord(word);
+      }
+      continue;
+    }
+    const next = `${current} ${word}`;
+    if (ctx.measureText(next).width <= maxWidth) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = "";
+      if (ctx.measureText(word).width <= maxWidth) {
+        current = word;
+      } else {
+        pushLongWord(word);
+      }
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : ["—"];
+}
+
+/**
+ * Ajusta o nome comercial: reduz a fonte até caber em maxLines (sem reticências).
+ * Em casos extremos (nome enorme), mantém minSize e força o máximo de linhas.
+ */
+function fitWrappedName(ctx, text, maxWidth, maxLines, startSize, minSize, s) {
+  const family = "Arial, Helvetica, sans-serif";
+  let size = startSize;
+  while (size >= minSize - 0.001) {
+    ctx.font = `bold ${fontPx(s, size)} ${family}`;
+    const lines = wrapText(ctx, text, maxWidth);
+    if (lines.length <= maxLines) {
+      return { lines, size };
+    }
+    size = Math.round((size - 0.12) * 100) / 100;
+  }
+
+  ctx.font = `bold ${fontPx(s, minSize)} ${family}`;
+  const lines = wrapText(ctx, text, maxWidth);
+  if (lines.length <= maxLines) return { lines, size: minSize };
+
+  // Último recurso: junta o restante na última linha e encurta só se ainda não couber
+  const kept = lines.slice(0, maxLines - 1);
+  const rest = lines.slice(maxLines - 1).join(" ");
+  kept.push(fitText(ctx, rest, maxWidth));
+  return { lines: kept, size: minSize };
 }
 
 /** Remove anti-aliasing (cinzas) — causa do texto “tremido” na Zebra. */
@@ -145,9 +219,15 @@ function drawLogoInverted(ctx, logo, x, y, size) {
   ctx.drawImage(tmp, ix, iy);
 }
 
-/** Desenha UMA etiqueta 5×2,5 cm (orientação normal de leitura). */
+/** Desenha UMA etiqueta 4,95×2,5 cm (orientação normal de leitura). */
 export function drawModelo2Label(ctx, product, width = LABEL_02_PX.width, height = LABEL_02_PX.height, logo = null) {
-  const s = width / 50;
+  const mmW = LABEL_02_CM.width * 10; // 49.5 mm
+  const mmH = LABEL_02_CM.height * 10; // 25 mm
+  const s = width / mmW;
+  const cx = mmW / 2;
+  // Margem superior maior: impressão física vinha cortando EAN/Serial no topo
+  const topPad = 2.8;
+  const bottomPad = 0.85;
 
   ctx.save();
   ctx.clearRect(0, 0, width, height);
@@ -159,52 +239,78 @@ export function drawModelo2Label(ctx, product, width = LABEL_02_PX.width, height
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
 
-  // Logo: fundo branco + marca preta
-  drawLogoInverted(ctx, logo, 1.0 * s, 0.9 * s, 4.8 * s);
+  drawLogoInverted(ctx, logo, 1.0 * s, (0.85 + topPad) * s, 4.3 * s);
 
   ctx.fillStyle = "#000000";
-  ctx.font = `bold ${fontPx(s, 2.05)} Arial, Helvetica, sans-serif`;
+  ctx.font = `bold ${fontPx(s, 2.5)} Tahoma, Geneva, sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillText(fitText(ctx, `EAN:${product.ean || "—"}`, 28 * s), Math.round(5.9 * s), Math.round(2.85 * s));
-  ctx.fillText(fitText(ctx, product.supplierModelCode || "—", 28 * s), Math.round(5.9 * s), Math.round(4.95 * s));
+  ctx.fillText(fitText(ctx, `EAN:${product.ean || "—"}`, 29 * s), Math.round(5.7 * s), Math.round((2.9 + topPad) * s));
+  // Negrito + tamanho maior: traço fino some no limiar P/B da térmica e fica borrado
+  ctx.font = `bold ${fontPx(s, 2.3)} Tahoma, Geneva, sans-serif`;
+  ctx.fillText(fitText(ctx, product.supplierModelCode || "—", 29 * s), Math.round(5.7 * s), Math.round((5.05 + topPad) * s));
 
-  ctx.font = `bold ${fontPx(s, 2.1)} Arial, Helvetica, sans-serif`;
+  ctx.font = `bold ${fontPx(s, 2.75)} Arial, Helvetica, sans-serif`;
   ctx.textAlign = "right";
-  ctx.fillText(fitText(ctx, product.serialOnyx || "—", 18 * s), Math.round(48.9 * s), Math.round(3.55 * s));
+  ctx.fillText(fitText(ctx, product.serialOnyx || "—", 19 * s), Math.round((mmW - 1.1) * s), Math.round((3.55 + topPad) * s));
 
   const name = productName(product);
-  const capacity = capacityLine(product);
+  const nameMaxWidth = (mmW - 2.4) * s;
+  const { lines: nameLines, size: nameSize } = fitWrappedName(
+    ctx,
+    name,
+    nameMaxWidth,
+    2,
+    2.2,
+    1.4,
+    s,
+  );
 
   ctx.textAlign = "center";
-  ctx.font = `bold ${fontPx(s, 2.35)} Arial, Helvetica, sans-serif`;
-  ctx.fillText(fitText(ctx, name, 46 * s), Math.round(25 * s), Math.round(capacity ? 9.45 * s : 10.45 * s));
-
-  if (capacity) {
-    ctx.font = `bold ${fontPx(s, 2.45)} Arial, Helvetica, sans-serif`;
-    ctx.fillText(fitText(ctx, capacity, 46 * s), Math.round(25 * s), Math.round(12.05 * s));
-  }
-
   ctx.fillStyle = "#000000";
-  ctx.fillRect(Math.round(1.1 * s), Math.round(13.15 * s), Math.round(47.8 * s), Math.round(6.6 * s));
+  ctx.font = `bold ${fontPx(s, nameSize)} Arial, Helvetica, sans-serif`;
+
+  const nameLineHeight = nameSize * 1.05;
+  const blockHeight = nameLines.length * nameLineHeight;
+  const areaTop = 7.35 + topPad;
+  const priceTop = mmH - bottomPad - 8.35;
+  const areaBottom = priceTop - 0.45;
+  let nameStartY = areaTop + nameLineHeight * 0.82;
+  const maxStart = areaBottom - blockHeight + nameLineHeight * 0.8;
+  if (nameStartY > maxStart) nameStartY = Math.max(areaTop * 0.95, maxStart);
+
+  nameLines.forEach((line, index) => {
+    ctx.fillText(line, Math.round(cx * s), Math.round((nameStartY + index * nameLineHeight) * s));
+  });
+
+  const priceBoxH = 5.55;
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(Math.round(1.0 * s), Math.round(priceTop * s), Math.round((mmW - 2.0) * s), Math.round(priceBoxH * s));
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = `bold ${fontPx(s, 1.75)} Arial, Helvetica, sans-serif`;
-  ctx.fillText("DESCONTO", Math.round(25 * s), Math.round(15.55 * s));
+  ctx.font = `bold ${fontPx(s, 1.6)} Arial, Helvetica, sans-serif`;
+  ctx.fillText("DESCONTO", Math.round(cx * s), Math.round((priceTop + 2.0) * s));
 
-  ctx.font = `bold ${fontPx(s, 3.0)} Arial, Helvetica, sans-serif`;
-  ctx.fillText(fitText(ctx, `A VISTA ${formatCurrency(product.cashPrice)}`, 45 * s), Math.round(25 * s), Math.round(18.9 * s));
+  ctx.font = `bold ${fontPx(s, 2.75)} Arial, Helvetica, sans-serif`;
+  ctx.fillText(
+    fitText(ctx, `A VISTA ${formatCurrency(product.cashPrice)}`, (mmW - 3.2) * s),
+    Math.round(cx * s),
+    Math.round((priceTop + 4.85) * s),
+  );
 
   ctx.fillStyle = "#000000";
-  ctx.font = `bold ${fontPx(s, 2.4)} Arial, Helvetica, sans-serif`;
-  ctx.fillText(fitText(ctx, `VALOR: ${formatCurrency(product.installmentPrice)}`, 46 * s), Math.round(25 * s), Math.round(23.05 * s));
+  ctx.font = `bold ${fontPx(s, 2.25)} Arial, Helvetica, sans-serif`;
+  ctx.fillText(
+    fitText(ctx, `VALOR: ${formatCurrency(product.installmentPrice)}`, (mmW - 2.8) * s),
+    Math.round(cx * s),
+    Math.round((mmH - bottomPad) * s),
+  );
 
   ctx.restore();
 
-  // Converte cinzas do anti-aliasing em P/B puro (essencial para térmica)
   thresholdToBw(ctx, width, height, 150);
 }
 
-/** Uma linha do rolo: 2 etiquetas + gap 0,3 cm → 10,3 × 2,5 cm */
+/** Uma linha do rolo: 2 etiquetas + gap 0,4 cm → 10,3 × 2,5 cm */
 export async function renderModelo2RowDataUrl(productsInRow, logo = null) {
   const logoImg = logo || (await loadLabelLogo());
   const canvas = document.createElement("canvas");

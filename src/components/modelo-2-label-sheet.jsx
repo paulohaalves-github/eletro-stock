@@ -74,10 +74,11 @@ export function Modelo2LabelSheet({ products, option }) {
             .
           </p>
           <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100">
-            <strong>ZDesigner GC420t — obrigatório:</strong> em Opções → Tamanho, mude a{" "}
-            <strong>Largura para 10,30 cm</strong> e mantenha a <strong>Altura em 2,50 cm</strong>.
-            Com largura 5,00 cm a impressora comprime as 2 colunas e a etiqueta sai errada. Deixe
-            “rotate 180°” desmarcado; se sair invertida, marque só no driver.
+            <strong>ZDesigner GC420t — obrigatório:</strong> em Opções → Tamanho, use{" "}
+            <strong>Largura 10,30 cm</strong> e <strong>Altura 2,50 cm</strong>. O gap entre as
+            colunas no rolo é <strong>0,40 cm</strong> (cada etiqueta 4,95 cm). Deixe “rotate 180°”
+            desmarcado; se sair invertida, marque só no driver. Se cortar o topo, zere a área não
+            imprimível (esquerda/direita) ou confira o sensor do rolo.
           </p>
         </div>
         <button

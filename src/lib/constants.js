@@ -457,7 +457,7 @@ export const LABEL_MODEL_OPTIONS = [
   {
     id: LABEL_MODELS.PRECOS_02,
     label: "Modelo de Preços 02",
-    description: "2 colunas · 5×2,5 cm (página 10,3×2,5)",
+    description: "2 colunas · 4,95×2,5 cm (gap 0,4 · página 10,3×2,5)",
   },
 ];
 
