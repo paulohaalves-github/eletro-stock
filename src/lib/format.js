@@ -114,6 +114,15 @@ export function cn(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+export function saoPauloDayRange(isoDate) {
+  const text = String(isoDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  return {
+    start: new Date(`${text}T00:00:00.000-03:00`),
+    end: new Date(`${text}T23:59:59.999-03:00`),
+  };
+}
+
 export function periodRange(period, from, to) {
   const now = new Date();
   const end = new Date(now);

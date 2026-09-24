@@ -2,7 +2,7 @@ import { prisma } from "../db";
 import { conflict, notFound, validationError } from "../errors";
 import { writeAudit, writeMovement } from "../audit";
 import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, SALE_ORDER_CLOSED_STATUSES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
-import { formatCurrency, formatDate, formatProductId } from "../format";
+import { formatCurrency, formatDate, formatProductId, saoPauloDayRange } from "../format";
 import { emptyToNull, parseProductIds, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
@@ -156,6 +156,7 @@ function buildProductListWhere(filters = {}, session) {
     locationId,
     locationTypeId,
     stalePriceDays,
+    priceUpdatedOn,
   } = filters;
 
   const where = {
@@ -189,12 +190,20 @@ function buildProductListWhere(filters = {}, session) {
     where.location = { locationTypeId: Number(locationTypeId) };
   }
 
+  const priceDay = saoPauloDayRange(priceUpdatedOn);
   const staleDays = Number(stalePriceDays);
-  if (Number.isInteger(staleDays) && staleDays > 0) {
-    const cutoff = new Date();
-    cutoff.setHours(0, 0, 0, 0);
-    cutoff.setDate(cutoff.getDate() - staleDays);
-    where.lastPriceUpdateAt = { lt: cutoff };
+  if (priceDay || (Number.isInteger(staleDays) && staleDays > 0)) {
+    where.lastPriceUpdateAt = {};
+    if (priceDay) {
+      where.lastPriceUpdateAt.gte = priceDay.start;
+      where.lastPriceUpdateAt.lte = priceDay.end;
+    }
+    if (Number.isInteger(staleDays) && staleDays > 0) {
+      const cutoff = new Date();
+      cutoff.setHours(0, 0, 0, 0);
+      cutoff.setDate(cutoff.getDate() - staleDays);
+      where.lastPriceUpdateAt.lt = cutoff;
+    }
   }
 
   return where;

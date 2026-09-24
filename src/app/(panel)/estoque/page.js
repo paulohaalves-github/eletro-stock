@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { ActionMenu } from "@/components/action-menu";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import {
@@ -35,6 +35,7 @@ const EMPTY_FILTERS = {
   locationTypeId: "",
   locationId: "",
   stalePriceDays: "",
+  priceUpdatedOn: "",
 };
 
 function buildQuery(pageNumber, q, filters) {
@@ -302,6 +303,13 @@ function EstoqueContent() {
           <Input placeholder="Preço mín." value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} />
           <Input placeholder="Preço máx." value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
           <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
+          <Field label="Preço atualizado em">
+            <Input
+              type="date"
+              value={filters.priceUpdatedOn}
+              onChange={(e) => setFilters({ ...filters, priceUpdatedOn: e.target.value })}
+            />
+          </Field>
           <Select
             value={filters.stalePriceDays}
             onChange={(e) => setFilters({ ...filters, stalePriceDays: e.target.value })}
