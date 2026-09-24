@@ -157,6 +157,13 @@ export const EXIT_REASON_TO_STATUS = {
 
 export const CLOSED_STATUSES = ["VENDIDO", "TRANSFERIDO", "DESCARTADO", "DEVOLVIDO"];
 
+export const PRICE_IMPORT_STATUSES = [
+  STATUSES.AVAILABLE,
+  STATUSES.RESERVED,
+  STATUSES.IN_TRANSIT,
+  STATUSES.IN_REPAIR,
+];
+
 export function isInTransit(status) {
   return status === STATUSES.IN_TRANSIT;
 }

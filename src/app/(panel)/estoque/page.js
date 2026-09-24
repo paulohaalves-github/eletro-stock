@@ -20,6 +20,7 @@ import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
 import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
 import { ProductTrashDialog } from "@/components/product-trash-dialog";
+import { PriceImportButton } from "@/components/price-import";
 import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
 
 const EMPTY_FILTERS = {
@@ -112,6 +113,7 @@ function EstoqueContent() {
   const hasMore = data.items.length < data.total;
   const canTransfer = me ? can(me.role, PERMISSIONS.STOCK_TRANSFER) : false;
   const canTrash = me ? can(me.role, PERMISSIONS.PRODUCT_TRASH) : false;
+  const canImportPrices = me ? can(me.role, PERMISSIONS.PRICE_IMPORT) : false;
 
   function searchNow(qValue) {
     if (qValue !== undefined) {
@@ -252,6 +254,9 @@ function EstoqueContent() {
                 },
               ]}
             />
+            {canImportPrices ? (
+              <PriceImportButton onApplied={() => void fetchPage(1, { qValue: applied.q, filterValue: applied.filters })} />
+            ) : null}
             <Link href="/entrada">
               <Button>Nova entrada</Button>
             </Link>

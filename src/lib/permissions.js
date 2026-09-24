@@ -3,6 +3,7 @@ import { ROLES } from "./constants";
 export const PERMISSIONS = {
   PRODUCT_CREATE: "product:create",
   PRODUCT_EDIT: "product:edit",
+  PRICE_IMPORT: "product:price_import",
   PRODUCT_VIEW: "product:view",
   PRODUCT_TRASH: "product:trash",
   STOCK_ENTRY: "stock:entry",
