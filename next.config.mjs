@@ -7,7 +7,7 @@ const extraDevOrigins = (process.env.ALLOWED_DEV_ORIGINS || "")
 const nextConfig = {
   reactCompiler: true,
   allowedDevOrigins: ["10.8.6.11", "ubuntu04", ...extraDevOrigins],
-  serverExternalPackages: ["sharp", "@prisma/client", "exceljs"],
+  serverExternalPackages: ["sharp", "@prisma/client", "exceljs", "puppeteer"],
   experimental: {
     serverActions: {
       bodySizeLimit: "20mb",

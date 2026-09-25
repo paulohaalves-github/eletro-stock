@@ -22,6 +22,7 @@ import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picke
 import { ProductTrashDialog } from "@/components/product-trash-dialog";
 import { PriceImportButton } from "@/components/price-import";
 import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
+import { MAX_TRANSFER_BATCH } from "@/lib/validations";
 
 const EMPTY_FILTERS = {
   categoryId: "",
@@ -162,6 +163,10 @@ function EstoqueContent() {
       .map((item) => item.id);
     if (!ids.length) {
       toast.error("Selecione produtos disponíveis para transferir.");
+      return;
+    }
+    if (ids.length > MAX_TRANSFER_BATCH) {
+      toast.error(`Selecione no máximo ${MAX_TRANSFER_BATCH} produtos por lote.`);
       return;
     }
     if (ids.length < selected.size) {

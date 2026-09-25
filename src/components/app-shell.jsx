@@ -35,6 +35,7 @@ import {
   ShoppingCart,
   Handshake,
   Trash2,
+  Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -77,6 +78,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/unidades", label: "Unidades", icon: Store, permission: PERMISSIONS.UNIT_MANAGE },
       { href: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSIONS.USER_MANAGE },
+      { href: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSIONS.USER_MANAGE },
       { href: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
     ],
   },

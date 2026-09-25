@@ -39,7 +39,7 @@ export function parseId(value) {
   return id;
 }
 
-export const MAX_TRANSFER_BATCH = 100;
+export const MAX_TRANSFER_BATCH = 1000;
 
 export function parseProductIds(payload) {
   const raw = Array.isArray(payload?.productIds)

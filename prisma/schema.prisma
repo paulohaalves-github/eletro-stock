@@ -805,6 +805,14 @@ model InboxMessage {
   @@map("inbox_messages")
 }
 
+model AppSetting {
+  key       String   @id @db.VarChar(80)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
 model InboxConversationEvent {
   id             Int      @id @default(autoincrement())
   conversationId Int      @map("conversation_id")

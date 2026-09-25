@@ -2,17 +2,24 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api-client";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Textarea } from "@/components/ui";
 import { LoadMore, SearchActions } from "@/components/paged-list";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { CustomerPhonesFields, emptyPhoneRow } from "@/components/customer-phones";
 
+function emptyCustomerForm() {
+  return { name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "", notes: "" };
+}
+
 export function CustomerPicker({ value, onChange, allowCreate = true }) {
   const list = usePagedList();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "" });
+  const [form, setForm] = useState(emptyCustomerForm());
+  const [ov, setOv] = useState("");
+  const [careLoading, setCareLoading] = useState(false);
+  const [careSteps, setCareSteps] = useState([]);
   const [error, setError] = useState("");
 
   function loader(page, pageSize) {
@@ -27,14 +34,69 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
     await list.search(loader);
   }
 
-  async function create(event) {
-    event.preventDefault();
+  async function searchCare() {
+    setError("");
+    if (!ov.trim() || careLoading) {
+      if (!ov.trim()) setError("Informe a OV do Care.");
+      return;
+    }
+    setCareLoading(true);
+    setCareSteps([]);
+    try {
+      const response = await fetch("/api/integrations/care/customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ov: ov.trim() }),
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Não foi possível buscar no Care.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let customer = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          if (event.type === "step") setCareSteps((current) => [...current, event.message]);
+          if (event.type === "customer") customer = event.customer;
+          if (event.type === "error") throw new Error(event.message);
+        }
+      }
+
+      if (!customer) throw new Error("A busca no Care não retornou os dados do cliente.");
+      setForm({
+        name: customer.name || "",
+        phones: customer.phones?.length ? customer.phones : [emptyPhoneRow()],
+        document: customer.document || "",
+        email: customer.email || "",
+        address: customer.address || "",
+        notes: customer.notes || "",
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCareLoading(false);
+    }
+  }
+
+  async function create() {
     setError("");
     try {
       const data = await api("/api/customers", { method: "POST", json: form });
       onChange(data.customer);
       setCreating(false);
-      setForm({ name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "" });
+      setForm(emptyCustomerForm());
+      setOv("");
       setQuery("");
       list.setItems([]);
     } catch (err) {
@@ -64,6 +126,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
+              event.stopPropagation();
               void searchCustomers();
             }
           }}
@@ -107,7 +170,43 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
       />
       {allowCreate ? (
         creating ? (
-          <form onSubmit={create} className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2">
+          <div
+            className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2"
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.target.tagName === "TEXTAREA" || event.target.closest("button")) return;
+              event.preventDefault();
+              void create();
+            }}
+          >
+            <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <Field label="OV do Care">
+                <Input
+                  value={ov}
+                  inputMode="numeric"
+                  placeholder="Número da OV"
+                  onChange={(e) => setOv(e.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void searchCare();
+                    }
+                  }}
+                />
+              </Field>
+              <Button type="button" variant="secondary" disabled={careLoading} onClick={() => void searchCare()}>
+                {careLoading ? "Buscando..." : "Buscar no Care"}
+              </Button>
+            </div>
+            {careSteps.length ? (
+              <ol className="sm:col-span-2 space-y-1 rounded-xl bg-surface-2 px-3 py-2 text-sm text-muted">
+                {careSteps.map((step, index) => (
+                  <li key={`${index}-${step}`} className={careLoading && index === careSteps.length - 1 ? "text-text" : ""}>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
             <Field label="Nome" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <div className="sm:col-span-2">
               <CustomerPhonesFields value={form.phones} onChange={(phones) => setForm({ ...form, phones })} />
@@ -117,12 +216,19 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
             <div className="sm:col-span-2">
               <Field label="Endereço" required><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número, bairro, cidade" /></Field>
             </div>
+            {form.notes ? (
+              <div className="sm:col-span-2">
+                <Field label="Observações">
+                  <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                </Field>
+              </div>
+            ) : null}
             {error ? <p className="text-sm text-danger sm:col-span-2">{error}</p> : null}
             <div className="flex gap-2 sm:col-span-2">
-              <Button type="submit">Salvar cliente</Button>
-              <Button type="button" variant="ghost" onClick={() => setCreating(false)}>Cancelar</Button>
+              <Button type="button" onClick={() => void create()}>Salvar cliente</Button>
+              <Button type="button" variant="ghost" onClick={() => { setCreating(false); setOv(""); setForm(emptyCustomerForm()); setCareSteps([]); setError(""); }}>Cancelar</Button>
             </div>
-          </form>
+          </div>
         ) : (
           <Button type="button" variant="secondary" onClick={() => setCreating(true)}>Cadastrar cliente</Button>
         )

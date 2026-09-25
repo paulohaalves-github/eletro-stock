@@ -13,8 +13,9 @@ import { ConfirmDialog } from "@/components/modal";
 import { LocationPickers } from "@/components/location-pickers";
 import { ScanField } from "@/components/scan-field";
 import { STATUSES, UNIT_TYPE_LABELS } from "@/lib/constants";
-import { formatCurrency, formatProductId } from "@/lib/format";
+import { cn, formatCurrency, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
+import { MAX_TRANSFER_BATCH } from "@/lib/validations";
 import { usePagedList } from "@/hooks/use-paged-list";
 
 function toggleId(setter, id, checked) {
@@ -29,8 +30,44 @@ function toggleId(setter, id, checked) {
 function toggleAll(setter, items, checked) {
   setter(() => {
     if (!checked) return new Set();
-    return new Set(items.map((item) => item.id));
+    const ids = items.map((item) => item.id);
+    if (ids.length > MAX_TRANSFER_BATCH) {
+      toast.error(`Selecione no máximo ${MAX_TRANSFER_BATCH} produtos por lote.`);
+      return new Set(ids.slice(0, MAX_TRANSFER_BATCH));
+    }
+    return new Set(ids);
   });
+}
+
+function looksLikeProductId(parsed, raw) {
+  if (parsed?.productId) return true;
+  const type = parsed?.type;
+  if (type === "INTERNAL" || type === "QR") return true;
+  return /^#?\d+$/.test(raw) || /^ES-\d+$/i.test(raw);
+}
+
+function findIncomingByScan(parsed, items) {
+  const raw = String(parsed?.query ?? parsed?.raw ?? "").trim();
+  if (!raw) return { error: "Leia o ID ou o Serial Onyx." };
+
+  const idCandidate = Number(String(parsed?.productId || raw).replace(/^#/, "").replace(/^ES-/i, ""));
+  if (looksLikeProductId(parsed, raw) && Number.isInteger(idCandidate) && idCandidate > 0) {
+    const byId = items.find((item) => item.id === idCandidate);
+    if (byId) return { item: byId };
+  }
+
+  const serialKey = raw.toLowerCase();
+  const exactSerial = items.filter((item) => String(item.serialOnyx || "").toLowerCase() === serialKey);
+  if (exactSerial.length === 1) return { item: exactSerial[0] };
+  if (exactSerial.length > 1) return { error: "Mais de um aparelho com esse serial. Use o ID." };
+
+  if (!looksLikeProductId(parsed, raw)) {
+    const partial = items.filter((item) => String(item.serialOnyx || "").toLowerCase().includes(serialKey));
+    if (partial.length === 1) return { item: partial[0] };
+    if (partial.length > 1) return { error: "Mais de um aparelho combina. Use o ID." };
+  }
+
+  return { error: "Esse aparelho não está na lista a receber." };
 }
 
 function TransferenciasContent() {
@@ -51,6 +88,7 @@ function TransferenciasContent() {
   const [batchReceiveForm, setBatchReceiveForm] = useState({ locationTypeId: "", locationId: "" });
   const [selectedIncoming, setSelectedIncoming] = useState(() => new Set());
   const [selectedOutgoing, setSelectedOutgoing] = useState(() => new Set());
+  const [receiveScan, setReceiveScan] = useState("");
   const [pending, setPending] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -87,7 +125,10 @@ function TransferenciasContent() {
       .map((value) => Number(value.trim()))
       .filter((id) => Number.isInteger(id) && id > 0);
     if (!ids.length) return;
-    api(`/api/products?ids=${ids.join(",")}`)
+    if (ids.length > MAX_TRANSFER_BATCH) {
+      toast.error(`O lote admite no máximo ${MAX_TRANSFER_BATCH} produtos. Os primeiros ${MAX_TRANSFER_BATCH} foram carregados.`);
+    }
+    api(`/api/products?ids=${ids.slice(0, MAX_TRANSFER_BATCH).join(",")}`)
       .then((data) => {
         const items = data.items || [];
         const available = items.filter((item) => item.status === STATUSES.AVAILABLE);
@@ -134,6 +175,10 @@ function TransferenciasContent() {
       setQuery("");
       return;
     }
+    if (batch.length >= MAX_TRANSFER_BATCH) {
+      toast.error(`O lote admite no máximo ${MAX_TRANSFER_BATCH} produtos.`);
+      return;
+    }
     setBatch((current) => [...current, item]);
     results.setItems([]);
     setQuery("");
@@ -141,6 +186,41 @@ function TransferenciasContent() {
 
   function removeFromBatch(id) {
     setBatch((current) => current.filter((item) => item.id !== id));
+  }
+
+  function selectIncomingFromScan(parsed) {
+    const result = findIncomingByScan(parsed, incoming);
+    setReceiveScan("");
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    const item = result.item;
+    let already = false;
+    let atLimit = false;
+    setSelectedIncoming((current) => {
+      already = current.has(item.id);
+      if (already) return current;
+      if (current.size >= MAX_TRANSFER_BATCH) {
+        atLimit = true;
+        return current;
+      }
+      const next = new Set(current);
+      next.add(item.id);
+      return next;
+    });
+    if (atLimit) {
+      toast.error(`O lote admite no máximo ${MAX_TRANSFER_BATCH} produtos.`);
+      return;
+    }
+    if (already) {
+      toast.message(`${formatProductId(item.id)} já está selecionado.`);
+    } else {
+      toast.success(`${formatProductId(item.id)} selecionado para recebimento.`);
+    }
+    requestAnimationFrame(() => {
+      document.getElementById(`incoming-${item.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   }
 
   async function addFromScan(parsed) {
@@ -241,7 +321,7 @@ function TransferenciasContent() {
           {batch.length ? (
             <div className="mt-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">{batch.length} aparelho(s) no lote</p>
+                <p className="text-sm font-medium">{batch.length} aparelho(s) no lote{batch.length >= MAX_TRANSFER_BATCH ? ` (limite ${MAX_TRANSFER_BATCH})` : ""}</p>
                 <button type="button" className="text-sm text-accent" onClick={() => setBatch([])}>
                   Limpar lote
                 </button>
@@ -309,6 +389,14 @@ function TransferenciasContent() {
           </div>
           {incoming.length ? (
             <div className="space-y-3">
+              <Field label="Bipar ID ou Serial Onyx para selecionar o lote">
+                <ScanField
+                  value={receiveScan}
+                  onChange={setReceiveScan}
+                  onScan={selectIncomingFromScan}
+                  placeholder="Bipar o ID ou o Serial Onyx"
+                />
+              </Field>
               {selectedIncoming.size ? (
                 <div className="space-y-3 rounded-xl border border-accent/40 bg-accent/5 p-3">
                   <p className="text-sm font-medium">{selectedIncoming.size} selecionado(s) para receber no mesmo local</p>
@@ -339,7 +427,14 @@ function TransferenciasContent() {
                 </div>
               ) : null}
               {incoming.map((item) => (
-                <div key={item.id} className="rounded-xl border border-border p-3">
+                <div
+                  id={`incoming-${item.id}`}
+                  key={item.id}
+                  className={cn(
+                    "rounded-xl border p-3",
+                    selectedIncoming.has(item.id) ? "border-accent bg-accent/5" : "border-border",
+                  )}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <label className="mt-1">
                       <input

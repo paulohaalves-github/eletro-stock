@@ -3,7 +3,7 @@ import { conflict, notFound, validationError } from "../errors";
 import { writeAudit, writeMovement } from "../audit";
 import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, SALE_ORDER_CLOSED_STATUSES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { formatCurrency, formatDate, formatProductId, saoPauloDayRange } from "../format";
-import { emptyToNull, parseProductIds, validateProductPayload } from "../validations";
+import { emptyToNull, MAX_TRANSFER_BATCH, parseProductIds, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
 import { toExcelBuffer } from "./reports";
@@ -105,7 +105,7 @@ function expandToken(token) {
 const PRODUCT_LIST_MAX_PAGE_SIZE = 100;
 export const PRODUCT_EXPORT_MAX = 5000;
 
-function parseIdList(ids, max = 200) {
+function parseIdList(ids, max = MAX_TRANSFER_BATCH) {
   const raw = Array.isArray(ids) ? ids : String(ids || "").split(/[,\s]+/);
   return [...new Set(raw.map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, max);
 }
