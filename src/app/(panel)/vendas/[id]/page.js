@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
@@ -19,6 +19,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 
 export default function VendaDetailPage() {
   const { id } = useParams();
+  const router = useRouter();
   const [order, setOrder] = useState(null);
   const [me, setMe] = useState(null);
   const [query, setQuery] = useState("");
@@ -31,6 +32,7 @@ export default function VendaDetailPage() {
   const [warranties, setWarranties] = useState({});
   const [reserveItem, setReserveItem] = useState(null);
   const [reservedUntil, setReservedUntil] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [{ saleOrder }, { user }] = await Promise.all([
@@ -55,6 +57,7 @@ export default function VendaDetailPage() {
   const canCreate = me && can(me.role, PERMISSIONS.SALE_CREATE) && order && !order.closed && order.canOperate;
   const canCheckout = me && can(me.role, PERMISSIONS.SALE_CHECKOUT) && order && !order.closed;
   const canNote = me && can(me.role, PERMISSIONS.SALE_CREATE) && order?.canOperate;
+  const canDelete = me && can(me.role, PERMISSIONS.SALE_DELETE);
   const readyForOrder = items.some((item) =>
     [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
   );
@@ -189,6 +192,9 @@ export default function VendaDetailPage() {
             ) : null}
             {canCheckout && orderGenerated && checkoutItems.length ? (
               <Button disabled={saving} onClick={openCheckout}>Dar baixa no caixa</Button>
+            ) : null}
+            {canDelete ? (
+              <Button variant="danger" disabled={saving} onClick={() => setDeleteOpen(true)}>Excluir</Button>
             ) : null}
           </>
         }
@@ -441,6 +447,27 @@ export default function VendaDetailPage() {
           </Field>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Excluir esta venda?"
+        message="A venda sai da lista. Produtos que ainda estavam reservados voltam a ficar disponíveis. Vendas já baixadas no caixa permanecem no histórico do produto."
+        confirmLabel="Excluir venda"
+        danger
+        loading={saving}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={async () => {
+          setSaving(true);
+          try {
+            const data = await api(`/api/sale-orders/${order.id}`, { method: "DELETE" });
+            toast.success(data.message);
+            router.push("/vendas");
+          } catch (error) {
+            toast.error(error.message);
+            setSaving(false);
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(closeOpen)}

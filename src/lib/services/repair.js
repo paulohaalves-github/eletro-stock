@@ -27,6 +27,7 @@ import {
 import { movementUnitFields } from "./products";
 import { getLatestSale, serializeSale } from "./sales";
 import { formatLocationPath } from "../format";
+import { can, PERMISSIONS } from "../permissions";
 
 const locationInclude = { locationType: true };
 
@@ -808,4 +809,58 @@ export async function lookupSoldProduct(query, session, { productId } = {}) {
   });
 
   return items.map(serializeLookup);
+}
+
+export async function deleteWorkOrder(id, user) {
+  if (!can(user.role, PERMISSIONS.REPAIR_DELETE)) {
+    throw forbidden("Só o gestor ou o administrador pode excluir uma ordem de serviço.");
+  }
+  const order = await prisma.workOrder.findUnique({
+    where: { id: Number(id) },
+    include: {
+      product: { select: { id: true, status: true, unitId: true, locationId: true } },
+      sale: { select: { unitId: true } },
+    },
+  });
+  if (!order) throw notFound("Ordem de serviço não encontrada.");
+
+  const open = !WORK_ORDER_CLOSED_STATUSES.includes(order.status);
+  await prisma.$transaction(async (tx) => {
+    if (open && order.product?.status === STATUSES.IN_REPAIR) {
+      const nextStatus = restoreStatusForOrder(order);
+      const originUnitId = restoreUnitIdForOrder(order);
+      await tx.product.update({
+        where: { id: order.productId },
+        data: {
+          status: nextStatus,
+          unitId: originUnitId,
+          locationId: null,
+          transferToUnitId: null,
+        },
+      });
+      await writeMovement({
+        productId: order.productId,
+        type: MOVEMENT_TYPES.REPAIR_DELIVER,
+        previousStatus: STATUSES.IN_REPAIR,
+        newStatus: nextStatus,
+        observation: `${order.number} excluída. Aparelho ${isStockRepair(order) ? "devolvido ao estoque" : "retomado como vendido"}.`,
+        previousLocationId: order.product.locationId ?? null,
+        newLocationId: null,
+        ...movementUnitFields(order.product, {
+          previousUnitId: order.product.unitId,
+          newUnitId: originUnitId,
+        }),
+        userId: user.id,
+      }, tx);
+    }
+    await tx.workOrder.delete({ where: { id: order.id } });
+  });
+
+  await writeAudit({
+    userId: user.id,
+    action: "WORK_ORDER_DELETED",
+    entity: "work_order",
+    entityId: order.id,
+    oldData: { number: order.number, status: order.status, productId: order.productId },
+  });
 }

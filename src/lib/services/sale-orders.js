@@ -862,3 +862,50 @@ export async function syncSaleOrderAfterSale(productId, user) {
   });
   await persistDerivedStatus(prisma, item.saleOrderId);
 }
+
+export async function deleteSaleOrder(id, user) {
+  if (!canManageAllSaleOrders(user.role)) throw forbidden("Só o gestor ou o administrador pode excluir uma venda.");
+  const order = await prisma.saleOrder.findUnique({
+    where: { id: Number(id) },
+    include: {
+      items: {
+        select: {
+          id: true,
+          status: true,
+          productId: true,
+          product: { select: { id: true, status: true, unitId: true } },
+        },
+      },
+    },
+  });
+  if (!order) throw notFound("Venda não encontrada.");
+
+  await prisma.$transaction(async (tx) => {
+    for (const item of order.items) {
+      const locked = item.status === SALE_ORDER_ITEM_STATUSES.RESERVED || item.status === SALE_ORDER_ITEM_STATUSES.ORDERED;
+      if (!locked || item.product?.status !== STATUSES.RESERVED) continue;
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { status: STATUSES.AVAILABLE },
+      });
+      await writeMovement({
+        productId: item.productId,
+        type: MOVEMENT_TYPES.UNRESERVE,
+        previousStatus: STATUSES.RESERVED,
+        newStatus: STATUSES.AVAILABLE,
+        observation: `Liberado ao excluir a venda ${order.number}.`,
+        ...movementUnitFields(item.product),
+        userId: user.id,
+      }, tx);
+    }
+    await tx.saleOrder.delete({ where: { id: order.id } });
+  });
+
+  await writeAudit({
+    userId: user.id,
+    action: "SALE_ORDER_DELETED",
+    entity: "sale_order",
+    entityId: order.id,
+    oldData: { number: order.number, status: order.status },
+  });
+}

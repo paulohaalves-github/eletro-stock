@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
@@ -15,12 +15,15 @@ import { CustomerPhonesFields, phonesFromCustomer } from "@/components/customer-
 
 export default function ClienteDetailPage() {
   const { id } = useParams();
+  const router = useRouter();
   const [customer, setCustomer] = useState(null);
   const [me, setMe] = useState(null);
   const [error, setError] = useState(null);
   const [open, setOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const [{ customer: item }, { user }] = await Promise.all([
@@ -71,12 +74,25 @@ export default function ClienteDetailPage() {
     });
   }
 
+  async function remove() {
+    setDeleting(true);
+    try {
+      const data = await api(`/api/customers/${customer.id}`, { method: "DELETE" });
+      toast.success(data.message);
+      router.push("/clientes");
+    } catch (err) {
+      toast.error(err.message);
+      setDeleting(false);
+    }
+  }
+
   async function save(event) {
     event.preventDefault();
     setSaving(true);
     try {
       const data = await api(`/api/customers/${customer.id}`, { method: "PATCH", json: form });
       toast.success(data.message);
+      if (data.warning) toast.warning(data.warning);
       setOpen(false);
       await load();
     } catch (err) {
@@ -98,6 +114,7 @@ export default function ClienteDetailPage() {
               <Link href={`/vendas/novo?customerId=${customer.id}`}><Button variant="secondary">Nova venda</Button></Link>
             ) : null}
             {canManage ? <Button onClick={() => setOpen(true)}>Editar</Button> : null}
+            {canManage ? <Button variant="danger" onClick={() => setConfirmDelete(true)}>Excluir</Button> : null}
           </>
         }
       />
@@ -293,6 +310,20 @@ export default function ClienteDetailPage() {
           <Field label="Endereço" required><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número, bairro, cidade" /></Field>
           <Field label="Observação"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
         </form>
+      </Modal>
+
+      <Modal
+        open={confirmDelete}
+        title="Excluir cliente"
+        onClose={() => { if (!deleting) setConfirmDelete(false); }}
+        footer={
+          <>
+            <Button type="button" variant="secondary" disabled={deleting} onClick={() => setConfirmDelete(false)}>Cancelar</Button>
+            <Button type="button" variant="danger" disabled={deleting} onClick={() => void remove()}>{deleting ? "Excluindo..." : "Excluir"}</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">Excluir {customer.name}? Essa ação não pode ser desfeita.</p>
       </Modal>
     </div>
   );

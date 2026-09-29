@@ -1,5 +1,5 @@
 import { prisma } from "../db";
-import { notFound, validationError } from "../errors";
+import { conflict, notFound, validationError } from "../errors";
 import { writeAudit } from "../audit";
 import { SALE_ORDER_CLOSED_STATUSES, WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { emptyToNull } from "../validations";
@@ -110,6 +110,54 @@ function phoneSearchWhere(text) {
     or.push({ phones: { some: { digits: { contains: digits } } } });
   }
   return or;
+}
+
+function samePhone(left, right) {
+  const variants = new Set(phoneMatchVariants(left));
+  return phoneMatchVariants(right).some((item) => variants.has(item));
+}
+
+async function assertUniqueDocument({ document, excludeId } = {}) {
+  const doc = digitsOnly(document);
+  if (doc.length < 11) return;
+  const candidates = await prisma.customer.findMany({
+    where: {
+      document: { not: null },
+      ...(excludeId ? { id: { not: Number(excludeId) } } : {}),
+      OR: [{ document: doc }, { document: { contains: doc } }],
+    },
+    select: { id: true, name: true, document: true },
+  });
+  const match = candidates.find((item) => digitsOnly(item.document) === doc);
+  if (match) throw conflict(`Já existe o cliente ${match.name} com este CPF/CNPJ.`);
+}
+
+async function findPhoneOwner({ phones, excludeId } = {}) {
+  for (const entry of phones || []) {
+    const value = entry?.phone || entry;
+    const needles = phoneMatchVariants(value).filter((item) => item.length >= 10);
+    if (!needles.length) continue;
+    const candidates = await prisma.customer.findMany({
+      where: {
+        ...(excludeId ? { id: { not: Number(excludeId) } } : {}),
+        OR: [
+          { phones: { some: { digits: { in: needles } } } },
+          ...needles.map((digits) => ({ phone: { contains: digits.replace(/^55/, "") } })),
+        ],
+      },
+      select: { id: true, name: true, phone: true, phones: { select: { phone: true, digits: true } } },
+      take: 20,
+    });
+    const match = candidates.find((item) =>
+      samePhone(item.phone, value) || (item.phones || []).some((phone) => samePhone(phone.phone, value) || samePhone(phone.digits, value)),
+    );
+    if (match) return match;
+  }
+  return null;
+}
+
+function phoneWarning(match) {
+  return match ? `Já existe o cliente ${match.name} com este telefone.` : null;
 }
 
 export function customerHasPhone(customer, phone) {
@@ -298,6 +346,8 @@ export async function createCustomer(payload, actor) {
   const phones = parsePhoneEntries(payload);
   if (!phones?.length) throw validationError("Informe ao menos um telefone do cliente.");
   data.phone = phones[0].phone;
+  await assertUniqueDocument({ document: data.document });
+  const warning = phoneWarning(await findPhoneOwner({ phones }));
 
   const customer = await prisma.customer.create({
     data: {
@@ -314,7 +364,7 @@ export async function createCustomer(payload, actor) {
     entityId: customer.id,
     newData: serializeCustomer(customer),
   });
-  return serializeCustomer(customer);
+  return { customer: serializeCustomer(customer), warning };
 }
 
 export async function updateCustomer(id, payload, actor) {
@@ -329,6 +379,8 @@ export async function updateCustomer(id, payload, actor) {
     if (!phones.length) throw validationError("Informe ao menos um telefone do cliente.");
     data.phone = phones[0].phone;
   }
+  await assertUniqueDocument({ document: data.document, excludeId: current.id });
+  const warning = phoneWarning(await findPhoneOwner({ phones, excludeId: current.id }));
   await prisma.customer.update({
     where: { id: current.id },
     data,
@@ -343,5 +395,33 @@ export async function updateCustomer(id, payload, actor) {
     oldData: serializeCustomer(current),
     newData: updated,
   });
-  return updated;
+  return { customer: updated, warning };
+}
+
+export async function deleteCustomer(id, actor) {
+  const customer = await prisma.customer.findUnique({
+    where: { id: Number(id) },
+    select: {
+      ...customerSelect,
+      _count: { select: { sales: true, saleOrders: true, workOrders: true } },
+    },
+  });
+  if (!customer) throw notFound("Cliente não encontrado.");
+
+  const linked = [];
+  if (customer._count.sales) linked.push("vendas");
+  if (customer._count.saleOrders) linked.push("pedidos de venda");
+  if (customer._count.workOrders) linked.push("ordens de serviço");
+  if (linked.length) {
+    throw conflict(`Não é possível excluir este cliente porque ele possui ${linked.join(", ")}.`);
+  }
+
+  await prisma.customer.delete({ where: { id: customer.id } });
+  await writeAudit({
+    userId: actor.id,
+    action: "CUSTOMER_DELETED",
+    entity: "customer",
+    entityId: customer.id,
+    oldData: serializeCustomer(customer),
+  });
 }

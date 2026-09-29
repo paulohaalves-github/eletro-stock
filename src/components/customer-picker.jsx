@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import { LoadMore, SearchActions } from "@/components/paged-list";
@@ -93,6 +94,7 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
     setError("");
     try {
       const data = await api("/api/customers", { method: "POST", json: form });
+      if (data.warning) toast.warning(data.warning);
       onChange(data.customer);
       setCreating(false);
       setForm(emptyCustomerForm());

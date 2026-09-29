@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/ui";
@@ -33,6 +33,7 @@ const emptyInteraction = {
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams();
+  const router = useRouter();
   const [order, setOrder] = useState(null);
   const [me, setMe] = useState(null);
   const [interactionOpen, setInteractionOpen] = useState(false);
@@ -47,6 +48,7 @@ export default function WorkOrderDetailPage() {
   const [locations, setLocations] = useState([]);
   const [locationForm, setLocationForm] = useState({ locationTypeId: "", locationId: "" });
   const [deliverOpen, setDeliverOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -77,6 +79,7 @@ export default function WorkOrderDetailPage() {
   if (!order || !me) return <p className="text-muted">Carregando ordem de serviço...</p>;
 
   const canUpdate = can(me.role, PERMISSIONS.REPAIR_UPDATE) && !order.closed;
+  const canDelete = can(me.role, PERMISSIONS.REPAIR_DELETE);
   const atLab = order.servicePlace === SERVICE_PLACES.LAB && Number(me.activeUnitId) === Number(order.labUnitId);
   const stockRepair = isStockRepair(order);
   const sale = order.sale;
@@ -175,6 +178,7 @@ export default function WorkOrderDetailPage() {
               </Button>
             ) : null}
             {canUpdate ? <Button onClick={openInteraction}>Nova interação</Button> : null}
+            {canDelete ? <Button variant="danger" onClick={() => setDeleteOpen(true)}>Excluir</Button> : null}
           </>
         }
       />
@@ -323,6 +327,27 @@ export default function WorkOrderDetailPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Excluir esta ordem de serviço?"
+        message="A OS será removida. Se ainda estiver aberta, o aparelho deixa o status de reparo e volta ao estoque ou à venda, conforme o tipo da ordem."
+        confirmLabel="Excluir OS"
+        danger
+        loading={loading}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={async () => {
+          setLoading(true);
+          try {
+            const data = await api(`/api/work-orders/${order.id}`, { method: "DELETE" });
+            toast.success(data.message);
+            router.push("/reparos");
+          } catch (error) {
+            toast.error(error.message);
+            setLoading(false);
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={deliverOpen}

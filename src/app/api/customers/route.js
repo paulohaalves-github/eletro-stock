@@ -17,8 +17,8 @@ export const GET = apiHandler(
 export const POST = apiHandler(
   async (request, { session }) => {
     const body = await readJson(request);
-    const customer = await createCustomer(body, session);
-    return { customer, message: "Cliente cadastrado." };
+    const result = await createCustomer(body, session);
+    return { customer: result.customer, warning: result.warning, message: "Cliente cadastrado." };
   },
   { permission: PERMISSIONS.CUSTOMER_MANAGE },
 );

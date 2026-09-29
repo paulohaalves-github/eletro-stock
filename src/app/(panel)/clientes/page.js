@@ -48,6 +48,7 @@ export default function ClientesPage() {
     try {
       const data = await api("/api/customers", { method: "POST", json: form });
       toast.success(data.message);
+      if (data.warning) toast.warning(data.warning);
       setForm(empty);
       setOpen(false);
       void list.search(loader);

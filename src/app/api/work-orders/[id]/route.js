@@ -1,6 +1,6 @@
 import { apiHandler, readJson } from "@/lib/api";
 import { PERMISSIONS } from "@/lib/permissions";
-import { getWorkOrder, updateWorkOrder } from "@/lib/services/repair";
+import { deleteWorkOrder, getWorkOrder, updateWorkOrder } from "@/lib/services/repair";
 import { parseId } from "@/lib/validations";
 
 export const GET = apiHandler(
@@ -20,4 +20,13 @@ export const PATCH = apiHandler(
     return { workOrder, message: "Ordem de serviço atualizada." };
   },
   { permission: PERMISSIONS.REPAIR_UPDATE },
+);
+
+export const DELETE = apiHandler(
+  async (_request, { params, session }) => {
+    const { id } = await params;
+    await deleteWorkOrder(parseId(id), session);
+    return { message: "Ordem de serviço excluída." };
+  },
+  { permission: PERMISSIONS.REPAIR_DELETE },
 );
