@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { can, PERMISSIONS } from "@/lib/permissions";
+import { can, canAccessGestao, PERMISSIONS } from "@/lib/permissions";
 import { canAccessAnyDashboard } from "@/lib/dashboards";
 import { cn } from "@/lib/format";
 import { GlobalSearch } from "./global-search";
@@ -135,6 +135,7 @@ function visibleGroups(user) {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
+      if (group.id === "gestao" && !canAccessGestao(user.role)) return false;
       if (item.anyDashboard) return canAccessAnyDashboard(user);
       if (!can(user.role, item.permission)) return false;
       if (item.supervisor && !user.inboxSupervisor) return false;
@@ -245,6 +246,10 @@ export function AppShell({ user, children }) {
     }
   }
 
+  const mobileShortcuts = MOBILE_SHORTCUTS.filter((item) =>
+    item.anyDashboard ? canAccessGestao(user.role) && canAccessAnyDashboard(user) : can(user.role, item.permission),
+  );
+
   const unitPicker = units.length ? (
     <select
       value={activeUnit?.id || ""}
@@ -329,8 +334,11 @@ export function AppShell({ user, children }) {
         <main key={user.activeUnitId || "none"} className="flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8">
           {children}
         </main>
-        <nav className="no-print fixed bottom-0 left-0 right-0 z-20 grid grid-cols-5 border-t border-border bg-surface/95 p-2 lg:hidden">
-          {MOBILE_SHORTCUTS.filter((item) => item.anyDashboard ? canAccessAnyDashboard(user) : can(user.role, item.permission)).map((item) => {
+        <nav
+          className="no-print fixed bottom-0 left-0 right-0 z-20 grid border-t border-border bg-surface/95 p-2 lg:hidden"
+          style={{ gridTemplateColumns: `repeat(${Math.max(mobileShortcuts.length, 1)}, minmax(0, 1fr))` }}
+        >
+          {mobileShortcuts.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(pathname, item.href);
             return (

@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { canAccessGestao } from "@/lib/permissions";
 
-export default async function HomePage() {
+export default async function RelatoriosLayout({ children }) {
   const session = await getSession();
-  redirect(canAccessGestao(session?.role) ? "/dashboards" : "/estoque");
+  if (!canAccessGestao(session?.role)) redirect("/");
+  return children;
 }
