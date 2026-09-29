@@ -73,9 +73,9 @@ export function Label({ children, required }) {
   );
 }
 
-export function Field({ label, required, children, hint }) {
+export function Field({ label, required, children, hint, className }) {
   return (
-    <div>
+    <div className={className}>
       {label ? <Label required={required}>{label}</Label> : null}
       {children}
       {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}

@@ -9,6 +9,24 @@ const CARE_KEYS = {
   clienteConfigId: "care.clienteConfigId",
 };
 
+const CATALOG_KEYS = {
+  online: "catalog.online",
+  offlineMessage: "catalog.offlineMessage",
+  pickupNote: "catalog.pickupNote",
+  payCash: "catalog.payCash",
+  payCard: "catalog.payCard",
+  payPix: "catalog.payPix",
+};
+
+const CATALOG_DEFAULTS = {
+  online: true,
+  offlineMessage: "Catálogo temporariamente indisponível.",
+  pickupNote: "Os produtos devem ser retirados na loja pelo cliente.",
+  payCash: true,
+  payCard: true,
+  payPix: true,
+};
+
 function stored(rows, key) {
   return rows.find((row) => row.key === key)?.value;
 }
@@ -75,4 +93,77 @@ export async function saveCareSettings(payload, actor) {
   });
 
   return publicCareSettings({ user, clienteId, clienteConfigId, passwordSet: true });
+}
+
+function readFlag(value, fallback) {
+  if (value == null || value === "") return fallback;
+  return value === "true" || value === "1";
+}
+
+function readTextSetting(value, fallback, max) {
+  const text = value == null ? fallback : String(value);
+  return text.slice(0, max);
+}
+
+export async function getCatalogSettings() {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: Object.values(CATALOG_KEYS) } },
+  });
+  return {
+    online: readFlag(stored(rows, CATALOG_KEYS.online), CATALOG_DEFAULTS.online),
+    offlineMessage: readTextSetting(stored(rows, CATALOG_KEYS.offlineMessage), CATALOG_DEFAULTS.offlineMessage, 500),
+    pickupNote: readTextSetting(stored(rows, CATALOG_KEYS.pickupNote), CATALOG_DEFAULTS.pickupNote, 1000),
+    payCash: readFlag(stored(rows, CATALOG_KEYS.payCash), CATALOG_DEFAULTS.payCash),
+    payCard: readFlag(stored(rows, CATALOG_KEYS.payCard), CATALOG_DEFAULTS.payCard),
+    payPix: readFlag(stored(rows, CATALOG_KEYS.payPix), CATALOG_DEFAULTS.payPix),
+  };
+}
+
+function readCatalogText(value, label, max) {
+  const text = String(value ?? "").trim();
+  if (text.length > max) throw validationError(`${label} deve ter no máximo ${max} caracteres.`);
+  return text;
+}
+
+export async function saveCatalogSettings(payload, actor) {
+  const online = Boolean(payload.online);
+  const offlineMessage = readCatalogText(payload.offlineMessage, "A mensagem de catálogo fora do ar", 500);
+  const pickupNote = readCatalogText(payload.pickupNote, "O texto de retirada", 1000);
+  const payCash = Boolean(payload.payCash);
+  const payCard = Boolean(payload.payCard);
+  const payPix = Boolean(payload.payPix);
+
+  if (!online && !offlineMessage) {
+    throw validationError("Informe a mensagem exibida quando o catálogo estiver fora do ar.");
+  }
+
+  const settings = { online, offlineMessage, pickupNote, payCash, payCard, payPix };
+  const values = {
+    [CATALOG_KEYS.online]: online ? "true" : "false",
+    [CATALOG_KEYS.offlineMessage]: offlineMessage,
+    [CATALOG_KEYS.pickupNote]: pickupNote,
+    [CATALOG_KEYS.payCash]: payCash ? "true" : "false",
+    [CATALOG_KEYS.payCard]: payCard ? "true" : "false",
+    [CATALOG_KEYS.payPix]: payPix ? "true" : "false",
+  };
+
+  await prisma.$transaction(
+    Object.entries(values).map(([key, value]) =>
+      prisma.appSetting.upsert({
+        where: { key },
+        create: { key, value },
+        update: { value },
+      }),
+    ),
+  );
+
+  await writeAudit({
+    userId: actor.id,
+    action: "CATALOG_SETTINGS_UPDATED",
+    entity: "settings",
+    entityId: 0,
+    newData: settings,
+  });
+
+  return settings;
 }

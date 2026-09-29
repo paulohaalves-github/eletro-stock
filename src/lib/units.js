@@ -1,8 +1,11 @@
 import { prisma } from "./db";
 import { conflict, forbidden, notFound, validationError } from "./errors";
 import { writeAudit } from "./audit";
-import { ROLES, UNIT_TYPES } from "./constants";
+import { BRAZIL_UFS, ROLES, UNIT_TYPES } from "./constants";
 import { paginationResult, parsePagination } from "./pagination";
+import { digitsOnly, formatPhone } from "./phone";
+
+const UF_CODES = new Set(BRAZIL_UFS.map(([code]) => code));
 
 export const unitSelect = {
   id: true,
@@ -10,6 +13,23 @@ export const unitSelect = {
   slug: true,
   type: true,
   active: true,
+};
+
+export const unitProfileSelect = {
+  ...unitSelect,
+  email: true,
+  phone: true,
+  phoneSecondary: true,
+  whatsapp: true,
+  street: true,
+  addressNumber: true,
+  neighborhood: true,
+  city: true,
+  state: true,
+  zipCode: true,
+  latitude: true,
+  longitude: true,
+  catalogVisible: true,
 };
 
 export function serializeUnit(unit) {
@@ -108,6 +128,95 @@ export async function listActiveUnits() {
   return sortUnits(items);
 }
 
+export function formatUnitAddress(unit) {
+  if (!unit) return "";
+  const streetLine = [unit.street, unit.addressNumber].filter(Boolean).join(", ");
+  const place = [streetLine, unit.neighborhood, [unit.city, unit.state].filter(Boolean).join(" - ")].filter(Boolean).join(", ");
+  return [place, unit.zipCode].filter(Boolean).join(" ");
+}
+
+function readText(value, label, max) {
+  if (value === undefined) return undefined;
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (text.length > max) throw validationError(`${label} deve ter no máximo ${max} caracteres.`);
+  return text;
+}
+
+function readOptionalEmail(value) {
+  if (value === undefined) return undefined;
+  const email = String(value ?? "").trim().toLowerCase();
+  if (!email) return null;
+  if (email.length > 190 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw validationError("E-mail inválido.");
+  }
+  return email;
+}
+
+function readOptionalPhone(value, label) {
+  if (value === undefined) return undefined;
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const digits = digitsOnly(raw);
+  const national = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+  if (national.length !== 10 && national.length !== 11) {
+    throw validationError(`${label} inválido. Informe o DDD e o número.`);
+  }
+  return formatPhone(national);
+}
+
+function readOptionalZip(value) {
+  if (value === undefined) return undefined;
+  const digits = digitsOnly(value);
+  if (!digits) return null;
+  if (digits.length !== 8) throw validationError("CEP inválido. Informe 8 dígitos.");
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+function readOptionalState(value) {
+  if (value === undefined) return undefined;
+  const uf = String(value ?? "").trim().toUpperCase();
+  if (!uf) return null;
+  if (!UF_CODES.has(uf)) throw validationError("UF inválida.");
+  return uf;
+}
+
+function readOptionalCoord(value, label, min, max) {
+  if (value === undefined) return undefined;
+  if (value === null || String(value).trim() === "") return null;
+  const number = Number(String(value).trim().replace(",", "."));
+  if (!Number.isFinite(number) || number < min || number > max) {
+    throw validationError(`${label} inválida.`);
+  }
+  return Math.round(number * 1e7) / 1e7;
+}
+
+function assertCoordPair(latitude, longitude) {
+  if ((latitude == null) !== (longitude == null)) {
+    throw validationError("Informe latitude e longitude juntas para o mapa.");
+  }
+}
+
+function readUnitProfile(payload, type) {
+  const data = {
+    email: readOptionalEmail(payload.email),
+    phone: readOptionalPhone(payload.phone, "Telefone"),
+    phoneSecondary: readOptionalPhone(payload.phoneSecondary, "Segundo telefone"),
+    whatsapp: readOptionalPhone(payload.whatsapp, "WhatsApp"),
+    street: readText(payload.street, "Logradouro", 190),
+    addressNumber: readText(payload.addressNumber, "Número", 20),
+    neighborhood: readText(payload.neighborhood, "Bairro", 120),
+    city: readText(payload.city, "Cidade", 120),
+    state: readOptionalState(payload.state),
+    zipCode: readOptionalZip(payload.zipCode),
+    latitude: readOptionalCoord(payload.latitude, "Latitude", -90, 90),
+    longitude: readOptionalCoord(payload.longitude, "Longitude", -180, 180),
+  };
+  if (type === UNIT_TYPES.LAB) data.catalogVisible = false;
+  else if (payload.catalogVisible !== undefined) data.catalogVisible = Boolean(payload.catalogVisible);
+  return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+}
+
 export function sortUnits(items) {
   const rank = { [UNIT_TYPES.HQ]: 0, [UNIT_TYPES.BRANCH]: 1, [UNIT_TYPES.LAB]: 2 };
   return [...items].sort((a, b) => {
@@ -149,13 +258,18 @@ export async function getUnitOrThrow(id) {
 export async function listUnits({ includeInactive = false, q, page, pageSize } = {}) {
   const where = includeInactive ? {} : { active: true };
   const text = String(q || "").trim();
-  if (text) where.name = { contains: text };
+  if (text) {
+    where.OR = [
+      { name: { contains: text } },
+      { city: { contains: text } },
+    ];
+  }
   const pagination = parsePagination({ page, pageSize }, { defaultAll: true });
   const [total, items] = await Promise.all([
     prisma.unit.count({ where }),
     prisma.unit.findMany({
       where,
-      select: unitSelect,
+      select: unitProfileSelect,
       skip: pagination.skip,
       take: pagination.take,
     }),
@@ -205,11 +319,13 @@ export async function createUnit(payload, actor) {
   if (exists) throw conflict("Já existe uma unidade com este nome.");
 
   const slug = await uniqueSlug(slugifyUnitName(name));
+  const profile = readUnitProfile(payload, type);
+  assertCoordPair(profile.latitude ?? null, profile.longitude ?? null);
 
   try {
     const unit = await prisma.unit.create({
-      data: { name, slug, type, active: true },
-      select: unitSelect,
+      data: { name, slug, type, active: true, catalogVisible: false, ...profile },
+      select: unitProfileSelect,
     });
     await writeAudit({
       userId: actor.id,
@@ -227,7 +343,7 @@ export async function createUnit(payload, actor) {
 export async function updateUnit(id, payload, actor) {
   const current = await prisma.unit.findUnique({
     where: { id: Number(id) },
-    select: unitSelect,
+    select: unitProfileSelect,
   });
   if (!current) throw notFound("Unidade não encontrada.");
 
@@ -254,11 +370,19 @@ export async function updateUnit(id, payload, actor) {
     if (exists) throw conflict("Já existe uma unidade com este nome.");
   }
 
+  const nextType = data.type ?? current.type;
+  Object.assign(data, readUnitProfile(payload, nextType));
+  if (nextType === UNIT_TYPES.LAB) data.catalogVisible = false;
+  assertCoordPair(
+    data.latitude !== undefined ? data.latitude : current.latitude,
+    data.longitude !== undefined ? data.longitude : current.longitude,
+  );
+
   try {
     const unit = await prisma.unit.update({
       where: { id: current.id },
       data,
-      select: unitSelect,
+      select: unitProfileSelect,
     });
     await writeAudit({
       userId: actor.id,

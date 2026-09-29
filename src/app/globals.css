@@ -104,6 +104,27 @@ textarea {
   background: rgba(34, 211, 238, 0.28);
 }
 
+.catalog-root {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-2: #e8eef6;
+  --border: #d5deea;
+  --text: #0f172a;
+  --muted: #5b6b82;
+  --accent: #1d4ed8;
+  --accent-2: #1e3a8a;
+  --danger: #e11d48;
+  --warning: #d97706;
+  --success: #059669;
+  --glow: rgba(29, 78, 216, 0.16);
+  color-scheme: light;
+  background: #f4f7fb;
+  color: #0f172a;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
 @media print {
   body::before,
   .no-print {

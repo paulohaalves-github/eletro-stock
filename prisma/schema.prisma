@@ -51,13 +51,26 @@ model User {
 }
 
 model Unit {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique @db.VarChar(120)
-  slug      String   @unique @db.VarChar(80)
-  type      String   @db.VarChar(40)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  name            String   @unique @db.VarChar(120)
+  slug            String   @unique @db.VarChar(80)
+  type            String   @db.VarChar(40)
+  active          Boolean  @default(true)
+  email           String?  @db.VarChar(190)
+  phone           String?  @db.VarChar(40)
+  phoneSecondary  String?  @map("phone_secondary") @db.VarChar(40)
+  whatsapp        String?  @db.VarChar(40)
+  street          String?  @db.VarChar(190)
+  addressNumber   String?  @map("address_number") @db.VarChar(20)
+  neighborhood    String?  @db.VarChar(120)
+  city            String?  @db.VarChar(120)
+  state           String?  @db.VarChar(2)
+  zipCode         String?  @map("zip_code") @db.VarChar(12)
+  latitude        Float?
+  longitude       Float?
+  catalogVisible  Boolean  @default(false) @map("catalog_visible")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   users            UserUnit[]
   products         Product[]        @relation("ProductUnit")

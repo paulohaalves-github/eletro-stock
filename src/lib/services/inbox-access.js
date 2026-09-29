@@ -16,7 +16,7 @@ export async function resolveInboxSupervisor(session) {
       role: INBOX_TEAM_MEMBER_ROLES.SUPERVISOR,
       team: { active: true },
     },
-    select: { id: true },
+    select: { userId: true },
   });
   return Boolean(member);
 }
