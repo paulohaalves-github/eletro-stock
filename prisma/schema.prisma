@@ -804,6 +804,7 @@ model InboxMessage {
   mediaUrl       String?   @map("media_url") @db.VarChar(500)
   mediaType      String?   @map("media_type") @db.VarChar(80)
   fileName       String?   @map("file_name") @db.VarChar(255)
+  quotedExternalId String?  @map("quoted_external_id") @db.VarChar(190)
   externalId     String?   @unique @map("external_id") @db.VarChar(190)
   status         String    @default("SENT") @db.VarChar(40)
   sentAt         DateTime  @default(now()) @map("sent_at")
@@ -816,6 +817,7 @@ model InboxMessage {
 
   @@index([conversationId])
   @@index([sentAt])
+  @@index([quotedExternalId])
   @@map("inbox_messages")
 }
 

@@ -35,6 +35,7 @@ export const POST = apiHandler(
       mediaUrl: body.mediaUrl,
       mediaType: body.mediaType,
       fileName: body.fileName,
+      quotedExternalId: body.quotedExternalId,
       jid: body.jid,
     });
     return { ok: true, conversationId: conversation.id };

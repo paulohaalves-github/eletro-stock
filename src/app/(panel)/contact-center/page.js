@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Paperclip, X } from "lucide-react";
+import { Paperclip, Reply, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
@@ -49,6 +49,31 @@ function mediaKind(message) {
   return null;
 }
 
+function quotedText(quoted) {
+  if (!quoted) return "Mensagem original indisponível";
+  if (quoted.body) return quoted.body;
+  if (quoted.fileName) return quoted.fileName;
+  const kind = mediaKind(quoted);
+  if (kind === "image") return "Imagem";
+  if (kind === "video") return "Vídeo";
+  if (kind === "document") return "Documento";
+  return "Mensagem";
+}
+
+function QuotedBlock({ quoted, contactName, className }) {
+  const label = !quoted
+    ? "Mensagem"
+    : quoted.direction === MESSAGE_DIRECTIONS.IN
+      ? contactName || "Cliente"
+      : quoted.user?.name || "Atendente";
+  return (
+    <div className={cn("rounded-lg border-l-2 border-accent/60 bg-bg/50 px-2 py-1", className)}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-accent">{label}</p>
+      <p className="truncate text-[11px] text-muted">{quotedText(quoted)}</p>
+    </div>
+  );
+}
+
 function conversationTimeline(conversation) {
   const messages = (conversation?.messages || []).map((item) => ({ kind: "message", at: item.sentAt, item }));
   const events = (conversation?.events || [])
@@ -71,6 +96,7 @@ export default function InboxPage() {
   const [draft, setDraft] = useState("");
   const [internal, setInternal] = useState(false);
   const [file, setFile] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
   const [sending, setSending] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -136,6 +162,7 @@ export default function InboxPage() {
   useEffect(() => {
     if (selectedId) void loadConversation(selectedId);
     else setConversation(null);
+    setReplyTo(null);
   }, [selectedId, loadConversation]);
 
   const selected = conversation;
@@ -175,18 +202,20 @@ export default function InboxPage() {
         const form = new FormData();
         form.append("body", draft);
         form.append("internal", "false");
+        if (replyTo?.id) form.append("quotedMessageId", String(replyTo.id));
         form.append("file", file);
         data = await uploadWithProgress(`/api/inbox/conversations/${selected.id}/messages`, form);
       } else {
         data = await api(`/api/inbox/conversations/${selected.id}/messages`, {
           method: "POST",
-          json: { body: draft, internal },
+          json: { body: draft, internal, quotedMessageId: !internal && replyTo?.id ? replyTo.id : null },
         });
       }
       setConversation(data.conversation);
       setDraft("");
       setInternal(false);
       setFile(null);
+      setReplyTo(null);
       void loadList();
     } catch (error) {
       toast.error(error.message);
@@ -440,6 +469,9 @@ export default function InboxPage() {
                             {!note && !incoming && !message.user ? (
                               <p className="mb-1 text-[10px] uppercase tracking-wide text-muted">Automático</p>
                             ) : null}
+                            {message.quotedExternalId ? (
+                              <QuotedBlock quoted={message.quotedMessage} contactName={selected.displayName} className="mb-2" />
+                            ) : null}
                             {message.mediaUrl && kind === "image" ? (
                               <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="mb-2 block">
                                 <img src={message.mediaUrl} alt={message.fileName || "Imagem"} className="max-h-56 rounded-xl object-contain" />
@@ -457,9 +489,21 @@ export default function InboxPage() {
                               <p className="mb-1 text-xs text-muted">{message.fileName || message.mediaType}</p>
                             ) : null}
                             {message.body ? <p className="whitespace-pre-wrap">{message.body}</p> : null}
-                            <p className="mt-1 text-[11px] text-muted">
-                              {message.user?.name ? `${message.user.name} · ` : ""}
-                              {formatDateTime(message.sentAt)}
+                            <p className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted">
+                              <span>
+                                {message.user?.name ? `${message.user.name} · ` : ""}
+                                {formatDateTime(message.sentAt)}
+                              </span>
+                              {canReply && !note && !isClosed && message.externalId ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 hover:bg-bg hover:text-text"
+                                  onClick={() => setReplyTo(message)}
+                                >
+                                  <Reply size={12} />
+                                  Responder
+                                </button>
+                              ) : null}
                             </p>
                           </div>
                         </div>
@@ -468,6 +512,14 @@ export default function InboxPage() {
                   </div>
                   {canReply ? (
                     <form onSubmit={send} className="border-t border-border p-3">
+                      {replyTo && !internal ? (
+                        <div className="mb-2 flex items-start justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2">
+                          <QuotedBlock quoted={replyTo} contactName={selected.displayName} className="min-w-0 flex-1" />
+                          <button type="button" onClick={() => setReplyTo(null)} className="mt-0.5 rounded-full p-1 text-muted hover:bg-bg" aria-label="Cancelar resposta">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : null}
                       {file ? (
                         <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
                           <span className="truncate">{file.name}</span>
@@ -480,13 +532,21 @@ export default function InboxPage() {
                         className="min-h-20"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                          event.preventDefault();
+                          if (!sending && (draft.trim() || (!internal && file))) {
+                            event.currentTarget.form?.requestSubmit();
+                          }
+                        }}
                         placeholder={isClosed ? "Reabra a conversa para responder." : internal ? "Nota visível só para o time..." : "Escreva a resposta..."}
                         disabled={sending || (isClosed && !internal)}
                       />
+                      <p className="mt-1 text-[11px] text-muted">Enter envia · Shift+Enter nova linha</p>
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-2 text-xs text-muted">
-                            <input type="checkbox" checked={internal} onChange={(e) => { setInternal(e.target.checked); if (e.target.checked) setFile(null); }} />
+                            <input type="checkbox" checked={internal} onChange={(e) => { setInternal(e.target.checked); if (e.target.checked) { setFile(null); setReplyTo(null); } }} />
                             Nota interna
                           </label>
                           <input

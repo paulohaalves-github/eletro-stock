@@ -70,6 +70,47 @@ function previewOf(body, mediaType, fileName) {
   return inboxMediaPreview(body, mediaType, mediaType, fileName);
 }
 
+function withAgentName(name, body) {
+  const agent = String(name || "").trim();
+  const text = String(body || "").trim();
+  if (!agent) return text;
+  if (!text) return `*${agent}*`;
+  if (text.startsWith(`*${agent}*`)) return text;
+  return `*${agent}*\n${text}`;
+}
+
+function quotedPreview(message) {
+  if (!message) return null;
+  return {
+    id: message.id,
+    body: message.body,
+    fileName: message.fileName,
+    mediaType: message.mediaType,
+    mediaUrl: message.mediaUrl,
+    direction: message.direction,
+    user: message.user ? { id: message.user.id, name: message.user.name } : null,
+  };
+}
+
+async function withQuotedMessages(messages) {
+  const list = messages || [];
+  const quotedIds = [...new Set(list.map((item) => item.quotedExternalId).filter(Boolean))];
+  if (!quotedIds.length) return list.map((item) => ({ ...item, quotedMessage: null }));
+  const byExternal = new Map(list.filter((item) => item.externalId).map((item) => [item.externalId, item]));
+  const missing = quotedIds.filter((id) => !byExternal.has(id));
+  if (missing.length) {
+    const extra = await prisma.inboxMessage.findMany({
+      where: { externalId: { in: missing } },
+      include: { user: userLite },
+    });
+    for (const item of extra) byExternal.set(item.externalId, item);
+  }
+  return list.map((item) => ({
+    ...item,
+    quotedMessage: item.quotedExternalId ? quotedPreview(byExternal.get(item.quotedExternalId)) : null,
+  }));
+}
+
 function serializeConversation(conversation) {
   if (!conversation) return null;
   const now = new Date();
@@ -198,6 +239,7 @@ export async function getConversation(id, session, { markRead = false } = {}) {
     });
     conversation.unreadCount = 0;
   }
+  conversation.messages = await withQuotedMessages(conversation.messages);
   if (session && !session.system) {
     const { saleOrderAccessWhere } = await import("./sale-orders");
     conversation.saleOrders = await prisma.saleOrder.findMany({
@@ -286,6 +328,7 @@ export async function ingestIncomingMessage({
   mediaUrl,
   mediaType,
   fileName,
+  quotedExternalId,
   jid,
 }) {
   const phone = normalizeWhatsAppPhone(from);
@@ -371,6 +414,7 @@ export async function ingestIncomingMessage({
         mediaUrl: emptyToNull(mediaUrl),
         mediaType: emptyToNull(mediaType),
         fileName: emptyToNull(fileName),
+        quotedExternalId: emptyToNull(quotedExternalId),
         externalId: emptyToNull(externalId),
         status: MESSAGE_STATUSES.DELIVERED,
         sentAt: now,
@@ -598,13 +642,29 @@ export async function sendConversationMessage(id, payload, session) {
   if (!channel.active) throw validationError("Este canal está inativo.");
 
   const attachment = file ? await saveInboxAttachment(conversation.id, file) : null;
+  let quotedExternalId = null;
+  const quotedMessageId = Number(payload.quotedMessageId);
+  if (Number.isInteger(quotedMessageId) && quotedMessageId > 0) {
+    const quoted = await prisma.inboxMessage.findFirst({
+      where: { id: quotedMessageId, conversationId: conversation.id },
+    });
+    if (!quoted) throw validationError("Mensagem citada não encontrada nesta conversa.");
+    if (quoted.direction === MESSAGE_DIRECTIONS.INTERNAL) {
+      throw validationError("Não é possível responder uma nota interna no WhatsApp.");
+    }
+    quotedExternalId = quoted.externalId || null;
+  }
+
+  const isTemplate = Boolean(emptyToNull(payload.templateName));
+  const outboundBody = isTemplate ? body : withAgentName(session.name, body);
   const sent = await sendViaChannel(channel, {
     to: conversation.phone,
     jid: conversation.whatsappJid,
-    body,
+    body: outboundBody,
     media: attachment,
     templateName: emptyToNull(payload.templateName),
     templateLanguage: emptyToNull(payload.templateLanguage),
+    quotedExternalId,
   });
 
   const now = new Date();
@@ -618,6 +678,7 @@ export async function sendConversationMessage(id, payload, session) {
         mediaUrl: attachment?.mediaUrl || null,
         mediaType: attachment?.mediaType || null,
         fileName: attachment?.fileName || null,
+        quotedExternalId: emptyToNull(quotedExternalId),
         externalId: sent.externalId,
         status: MESSAGE_STATUSES.SENT,
         sentAt: now,

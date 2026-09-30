@@ -134,6 +134,18 @@ function extractText(message) {
   );
 }
 
+function extractQuotedId(message) {
+  const content = unwrapContent(message);
+  return (
+    content.extendedTextMessage?.contextInfo?.stanzaId ||
+    content.imageMessage?.contextInfo?.stanzaId ||
+    content.videoMessage?.contextInfo?.stanzaId ||
+    content.documentMessage?.contextInfo?.stanzaId ||
+    content.audioMessage?.contextInfo?.stanzaId ||
+    null
+  );
+}
+
 function extractPeer(message) {
   const key = message.key || {};
   const remoteJid = key.remoteJid || "";
@@ -329,6 +341,7 @@ async function startSession(channelId, { forceQr = false } = {}) {
           mediaUrl: media?.mediaUrl,
           mediaType: media?.mediaType,
           fileName: media?.fileName,
+          quotedExternalId: extractQuotedId(message),
           externalId: message.key.id,
           timestamp: message.messageTimestamp,
         });
@@ -348,7 +361,7 @@ function safeUploadPath(relativePath) {
   return full;
 }
 
-async function sendMessage(channelId, to, text, jid, media) {
+async function sendMessage(channelId, to, text, jid, media, quotedId) {
   const entry = await waitForReady(channelId);
   const dest = await resolveSendJid(entry.sock, to, jid);
   console.log(`[whatsapp] enviando canal ${channelId} para ${dest}`);
@@ -369,7 +382,10 @@ async function sendMessage(channelId, to, text, jid, media) {
   } else {
     content = { text: String(text || "") };
   }
-  const sent = await entry.sock.sendMessage(dest, content);
+  const options = quotedId
+    ? { quoted: { key: { remoteJid: dest, id: String(quotedId) }, message: { conversation: "." } } }
+    : {};
+  const sent = await entry.sock.sendMessage(dest, content, options);
   return { externalId: sent?.key?.id || null, jid: dest };
 }
 
@@ -404,7 +420,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "POST" && req.url === "/send") {
-      const result = await sendMessage(body.channelId, body.to, body.text, body.jid, body.media);
+      const result = await sendMessage(body.channelId, body.to, body.text, body.jid, body.media, body.quotedId);
       json(res, 200, result);
       return;
     }

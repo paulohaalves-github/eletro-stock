@@ -13,6 +13,7 @@ export const POST = apiHandler(
       payload = {
         body: form.get("body") || "",
         internal: form.get("internal") === "1" || form.get("internal") === "true",
+        quotedMessageId: form.get("quotedMessageId") || null,
         file: form.get("file"),
       };
     } else {

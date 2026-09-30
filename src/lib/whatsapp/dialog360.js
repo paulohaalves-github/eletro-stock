@@ -37,34 +37,101 @@ async function uploadDialog360Media(channel, media) {
   return data.id;
 }
 
-export async function downloadDialog360Media(channel, mediaId, mediaType) {
-  if (!channel.apiKey || !mediaId) return null;
-  const response = await fetch(`${baseUrl()}/${mediaId}`, {
-    headers: { "D360-API-KEY": channel.apiKey },
+function dialog360MediaDownloadUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(String(url).replaceAll("\\", ""));
+    if (parsed.hostname.includes("lookaside.")) {
+      const host = new URL(baseUrl());
+      parsed.protocol = host.protocol;
+      parsed.host = host.host;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function readDialog360Error(response) {
+  const text = await response.text().catch(() => "");
+  try {
+    const data = JSON.parse(text);
+    return data?.error?.message || data?.message || text.slice(0, 200);
+  } catch {
+    return text.slice(0, 200);
+  }
+}
+
+async function fetchDialog360Binary(url, apiKey) {
+  const downloadUrl = dialog360MediaDownloadUrl(url);
+  if (!downloadUrl) throw new Error("URL de mídia 360dialog inválida.");
+  const response = await fetch(downloadUrl, {
+    headers: { "D360-API-KEY": apiKey },
     redirect: "follow",
   });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar mídia 360dialog (${response.status}): ${await readDialog360Error(response)}`);
+  }
   const type = response.headers.get("content-type") || "";
-  let buffer;
-  let mimeType = type;
   if (type.includes("application/json")) {
     const data = await response.json().catch(() => ({}));
-    const url = data.url || data.media_url;
-    if (!url) return null;
-    const bin = await fetch(url, { headers: { "D360-API-KEY": channel.apiKey } });
-    if (!bin.ok) return null;
-    buffer = Buffer.from(await bin.arrayBuffer());
-    mimeType = bin.headers.get("content-type") || mediaType || "application/octet-stream";
-  } else {
-    buffer = Buffer.from(await response.arrayBuffer());
+    throw new Error(data?.error?.message || data?.message || "A 360dialog devolveu JSON em vez do arquivo.");
   }
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    mimeType: type || null,
+  };
+}
+
+export async function downloadDialog360Media(channel, { mediaId, mediaUrl, mediaType, fileName, mimeType } = {}) {
+  if (!channel.apiKey || (!mediaId && !mediaUrl)) return null;
+  const headers = { "D360-API-KEY": channel.apiKey };
+  let buffer;
+  let resolvedMime = mimeType || null;
+
+  if (mediaUrl) {
+    try {
+      const file = await fetchDialog360Binary(mediaUrl, channel.apiKey);
+      buffer = file.buffer;
+      resolvedMime = resolvedMime || file.mimeType;
+    } catch (error) {
+      if (!mediaId) throw error;
+      console.error("[360dialog-media]", "URL do webhook falhou, tentando media-id", error.message || error);
+    }
+  }
+
+  if (!buffer && mediaId) {
+    const response = await fetch(`${baseUrl()}/${mediaId}`, {
+      headers,
+      redirect: "follow",
+    });
+    if (!response.ok) {
+      throw new Error(`Falha ao obter URL da mídia 360dialog (${response.status}): ${await readDialog360Error(response)}`);
+    }
+    const type = response.headers.get("content-type") || "";
+    if (type.includes("application/json")) {
+      const data = await response.json().catch(() => ({}));
+      resolvedMime = resolvedMime || data.mime_type || null;
+      const url = data.url || data.media_url;
+      if (!url) throw new Error("A 360dialog não retornou a URL da mídia.");
+      const file = await fetchDialog360Binary(url, channel.apiKey);
+      buffer = file.buffer;
+      resolvedMime = resolvedMime || file.mimeType;
+    } else {
+      buffer = Buffer.from(await response.arrayBuffer());
+      resolvedMime = resolvedMime || type;
+    }
+  }
+
+  if (!buffer?.length) return null;
+
   return saveInboxMediaBuffer(channel.id, buffer, {
-    mimeType,
-    fileName: `whatsapp-${mediaId}`,
+    mimeType: resolvedMime || mediaType || "application/octet-stream",
+    fileName: fileName || `whatsapp-${mediaId || "media"}`,
   });
 }
 
-export async function sendDialog360Message(channel, { to, body, media, templateName, templateLanguage, templateComponents }) {
+export async function sendDialog360Message(channel, { to, body, media, templateName, templateLanguage, templateComponents, quotedExternalId }) {
   if (!channel.apiKey) throw validationError("Canal 360dialog sem API key.");
   const phone = normalizeWhatsAppPhone(to);
   if (!phone) throw validationError("Telefone de destino inválido.");
@@ -103,6 +170,10 @@ export async function sendDialog360Message(channel, { to, body, media, templateN
     };
   }
 
+  if (quotedExternalId && payload.type !== "template") {
+    payload.context = { message_id: String(quotedExternalId) };
+  }
+
   const response = await fetch(`${baseUrl()}/messages`, {
     method: "POST",
     headers: dialog360Headers(channel.apiKey),
@@ -134,6 +205,7 @@ export function extractDialog360Events(payload) {
         (value.contacts || []).map((contact) => [contact.wa_id, contact.profile?.name || null]),
       );
       for (const message of value.messages || []) {
+        const media = messageMedia(message);
         events.push({
           kind: "message",
           phoneNumberId: metadata.phone_number_id || null,
@@ -144,8 +216,12 @@ export function extractDialog360Events(payload) {
           timestamp: message.timestamp,
           type: message.type,
           body: messageText(message),
-          mediaId: message.image?.id || message.audio?.id || message.document?.id || message.video?.id || null,
-          mediaType: message.type,
+          mediaId: media.mediaId,
+          mediaUrl: media.mediaUrl,
+          fileName: media.fileName,
+          mimeType: media.mimeType,
+          mediaType: media.mimeType || message.type,
+          quotedExternalId: message.context?.id || message.context?.message_id || null,
         });
       }
       for (const status of value.statuses || []) {
@@ -161,6 +237,17 @@ export function extractDialog360Events(payload) {
     }
   }
   return events;
+}
+
+function messageMedia(message) {
+  const block = message.image || message.sticker || message.audio || message.video || message.document || null;
+  if (!block) return { mediaId: null, mediaUrl: null, fileName: null, mimeType: null };
+  return {
+    mediaId: block.id || null,
+    mediaUrl: block.url || block.link || null,
+    fileName: block.filename || block.file_name || null,
+    mimeType: block.mime_type || block.mimeType || null,
+  };
 }
 
 function messageText(message) {

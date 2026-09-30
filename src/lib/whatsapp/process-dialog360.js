@@ -22,14 +22,18 @@ export async function processDialog360Webhook(payload, channelId) {
     }
     if (event.kind === "message") {
       let mediaUrl = null;
-      let fileName = null;
-      let mediaType = event.mediaType;
-      if (event.mediaId && event.mediaType && event.mediaType !== "text") {
-        const saved = await downloadDialog360Media(channel, event.mediaId, event.mediaType).catch(() => null);
-        if (saved) {
-          mediaUrl = saved.mediaUrl;
-          fileName = saved.fileName;
-          mediaType = saved.mediaType || event.mediaType;
+      let fileName = event.fileName || null;
+      let mediaType = event.mimeType || event.mediaType;
+      if (event.mediaId || event.mediaUrl) {
+        try {
+          const saved = await downloadDialog360Media(channel, event);
+          if (saved) {
+            mediaUrl = saved.mediaUrl;
+            fileName = saved.fileName || fileName;
+            mediaType = saved.mediaType || mediaType;
+          }
+        } catch (error) {
+          console.error("[360dialog-media]", error.message || error);
         }
       }
       await ingestIncomingMessage({
@@ -42,6 +46,7 @@ export async function processDialog360Webhook(payload, channelId) {
         mediaUrl,
         mediaType,
         fileName,
+        quotedExternalId: event.quotedExternalId,
       });
       processed += 1;
     } else if (event.kind === "status") {
