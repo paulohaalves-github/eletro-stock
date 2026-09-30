@@ -252,7 +252,7 @@ export default function ProductDetailPage() {
         </div>
       </Card>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+      <div className={`mb-4 grid gap-4 sm:grid-cols-2 ${product.status === STATUSES.SOLD ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
         <Card>
           <p className="text-xs uppercase text-muted">Preço de mercado</p>
           <p className="mt-1 text-2xl font-semibold">{formatCurrency(product.marketPrice)}</p>
@@ -265,6 +265,14 @@ export default function ProductDetailPage() {
           <p className="text-xs uppercase text-muted">Preço parcelado</p>
           <p className="mt-1 text-2xl font-semibold">{formatCurrency(product.installmentPrice)}</p>
         </Card>
+        {product.status === STATUSES.SOLD ? (
+          <Card>
+            <p className="text-xs uppercase text-muted">Valor vendido</p>
+            <p className="mt-1 text-2xl font-semibold text-accent">
+              {product.soldPrice == null ? "—" : formatCurrency(product.soldPrice)}
+            </p>
+          </Card>
+        ) : null}
       </div>
       <p className="mb-4 text-sm text-muted">
         Última atualização de preços: {formatDateTime(product.lastPriceUpdateAt)}

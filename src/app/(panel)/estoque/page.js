@@ -409,6 +409,9 @@ function EstoqueContent() {
                     <ConditionBadge condition={item.condition} />
                     <span className="text-sm font-semibold">{formatCurrency(item.cashPrice)}</span>
                   </div>
+                  {item.status === STATUSES.SOLD ? (
+                    <p className="text-xs text-muted">Valor vendido {item.soldPrice == null ? "—" : formatCurrency(item.soldPrice)}</p>
+                  ) : null}
                   <p className="text-xs text-muted">Preço atualizado em {formatDate(item.lastPriceUpdateAt)}</p>
                   {item.openSaleOrder ? <p className="text-xs text-muted">{saleOrderCell(item, me)}</p> : null}
                 </div>
@@ -431,7 +434,7 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Parcelado", "Preço atualizado", "Status", "Venda", "Entrada"].map((col) => (
+                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Valor vendido", "Parcelado", "Preço atualizado", "Status", "Venda", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
               </tr>
@@ -461,6 +464,7 @@ function EstoqueContent() {
                   <td className="px-3 py-2">{item.voltage || "—"}</td>
                   <td className="px-3 py-2"><ConditionBadge condition={item.condition} /></td>
                   <td className="px-3 py-2">{formatCurrency(item.cashPrice)}</td>
+                  <td className="px-3 py-2">{item.status === STATUSES.SOLD && item.soldPrice != null ? formatCurrency(item.soldPrice) : "—"}</td>
                   <td className="px-3 py-2">{formatCurrency(item.installmentPrice)}</td>
                   <td className="px-3 py-2">{formatDate(item.lastPriceUpdateAt)}</td>
                   <td className="px-3 py-2"><StatusBadge status={item.status} /></td>

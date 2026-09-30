@@ -20,6 +20,9 @@ export function proxy(request) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname === "/logo.svg" ||
+    pathname === "/apple-touch-icon.png" ||
+    pathname === "/icon" ||
+    pathname === "/apple-icon" ||
     pathname.startsWith("/brand")
   ) {
     return NextResponse.next();

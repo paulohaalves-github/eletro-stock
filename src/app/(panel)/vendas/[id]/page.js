@@ -222,6 +222,7 @@ export default function VendaDetailPage() {
           />
           <Info label="Unidade" value={order.unit?.name} />
           <Info label="Vendedor" value={order.seller?.name} />
+          <Info label="OV" value={order.ov || "—"} />
           <Info label="Aberto por" value={order.createdBy?.name} />
           {order.conversation?.id ? (
             <Info

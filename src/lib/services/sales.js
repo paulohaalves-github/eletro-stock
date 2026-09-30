@@ -73,6 +73,7 @@ export async function createSale({
   invoiceNumber,
   soldAt,
   observation,
+  cashPrice,
   user,
   product: currentProduct,
   fromExit = false,
@@ -97,6 +98,11 @@ export async function createSale({
   const invoice = String(invoiceNumber || "").trim();
   if (!invoice) throw validationError("Informe o número da NF.");
 
+  const quoted = Number(cashPrice);
+  const recordedPrice = fromExit && cashPrice != null && cashPrice !== "" && Number.isFinite(quoted) && quoted >= 0
+    ? Math.round(quoted * 100) / 100
+    : Number(product.cashPrice || 0);
+
   const sale = await prisma.sale.create({
     data: {
       productId: product.id,
@@ -106,7 +112,7 @@ export async function createSale({
       warrantyMonths: parseWarrantyMonths(warrantyMonths),
       invoiceNumber: invoice,
       observation: emptyToNull(observation),
-      cashPrice: Number(product.cashPrice || 0),
+      cashPrice: recordedPrice,
       createdById: user.id,
     },
     include: saleInclude,

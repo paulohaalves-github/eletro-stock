@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { LoadMore, SearchActions } from "@/components/paged-list";
 import { SaleOrderStatusBadge } from "@/components/badges";
+import { ConfirmDialog } from "@/components/modal";
 import { SALE_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
-import { can, canViewAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
+import { can, canManageAllSaleOrders, canViewAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
 
 const KANBAN_STATUSES = Object.keys(SALE_ORDER_STATUS_LABELS);
 
@@ -34,6 +35,38 @@ function productSummary(item) {
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
 }
 
+function syncPercent(progress) {
+  if (!progress?.total) return null;
+  const ratio = Math.min(1, Math.max(0, Number(progress.current) / Number(progress.total)));
+  if (progress.phase === "list") return Math.round(ratio * 15);
+  if (progress.phase === "read") return 15 + Math.round(ratio * 55);
+  if (progress.phase === "import") return 70 + Math.round(ratio * 30);
+  return Math.round(ratio * 100);
+}
+
+function CareSyncProgress({ progress, active }) {
+  const percent = syncPercent(progress);
+  const label = progress?.label || (active ? "Sincronizando com o Care" : "Sincronização");
+  const count = progress?.total
+    ? `${Math.min(progress.current || 0, progress.total)} de ${progress.total}`
+    : "";
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+        <span className={active ? "font-medium" : "text-muted"}>{label}</span>
+        <span className="text-muted">{percent == null ? "" : `${percent}%`}{count ? ` · ${count}` : ""}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+        <div
+          className={`h-full bg-accent transition-all ${percent == null ? "w-1/3 animate-pulse" : ""}`}
+          style={percent == null ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function SaleCard({ item, onOpen }) {
   return (
     <button
@@ -47,6 +80,7 @@ function SaleCard({ item, onOpen }) {
       </div>
       <p className="line-clamp-2 text-sm font-medium">{item.customer?.name || "—"}</p>
       <p className="mt-1 text-xs text-muted">Vendedor: {item.seller?.name || "—"}</p>
+      {item.ov ? <p className="mt-1 text-xs text-muted">OV {item.ov}</p> : null}
       <p className="mt-1 line-clamp-2 text-xs text-muted">{productSummary(item)}</p>
       <p className="mt-2 text-[11px] text-muted">Abertura: {formatDateTime(item.createdAt)}</p>
     </button>
@@ -62,6 +96,12 @@ export default function VendasPage() {
   const [status, setStatus] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [sellers, setSellers] = useState([]);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncSteps, setSyncSteps] = useState([]);
+  const [syncProgress, setSyncProgress] = useState(null);
+  const [syncResult, setSyncResult] = useState(null);
+  const stepsRef = useRef(null);
 
   function currentFilters() {
     return { q, status, sellerId };
@@ -88,6 +128,69 @@ export default function VendasPage() {
   }, []);
 
   const canCreate = me && can(me.role, PERMISSIONS.SALE_CREATE);
+  const canSync = me && canManageAllSaleOrders(me.role) && can(me.role, PERMISSIONS.SALE_CHECKOUT);
+
+  useEffect(() => {
+    if (stepsRef.current) stepsRef.current.scrollTop = stepsRef.current.scrollHeight;
+  }, [syncSteps]);
+
+  async function syncCare() {
+    setSyncOpen(false);
+    setSyncing(true);
+    setSyncSteps([]);
+    setSyncResult(null);
+    setSyncProgress({ phase: "list", current: 0, total: 0, label: "Conectando ao Care" });
+    try {
+      const response = await fetch("/api/integrations/care/sales", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Não foi possível sincronizar com o Care.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          if (event.type === "step") {
+            setSyncSteps((current) => [...current, event.message]);
+            if (event.progress) setSyncProgress(event.progress);
+          }
+          if (event.type === "done") result = event.result;
+          if (event.type === "error") throw new Error(event.message);
+        }
+      }
+      if (buffer.trim()) {
+        const event = JSON.parse(buffer);
+        if (event.type === "step") {
+          setSyncSteps((current) => [...current, event.message]);
+          if (event.progress) setSyncProgress(event.progress);
+        }
+        if (event.type === "done") result = event.result;
+        if (event.type === "error") throw new Error(event.message);
+      }
+      setSyncProgress({ phase: "done", current: 1, total: 1, label: "Sincronização concluída" });
+      setSyncResult(result);
+      for (const warning of result?.warnings || []) toast.warning(warning);
+      toast.success(`${result?.imported?.length || 0} venda(s) importada(s) do Care.`);
+      void list.search(loader);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const kanbanColumns = useMemo(() => {
     const statuses = status ? [status] : KANBAN_STATUSES;
@@ -112,6 +215,11 @@ export default function VendasPage() {
             <Button variant="secondary" onClick={() => setView(view === "table" ? "kanban" : "table")}>
               {view === "table" ? "Ver kanban" : "Ver tabela"}
             </Button>
+            {canSync ? (
+              <Button variant="secondary" disabled={syncing} onClick={() => setSyncOpen(true)}>
+                {syncing ? "Sincronizando…" : "Sincronizar com o Care"}
+              </Button>
+            ) : null}
             {canCreate ? <Button onClick={() => router.push("/vendas/novo")}>Nova venda</Button> : null}
           </>
         }
@@ -120,7 +228,7 @@ export default function VendasPage() {
       <Card className="mb-4 space-y-3">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <Field label="Buscar">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número, cliente, serial ou observação" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número, OV, cliente, serial ou observação" />
           </Field>
           <Field label="Status">
             <Select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -141,6 +249,36 @@ export default function VendasPage() {
         </div>
         <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} onClear={clearFilters} />
       </Card>
+
+      {syncing || syncSteps.length || syncResult ? (
+        <Card className="mb-4 space-y-3">
+          {syncing || syncProgress ? <CareSyncProgress progress={syncProgress} active={syncing} /> : null}
+          {syncSteps.length ? (
+            <ol ref={stepsRef} className="max-h-48 space-y-1 overflow-y-auto rounded-xl bg-surface-2 px-3 py-2 text-sm text-muted">
+              {syncSteps.map((step, index) => (
+                <li key={`${index}-${step}`} className={syncing && index === syncSteps.length - 1 ? "text-text" : ""}>
+                  {step}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          {syncResult ? (
+            <div className="space-y-2 text-sm">
+              <p>{syncResult.imported?.length || 0} venda(s) importada(s). {syncResult.skipped?.length || 0} ignorada(s).</p>
+              {(syncResult.imported || []).map((item) => (
+                <p key={item.ov}>
+                  OV {item.ov} virou {item.number}
+                  {item.products?.length ? ` (${item.products.join(", ")})` : ""}
+                  {item.pending?.length ? `. Pendências: ${item.pending.join("; ")}` : "."}
+                </p>
+              ))}
+              {(syncResult.skipped || []).map((item) => (
+                <p key={`${item.ov}-${item.reason}`} className="text-muted">{item.ov ? `OV ${item.ov}: ${item.reason}` : item.reason}</p>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
 
       {view === "kanban" ? (
         <div className="overflow-x-auto pb-2">
@@ -193,7 +331,10 @@ export default function VendasPage() {
                     className="cursor-pointer border-t border-border hover:bg-surface-2/80"
                     onClick={() => router.push(`/vendas/${item.id}`)}
                   >
-                    <td className="px-5 py-4 font-semibold text-accent">{item.number}</td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-accent">{item.number}</p>
+                      {item.ov ? <p className="text-xs text-muted">OV {item.ov}</p> : null}
+                    </td>
                     <td className="px-5 py-4">{item.customer?.name || "—"}</td>
                     <td className="px-5 py-4">{item.seller?.name || "—"}</td>
                     <td className="px-5 py-4">
@@ -216,6 +357,15 @@ export default function VendasPage() {
         hasMore={list.hasMore}
         loading={list.loadingMore}
         onClick={() => void list.loadMore()}
+      />
+      <ConfirmDialog
+        open={syncOpen}
+        title="Sincronizar com o Care"
+        message="As OVs finalizadas serão importadas e os produtos disponíveis, ou só reservados, receberão baixa com garantia de 6 meses. A NF de cada baixa é o número da coluna Nota Fiscal."
+        confirmLabel="Sincronizar"
+        loading={syncing}
+        onConfirm={() => void syncCare()}
+        onClose={() => setSyncOpen(false)}
       />
     </div>
   );

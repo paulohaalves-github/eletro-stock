@@ -356,6 +356,7 @@ export async function listSaleOrders(filters, session) {
     const phoneDigits = text.replace(/\D/g, "");
     where.OR = [
       { number: { contains: text } },
+      { ov: { contains: text } },
       { observation: { contains: text } },
       { customer: { name: { contains: text } } },
       { customer: { phone: { contains: text } } },
@@ -729,9 +730,13 @@ export async function checkoutSaleOrder(orderId, payload, user) {
     }
     const invoiceNumber = String(entry.invoiceNumber || invoiceFallback || "").trim();
     const liveProduct = await getProduct(item.productId);
+    const quoted = Number(entry.cashPrice);
+    const soldPrice = entry.cashPrice == null || entry.cashPrice === "" || !Number.isFinite(quoted) || quoted < 0
+      ? liveProduct.cashPrice
+      : Math.round(quoted * 100) / 100;
     await prisma.saleOrderItem.update({
       where: { id: item.id },
-      data: { cashPrice: liveProduct.cashPrice },
+      data: { cashPrice: soldPrice },
     });
     await exitProduct({
       productId: item.productId,
@@ -741,6 +746,7 @@ export async function checkoutSaleOrder(orderId, payload, user) {
       warrantyMonths: entry.warrantyMonths,
       invoiceNumber,
       soldAt: payload.soldAt,
+      cashPrice: soldPrice,
       user,
       fromSaleOrder: true,
     });
@@ -861,6 +867,46 @@ export async function syncSaleOrderAfterSale(productId, user) {
     },
   });
   await persistDerivedStatus(prisma, item.saleOrderId);
+}
+
+export async function releaseReservationForCareImport(productId, user) {
+  const product = await getProduct(productId);
+  if (product.status !== STATUSES.RESERVED) return;
+
+  const items = await prisma.saleOrderItem.findMany({
+    where: {
+      productId: product.id,
+      status: { in: LOCKING_ITEM_STATUSES },
+      saleOrder: { closedAt: null, status: { notIn: SALE_ORDER_CLOSED_STATUSES } },
+    },
+    select: { id: true, saleOrderId: true },
+  });
+
+  for (const item of items) {
+    await prisma.saleOrderItem.update({
+      where: { id: item.id },
+      data: {
+        status: SALE_ORDER_ITEM_STATUSES.REMOVED,
+        reservedAt: null,
+        reservedUntil: null,
+      },
+    });
+    await addEvent(prisma, {
+      saleOrderId: item.saleOrderId,
+      type: SALE_ORDER_EVENT_TYPES.PRODUCT,
+      message: `Produto ${formatProductId(product.id)} liberado da reserva para a sincronização com o Care.`,
+      userId: user.id,
+    });
+    await persistDerivedStatus(prisma, item.saleOrderId);
+  }
+
+  const { unreserveProduct } = await import("./stock");
+  await unreserveProduct(
+    product.id,
+    "Reserva liberada para baixa da sincronização com o Care.",
+    user,
+    { fromSaleOrder: true },
+  );
 }
 
 export async function deleteSaleOrder(id, user) {

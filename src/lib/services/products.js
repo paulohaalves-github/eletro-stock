@@ -33,6 +33,14 @@ const openSaleOrderItemsInclude = {
   },
 };
 
+const latestSaleInclude = {
+  sales: {
+    orderBy: { soldAt: "desc" },
+    take: 1,
+    select: { id: true, cashPrice: true, soldAt: true, invoiceNumber: true },
+  },
+};
+
 const productListInclude = {
   category: true,
   line: true,
@@ -42,6 +50,7 @@ const productListInclude = {
   transferToUnit: { select: unitSelect },
   images: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
   createdBy: { select: { id: true, name: true } },
+  ...latestSaleInclude,
   ...openSaleOrderItemsInclude,
 };
 
@@ -53,11 +62,13 @@ function pickOpenSaleItem(items) {
 function serializeProduct(product) {
   if (!product) return null;
   const primary = product.images?.find((image) => image.isPrimary) || product.images?.[0] || null;
-  const { workOrders, saleOrderItems, ...rest } = product;
+  const { workOrders, saleOrderItems, sales, ...rest } = product;
   const openItem = pickOpenSaleItem(saleOrderItems);
+  const latestSale = Array.isArray(sales) ? sales[0] || null : null;
   return {
     ...rest,
     commercialName: product.catalogModel?.commercialName || null,
+    soldPrice: latestSale ? Number(latestSale.cashPrice) : null,
     primaryImage: primary,
     locationPath: formatLocationPath(product.location),
     openWorkOrder: Array.isArray(workOrders) ? workOrders[0] || null : null,
@@ -252,6 +263,7 @@ const exportInclude = {
   catalogModel: true,
   location: { include: locationInclude },
   unit: { select: unitSelect },
+  ...latestSaleInclude,
 };
 
 function productExportRows(items) {
@@ -268,6 +280,7 @@ function productExportRows(items) {
     VOLTAGE_LABELS[item.voltage] || item.voltage || "—",
     CONDITION_LABELS[item.condition] || item.condition,
     formatCurrency(item.cashPrice),
+    item.status === STATUSES.SOLD && item.sales?.[0] ? formatCurrency(item.sales[0].cashPrice) : "—",
     formatCurrency(item.installmentPrice),
     formatDate(item.lastPriceUpdateAt),
     STATUS_LABELS[item.status] || item.status,
@@ -311,6 +324,7 @@ export async function exportProductsWorkbook(payload = {}, session) {
       "Tensão",
       "Condição",
       "À vista",
+      "Valor vendido",
       "Parcelado",
       "Preço atualizado",
       "Status",
@@ -342,6 +356,7 @@ export async function getProduct(id, { includeDeleted = false } = {}) {
         include: { uploadedBy: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
       },
+      ...latestSaleInclude,
       movements: {
         include: {
           user: { select: { id: true, name: true } },

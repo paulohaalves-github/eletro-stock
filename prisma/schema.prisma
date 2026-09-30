@@ -397,6 +397,7 @@ model Sale {
 model SaleOrder {
   id           Int       @id @default(autoincrement())
   number       String    @unique @db.VarChar(40)
+  ov           String?   @unique @db.VarChar(40)
   customerId   Int       @map("customer_id")
   unitId       Int       @map("unit_id")
   sellerId       Int       @map("seller_id")
