@@ -4,16 +4,10 @@ import { getCareSettings } from "./settings";
 const CARE_ORIGIN = "https://websolution.care-br.com";
 
 function careBrowserOptions() {
-  const showBrowser = process.env.NODE_ENV !== "production";
   return {
-    headless: !showBrowser,
-    slowMo: showBrowser ? 50 : 0,
-    defaultViewport: showBrowser ? null : { width: 1280, height: 800 },
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      ...(showBrowser ? ["--start-maximized"] : []),
-    ],
+    headless: true,
+    defaultViewport: { width: 1280, height: 800 },
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
   };
 }
 
