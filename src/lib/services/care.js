@@ -7,8 +7,17 @@ function careBrowserOptions() {
   return {
     headless: true,
     defaultViewport: { width: 1280, height: 800 },
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
   };
+}
+
+async function launchCareBrowser(puppeteer) {
+  try {
+    return await puppeteer.launch(careBrowserOptions());
+  } catch (error) {
+    console.error(error);
+    throw validationError("Não foi possível abrir o navegador do Care neste servidor.");
+  }
 }
 
 async function loginCare(page, config, onStep) {
@@ -75,8 +84,9 @@ export async function fetchCareCustomer(ov, onStep = () => {}) {
   if (!/^\d+$/.test(code)) throw validationError("Informe a OV do Care, somente números.");
 
   const config = await careConfig();
+  onStep("Abrindo o navegador.");
   const puppeteer = (await import("puppeteer")).default;
-  const browser = await puppeteer.launch(careBrowserOptions());
+  const browser = await launchCareBrowser(puppeteer);
 
   try {
     const page = await browser.newPage();
@@ -426,8 +436,9 @@ async function closeCareBrowser(browser) {
 export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [] } = {}) {
   const config = await careConfig();
   const known = new Set(skipOvs.map((value) => String(value)));
+  onStep("Abrindo o navegador.", { phase: "list", current: 0, total: 0, label: "Abrindo o navegador" });
   const puppeteer = (await import("puppeteer")).default;
-  const browser = await puppeteer.launch(careBrowserOptions());
+  const browser = await launchCareBrowser(puppeteer);
 
   try {
     const page = await browser.newPage();
