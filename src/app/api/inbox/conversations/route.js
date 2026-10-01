@@ -25,7 +25,7 @@ export const POST = apiHandler(
   async (request, { session }) => {
     const body = await readJson(request);
     const conversation = await startOutboundConversation(body, session);
-    return { conversation, message: "Mensagem enviada." };
+    return { conversation, message: body.templateName ? "Modelo enviado. A conversa abre quando o cliente responder." : "Mensagem enviada." };
   },
   { permission: PERMISSIONS.INBOX_REPLY },
 );

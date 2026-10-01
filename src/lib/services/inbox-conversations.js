@@ -17,6 +17,8 @@ import { getInboxChannelRecord } from "./inbox-channels";
 import { inboxMediaPreview, saveInboxAttachment } from "./inbox-media";
 import { sendDialog360Message } from "../whatsapp/dialog360";
 import { sendUnofficialMessage } from "../whatsapp/unofficial";
+import { getCustomerServiceWindow } from "../whatsapp/templates";
+import { resolveTemplateSend } from "./inbox-templates";
 import { applyInboundAutomations, scheduleUnansweredAutomations } from "./inbox-automations";
 
 const userLite = { select: { id: true, name: true, email: true } };
@@ -118,10 +120,14 @@ function serializeConversation(conversation) {
     conversation.status === CONVERSATION_STATUSES.WAITING_AGENT && conversation.waitingSince
       ? conversation.waitingSince
       : null;
+  const windowInfo = getCustomerServiceWindow(conversation);
   return {
     ...conversation,
     customer: serializeCustomer(conversation.customer),
     displayName: conversation.customer?.name || conversation.contactName || conversation.phone,
+    requiresTemplate: windowInfo.requiresTemplate,
+    customerWindowOpen: windowInfo.open,
+    customerWindowExpiresAt: windowInfo.expiresAt,
     waitingSince: conversation.waitingSince,
     waitingNow: Boolean(waiting),
     acceptedAt: conversation.acceptedAt,
@@ -610,8 +616,11 @@ export async function sendConversationMessage(id, payload, session) {
   const internal = Boolean(payload.internal);
   const body = String(payload.body || "").trim();
   const file = payload.file && typeof payload.file.arrayBuffer === "function" && payload.file.size > 0 ? payload.file : null;
-  if (!body && !file) throw validationError("Escreva a mensagem ou anexe um arquivo.");
+  const isTemplate = Boolean(emptyToNull(payload.templateName));
+  if (!internal && !isTemplate && !body && !file) throw validationError("Escreva a mensagem ou anexe um arquivo.");
   if (internal && file) throw validationError("Notas internas não enviam arquivo. Use uma mensagem de texto.");
+  if (internal && isTemplate) throw validationError("Notas internas não enviam modelo.");
+  if (isTemplate && file) throw validationError("Modelos não enviam anexo neste fluxo.");
 
   if (internal) {
     const now = new Date();
@@ -641,10 +650,20 @@ export async function sendConversationMessage(id, payload, session) {
   const channel = conversation.channel;
   if (!channel.active) throw validationError("Este canal está inativo.");
 
+  const windowInfo = getCustomerServiceWindow(conversation);
+  if (windowInfo.requiresTemplate && !isTemplate) {
+    throw validationError("A janela de 24 horas está fechada. Envie um modelo aprovado para falar com o cliente.");
+  }
+  if (isTemplate && channel.provider !== INBOX_PROVIDERS.DIALOG_360) {
+    throw validationError("Modelos só estão disponíveis no WhatsApp oficial.");
+  }
+
+  const template = isTemplate ? await resolveTemplateSend(channel, payload) : null;
   const attachment = file ? await saveInboxAttachment(conversation.id, file) : null;
   let quotedExternalId = null;
   const quotedMessageId = Number(payload.quotedMessageId);
   if (Number.isInteger(quotedMessageId) && quotedMessageId > 0) {
+    if (isTemplate) throw validationError("Não é possível citar uma mensagem ao enviar um modelo.");
     const quoted = await prisma.inboxMessage.findFirst({
       where: { id: quotedMessageId, conversationId: conversation.id },
     });
@@ -655,15 +674,16 @@ export async function sendConversationMessage(id, payload, session) {
     quotedExternalId = quoted.externalId || null;
   }
 
-  const isTemplate = Boolean(emptyToNull(payload.templateName));
-  const outboundBody = isTemplate ? body : withAgentName(session.name, body);
+  const storedBody = template ? template.preview : body;
+  const outboundBody = template ? storedBody : withAgentName(session.name, body);
   const sent = await sendViaChannel(channel, {
     to: conversation.phone,
     jid: conversation.whatsappJid,
     body: outboundBody,
     media: attachment,
-    templateName: emptyToNull(payload.templateName),
-    templateLanguage: emptyToNull(payload.templateLanguage),
+    templateName: template?.name || null,
+    templateLanguage: template?.language || null,
+    templateComponents: template?.components || null,
     quotedExternalId,
   });
 
@@ -674,7 +694,7 @@ export async function sendConversationMessage(id, payload, session) {
         conversationId: conversation.id,
         userId: session.id,
         direction: MESSAGE_DIRECTIONS.OUT,
-        body: emptyToNull(body),
+        body: emptyToNull(storedBody),
         mediaUrl: attachment?.mediaUrl || null,
         mediaType: attachment?.mediaType || null,
         fileName: attachment?.fileName || null,
@@ -684,15 +704,24 @@ export async function sendConversationMessage(id, payload, session) {
         sentAt: now,
       },
     });
+    if (template) {
+      await addEvent(
+        tx,
+        conversation.id,
+        CONVERSATION_EVENT_TYPES.AUTOMATION,
+        `${session.name} enviou o modelo ${template.name}.`,
+        session.id,
+      );
+    }
     await tx.inboxConversation.update({
       where: { id: conversation.id },
       data: {
         status: CONVERSATION_STATUSES.AGENT_REPLIED,
-        lastMessagePreview: previewOf(body, attachment?.mediaType, attachment?.fileName),
+        lastMessagePreview: previewOf(storedBody, attachment?.mediaType, attachment?.fileName),
         lastMessageDirection: MESSAGE_DIRECTIONS.OUT,
         lastMessageAt: now,
         lastAgentMessageAt: now,
-        firstResponseAt: conversation.firstResponseAt || now,
+        firstResponseAt: conversation.firstResponseAt || (conversation.lastCustomerMessageAt ? now : null),
         waitingSince: null,
         agentId: conversation.agentId || session.id,
         acceptedById: conversation.acceptedById || session.id,
@@ -754,8 +783,13 @@ export async function startOutboundConversation(payload, session) {
 
   const phone = normalizeWhatsAppPhone(payload.phone || customer?.phone);
   if (!phone) throw validationError("Informe o telefone do cliente.");
+  const isOfficial = channel.provider === INBOX_PROVIDERS.DIALOG_360;
+  const templateName = emptyToNull(payload.templateName);
   const body = String(payload.body || "").trim();
-  if (!body) throw validationError("Escreva a mensagem.");
+  if (isOfficial && !templateName) {
+    throw validationError("No WhatsApp oficial, inicie a conversa com um modelo aprovado.");
+  }
+  if (!isOfficial && !body) throw validationError("Escreva a mensagem.");
   const contactName = emptyToNull(payload.contactName) || customer?.name || null;
 
   const conversationId = await prisma.$transaction(async (tx) => {
@@ -771,7 +805,7 @@ export async function startOutboundConversation(payload, session) {
           customerId: linked?.id || null,
           phone,
           contactName: contactName || linked?.name || null,
-          status: CONVERSATION_STATUSES.WAITING_AGENT,
+          status: isOfficial ? CONVERSATION_STATUSES.AGENT_REPLIED : CONVERSATION_STATUSES.WAITING_AGENT,
           agentId: session.id,
           acceptedById: session.id,
           acceptedAt: now,
@@ -780,7 +814,15 @@ export async function startOutboundConversation(payload, session) {
           unreadCount: 0,
         },
       });
-      await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.CREATED, `${session.name} iniciou a conversa.`, session.id);
+      await addEvent(
+        tx,
+        conversation.id,
+        CONVERSATION_EVENT_TYPES.CREATED,
+        isOfficial
+          ? `${session.name} enviou um modelo e aguarda a resposta do cliente.`
+          : `${session.name} iniciou a conversa.`,
+        session.id,
+      );
       return conversation.id;
     }
 
@@ -825,5 +867,15 @@ export async function startOutboundConversation(payload, session) {
     await addCustomerPhone(customer.id, phone, { label: "WhatsApp" });
   }
 
-  return sendConversationMessage(conversationId, { body }, session);
+  return sendConversationMessage(
+    conversationId,
+    isOfficial
+      ? {
+          templateName,
+          templateLanguage: emptyToNull(payload.templateLanguage),
+          templateVariables: payload.templateVariables || {},
+        }
+      : { body },
+    session,
+  );
 }

@@ -17,6 +17,41 @@ export function dialog360Headers(apiKey) {
   };
 }
 
+const templateCache = new Map();
+const TEMPLATE_CACHE_MS = 60_000;
+
+function normalizeDialog360Template(raw) {
+  return {
+    name: raw.name,
+    language: raw.language || raw.language_code || "pt_BR",
+    status: String(raw.status || "").toUpperCase(),
+    category: raw.category || null,
+    namespace: raw.namespace || null,
+    components: Array.isArray(raw.components) ? raw.components : [],
+    rejectedReason: raw.rejected_reason || null,
+  };
+}
+
+export async function listDialog360Templates(channel, { force = false } = {}) {
+  if (!channel?.apiKey) throw validationError("Canal 360dialog sem API key.");
+  const cacheKey = Number(channel.id);
+  const hit = templateCache.get(cacheKey);
+  if (!force && hit && Date.now() - hit.at < TEMPLATE_CACHE_MS) return hit.items;
+
+  const response = await fetch(`${baseUrl()}/v1/configs/templates?limit=1000`, {
+    headers: { "D360-API-KEY": channel.apiKey },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw validationError(data?.error?.message || data?.message || "Não foi possível listar os modelos da 360dialog.");
+  }
+  const items = (data.waba_templates || data.data || data.templates || [])
+    .map(normalizeDialog360Template)
+    .filter((item) => item.name && ["APPROVED", "ACTIVE"].includes(item.status));
+  templateCache.set(cacheKey, { at: Date.now(), items });
+  return items;
+}
+
 async function uploadDialog360Media(channel, media) {
   const full = resolveUploadPath(media.relativePath);
   const bytes = await readFile(full);
@@ -158,7 +193,7 @@ export async function sendDialog360Message(channel, { to, body, media, templateN
       template: {
         name: templateName,
         language: { code: templateLanguage || "pt_BR" },
-        ...(templateComponents ? { components: templateComponents } : {}),
+        ...(templateComponents?.length ? { components: templateComponents } : {}),
       },
     };
   } else {

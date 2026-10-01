@@ -9,6 +9,7 @@ import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { CustomerPicker } from "@/components/customer-picker";
+import { WhatsappTemplatePicker } from "@/components/whatsapp-template-picker";
 import { ConversationStatusBadge, InboxProviderBadge } from "@/components/badges";
 import {
   CONVERSATION_EVENT_LABELS,
@@ -108,6 +109,8 @@ export default function InboxPage() {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkCustomer, setLinkCustomer] = useState(null);
   const [linking, setLinking] = useState(false);
+  const [chatTemplate, setChatTemplate] = useState(null);
+  const [startTemplate, setStartTemplate] = useState(null);
   const fileRef = useRef(null);
   const messagesRef = useRef(null);
   const selectedIdRef = useRef(null);
@@ -175,6 +178,12 @@ export default function InboxPage() {
   }, [conversation?.id, timeline.length]);
   const isMine = selected && me && selected.agentId === me.id;
   const isClosed = selected?.status === CONVERSATION_STATUSES.CLOSED;
+  const requiresTemplate = Boolean(selected?.requiresTemplate);
+  const startChannel = useMemo(
+    () => channels.find((channel) => String(channel.id) === String(start.channelId)),
+    [channels, start.channelId],
+  );
+  const startOfficial = startChannel?.provider === INBOX_PROVIDERS.DIALOG_360;
   const transferTeam = useMemo(
     () => teams.find((team) => Number(team.id) === Number(transfer.teamId)),
     [teams, transfer.teamId],
@@ -194,7 +203,31 @@ export default function InboxPage() {
 
   async function send(event) {
     event.preventDefault();
-    if (!selected || (!draft.trim() && !file)) return;
+    if (!selected) return;
+    if (requiresTemplate && !internal) {
+      if (!chatTemplate?.ready) return;
+      setSending(true);
+      try {
+        const data = await api(`/api/inbox/conversations/${selected.id}/messages`, {
+          method: "POST",
+          json: {
+            templateName: chatTemplate.name,
+            templateLanguage: chatTemplate.language,
+            templateVariables: chatTemplate.variables,
+          },
+        });
+        setConversation(data.conversation);
+        setChatTemplate(null);
+        toast.success(data.message || "Modelo enviado.");
+        void loadList();
+      } catch (error) {
+        toast.error(error.message);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+    if (!draft.trim() && !file) return;
     setSending(true);
     try {
       let data;
@@ -236,6 +269,7 @@ export default function InboxPage() {
 
   async function openStart() {
     setStart(EMPTY_START);
+    setStartTemplate(null);
     setStartOpen(true);
     try {
       const data = await api("/api/inbox/channels?outbound=1");
@@ -258,7 +292,13 @@ export default function InboxPage() {
           customerId: start.customer?.id || null,
           phone: start.phone,
           contactName: start.contactName,
-          body: start.body,
+          ...(startOfficial
+            ? {
+                templateName: startTemplate?.name,
+                templateLanguage: startTemplate?.language,
+                templateVariables: startTemplate?.variables || {},
+              }
+            : { body: start.body }),
         },
       });
       toast.success(data.message);
@@ -390,6 +430,7 @@ export default function InboxPage() {
                     <InboxProviderBadge provider={selected.channel?.provider} />
                     <span className="text-xs text-muted">{selected.team?.name}</span>
                     {selected.agent?.name ? <span className="text-xs text-muted">Agente: {selected.agent.name}</span> : <span className="text-xs text-amber-300">Sem agente</span>}
+                    {requiresTemplate ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-200">Janela 24h fechada</span> : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -494,7 +535,7 @@ export default function InboxPage() {
                                 {message.user?.name ? `${message.user.name} · ` : ""}
                                 {formatDateTime(message.sentAt)}
                               </span>
-                              {canReply && !note && !isClosed && message.externalId ? (
+                              {canReply && !note && !isClosed && !requiresTemplate && message.externalId ? (
                                 <button
                                   type="button"
                                   className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 hover:bg-bg hover:text-text"
@@ -512,7 +553,7 @@ export default function InboxPage() {
                   </div>
                   {canReply ? (
                     <form onSubmit={send} className="border-t border-border p-3">
-                      {replyTo && !internal ? (
+                      {replyTo && !internal && !requiresTemplate ? (
                         <div className="mb-2 flex items-start justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2">
                           <QuotedBlock quoted={replyTo} contactName={selected.displayName} className="min-w-0 flex-1" />
                           <button type="button" onClick={() => setReplyTo(null)} className="mt-0.5 rounded-full p-1 text-muted hover:bg-bg" aria-label="Cancelar resposta">
@@ -528,21 +569,41 @@ export default function InboxPage() {
                           </button>
                         </div>
                       ) : null}
-                      <Textarea
-                        className="min-h-20"
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-                          event.preventDefault();
-                          if (!sending && (draft.trim() || (!internal && file))) {
-                            event.currentTarget.form?.requestSubmit();
-                          }
-                        }}
-                        placeholder={isClosed ? "Reabra a conversa para responder." : internal ? "Nota visível só para o time..." : "Escreva a resposta..."}
-                        disabled={sending || (isClosed && !internal)}
-                      />
-                      <p className="mt-1 text-[11px] text-muted">Enter envia · Shift+Enter nova linha</p>
+                      {requiresTemplate && !internal ? (
+                        <div className="mb-3">
+                          <p className="mb-2 text-xs text-amber-200">
+                            {isClosed
+                              ? "Reabra a conversa para enviar um modelo."
+                              : "A janela de 24 horas está fechada. Selecione um modelo aprovado para falar com o cliente."}
+                          </p>
+                          {!isClosed ? (
+                            <WhatsappTemplatePicker
+                              key={`${selected.id}-${selected.lastAgentMessageAt || "new"}`}
+                              channelId={selected.channelId}
+                              disabled={sending}
+                              onChange={setChatTemplate}
+                            />
+                          ) : null}
+                        </div>
+                      ) : (
+                        <>
+                          <Textarea
+                            className="min-h-20"
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                              event.preventDefault();
+                              if (!sending && (draft.trim() || (!internal && file))) {
+                                event.currentTarget.form?.requestSubmit();
+                              }
+                            }}
+                            placeholder={isClosed ? "Reabra a conversa para responder." : internal ? "Nota visível só para o time..." : "Escreva a resposta..."}
+                            disabled={sending || (isClosed && !internal)}
+                          />
+                          <p className="mt-1 text-[11px] text-muted">Enter envia · Shift+Enter nova linha</p>
+                        </>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-2 text-xs text-muted">
@@ -564,15 +625,24 @@ export default function InboxPage() {
                             type="button"
                             variant="ghost"
                             className="px-2 py-1.5"
-                            disabled={sending || internal || (isClosed && !internal)}
+                            disabled={sending || internal || requiresTemplate || (isClosed && !internal)}
                             onClick={() => fileRef.current?.click()}
                           >
                             <Paperclip size={16} />
                             Anexar
                           </Button>
                         </div>
-                        <Button type="submit" disabled={sending || (isClosed && !internal) || (!draft.trim() && !file) || (internal && !draft.trim())}>
-                          {sending ? "Enviando..." : internal ? "Registrar nota" : "Enviar"}
+                        <Button
+                          type="submit"
+                          disabled={
+                            sending
+                            || (isClosed && !internal)
+                            || (internal && !draft.trim())
+                            || (!internal && requiresTemplate && !chatTemplate?.ready)
+                            || (!internal && !requiresTemplate && !draft.trim() && !file)
+                          }
+                        >
+                          {sending ? "Enviando..." : internal ? "Registrar nota" : requiresTemplate ? "Enviar modelo" : "Enviar"}
                         </Button>
                       </div>
                     </form>
@@ -593,6 +663,16 @@ export default function InboxPage() {
                     />
                     <Info label="Encerrada em" value={selected.closedAt ? `${formatDateTime(selected.closedAt)}${selected.closedBy?.name ? ` · ${selected.closedBy.name}` : ""}` : "—"} />
                     <Info label="Canal" value={selected.channel?.name} />
+                    {selected.channel?.provider === INBOX_PROVIDERS.DIALOG_360 ? (
+                      <Info
+                        label="Janela 24h"
+                        value={
+                          selected.customerWindowOpen
+                            ? `Aberta até ${formatDateTime(selected.customerWindowExpiresAt)}`
+                            : "Fechada · envie um modelo para retomar"
+                        }
+                      />
+                    ) : null}
                     <Info label="Equipe" value={selected.team?.name} />
                     <Info
                       label="Cliente"
@@ -662,15 +742,24 @@ export default function InboxPage() {
       <Modal
         open={startOpen}
         title="Nova conversa"
-        className="max-w-xl"
+        className="max-w-2xl"
         onClose={() => {
           if (!starting) setStartOpen(false);
         }}
         footer={
           <>
             <Button type="button" variant="secondary" onClick={() => setStartOpen(false)} disabled={starting}>Cancelar</Button>
-            <Button type="submit" form="start-form" disabled={starting || !start.channelId || !start.phone.trim() || !start.body.trim()}>
-              {starting ? "Enviando..." : "Enviar mensagem"}
+            <Button
+              type="submit"
+              form="start-form"
+              disabled={
+                starting
+                || !start.channelId
+                || !start.phone.trim()
+                || (startOfficial ? !startTemplate?.ready : !start.body.trim())
+              }
+            >
+              {starting ? "Enviando..." : startOfficial ? "Enviar modelo" : "Enviar mensagem"}
             </Button>
           </>
         }
@@ -712,16 +801,25 @@ export default function InboxPage() {
               placeholder="Opcional"
             />
           </Field>
-          <Field label="Mensagem" required>
-            <Textarea
-              className="min-h-24"
-              value={start.body}
-              onChange={(e) => setStart({ ...start, body: e.target.value })}
-              placeholder="Escreva a primeira mensagem..."
+          {startOfficial ? (
+            <WhatsappTemplatePicker
+              key={start.channelId || "start"}
+              channelId={start.channelId}
+              disabled={starting}
+              onChange={setStartTemplate}
             />
-          </Field>
-          {channels.find((channel) => String(channel.id) === String(start.channelId))?.provider === INBOX_PROVIDERS.DIALOG_360 ? (
-            <p className="text-xs text-muted">No WhatsApp oficial, texto livre só chega se o cliente já falou nas últimas 24 horas.</p>
+          ) : (
+            <Field label="Mensagem" required>
+              <Textarea
+                className="min-h-24"
+                value={start.body}
+                onChange={(e) => setStart({ ...start, body: e.target.value })}
+                placeholder="Escreva a primeira mensagem..."
+              />
+            </Field>
+          )}
+          {startOfficial ? (
+            <p className="text-xs text-muted">No WhatsApp oficial a conversa só abre quando o cliente responde. Até lá, só é possível enviar modelos aprovados.</p>
           ) : null}
           {!channels.length ? (
             <p className="text-sm text-muted">Nenhum canal disponível. Cadastre e conecte um canal em Canais.</p>

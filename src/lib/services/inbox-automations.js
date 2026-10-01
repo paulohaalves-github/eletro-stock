@@ -11,6 +11,7 @@ import {
 import { isWithinBusinessHours } from "../inbox-hours";
 import { sendDialog360Message } from "../whatsapp/dialog360";
 import { sendUnofficialMessage } from "../whatsapp/unofficial";
+import { getCustomerServiceWindow } from "../whatsapp/templates";
 
 const UNANSWERED_INTERVAL_MS = 60_000;
 let unansweredTimer = null;
@@ -40,6 +41,7 @@ function channelCanSend(channel) {
 async function sendAutomationMessage({ channel, conversation, body, eventMessage, flagField }) {
   const text = String(body || "").trim();
   if (!text || !channelCanSend(channel) || !conversation?.id) return false;
+  if (getCustomerServiceWindow({ ...conversation, channel }).requiresTemplate) return false;
 
   const now = new Date();
   const claimed = await prisma.inboxConversation.updateMany({
@@ -150,6 +152,7 @@ export async function processUnansweredAutomations() {
         id: true,
         phone: true,
         whatsappJid: true,
+        lastCustomerMessageAt: true,
       },
       take: 50,
     });

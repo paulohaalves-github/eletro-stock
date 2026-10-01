@@ -20,7 +20,7 @@ export const POST = apiHandler(
       payload = await readJson(request);
     }
     const conversation = await sendConversationMessage(parseId(id), payload, session);
-    return { conversation, message: payload.internal ? "Nota interna registrada." : "Mensagem enviada." };
+    return { conversation, message: payload.internal ? "Nota interna registrada." : payload.templateName ? "Modelo enviado." : "Mensagem enviada." };
   },
   { permission: PERMISSIONS.INBOX_REPLY },
 );
