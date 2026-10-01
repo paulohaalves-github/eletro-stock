@@ -96,8 +96,8 @@ export function SalesDashboard({ embedded = false }) {
         title={embedded ? null : "Dashboard comercial"}
         subtitle={
           data.unit
-            ? `Faturamento dos produtos baixados em ${data.unit.name}. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa.`
-            : "Faturamento dos produtos baixados no caixa."
+            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa.`
+            : "Faturamento pelo valor vendido na baixa."
         }
         actions={
           <div className="flex flex-wrap gap-2">

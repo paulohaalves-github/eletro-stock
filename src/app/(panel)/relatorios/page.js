@@ -104,7 +104,7 @@ export default function RelatoriosPage() {
           <h2 className="mb-3 text-lg font-semibold">{report.title}</h2>
           {report.summary ? (
             <p className="mb-3 text-sm text-muted">
-              {report.summary.count} itens · à vista {formatCurrency(report.summary.cash)}
+              {report.summary.count} itens · {report.summary.priceLabel || "à vista"} {formatCurrency(report.summary.cash)}
               {report.summary.installment ? ` · parcelado ${formatCurrency(report.summary.installment)}` : ""}
               {report.summary.market ? ` · mercado ${formatCurrency(report.summary.market)}` : ""}
             </p>

@@ -9,8 +9,17 @@ function dayKey(value) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(value));
 }
 
+function soldAmount(value) {
+  if (value == null || value === "") return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
 function amountOf(item) {
-  return Number(item.cashPrice ?? item.sale?.cashPrice ?? item.product?.cashPrice ?? 0);
+  const fromSale = soldAmount(item.sale?.cashPrice);
+  if (fromSale != null) return fromSale;
+  const fromItem = soldAmount(item.cashPrice);
+  return fromItem != null ? fromItem : 0;
 }
 
 function bump(map, key, name, amount) {
@@ -72,7 +81,6 @@ export async function listSoldCommercialRows(session, range) {
           select: {
             id: true,
             serialOnyx: true,
-            cashPrice: true,
             catalogModel: { select: { commercialName: true } },
             category: { select: { id: true, name: true } },
             images: { where: { isPrimary: true }, take: 1, select: { fileUrl: true } },
@@ -95,7 +103,6 @@ export async function listSoldCommercialRows(session, range) {
           select: {
             id: true,
             serialOnyx: true,
-            cashPrice: true,
             catalogModel: { select: { commercialName: true } },
             category: { select: { id: true, name: true } },
             images: { where: { isPrimary: true }, take: 1, select: { fileUrl: true } },
@@ -129,7 +136,7 @@ export async function listSoldCommercialRows(session, range) {
     ...standaloneSales.map((sale) => ({
       id: `sale-${sale.id}`,
       soldAt: sale.soldAt,
-      amount: Number(sale.cashPrice ?? sale.product?.cashPrice ?? 0),
+      amount: soldAmount(sale.cashPrice) ?? 0,
       categoryId: sale.product?.category?.id || 0,
       categoryName: sale.product?.category?.name || "Sem categoria",
       sellerId: sale.createdBy?.id || 0,
@@ -244,7 +251,7 @@ export function commercialReportRows(rows) {
       "Vendedor",
       "Atendente",
       "NF",
-      "Valor à vista",
+      "Valor vendido",
     ],
     rows: rows.map((row) => [
       formatDateTime(row.soldAt),
@@ -265,6 +272,7 @@ export function commercialReportRows(rows) {
       cash: rows.reduce((sum, row) => sum + row.amount, 0),
       installment: 0,
       market: 0,
+      priceLabel: "valor vendido",
     },
   };
 }
