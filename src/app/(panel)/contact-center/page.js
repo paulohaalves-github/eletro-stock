@@ -111,6 +111,7 @@ export default function InboxPage() {
   const [linking, setLinking] = useState(false);
   const [chatTemplate, setChatTemplate] = useState(null);
   const [startTemplate, setStartTemplate] = useState(null);
+  const [useTemplate, setUseTemplate] = useState(false);
   const fileRef = useRef(null);
   const messagesRef = useRef(null);
   const selectedIdRef = useRef(null);
@@ -166,6 +167,8 @@ export default function InboxPage() {
     if (selectedId) void loadConversation(selectedId);
     else setConversation(null);
     setReplyTo(null);
+    setUseTemplate(false);
+    setChatTemplate(null);
   }, [selectedId, loadConversation]);
 
   const selected = conversation;
@@ -179,6 +182,8 @@ export default function InboxPage() {
   const isMine = selected && me && selected.agentId === me.id;
   const isClosed = selected?.status === CONVERSATION_STATUSES.CLOSED;
   const requiresTemplate = Boolean(selected?.requiresTemplate);
+  const isOfficial = selected?.channel?.provider === INBOX_PROVIDERS.DIALOG_360;
+  const showTemplateComposer = Boolean(isOfficial && !internal && (requiresTemplate || useTemplate));
   const startChannel = useMemo(
     () => channels.find((channel) => String(channel.id) === String(start.channelId)),
     [channels, start.channelId],
@@ -204,7 +209,7 @@ export default function InboxPage() {
   async function send(event) {
     event.preventDefault();
     if (!selected) return;
-    if (requiresTemplate && !internal) {
+    if (showTemplateComposer) {
       if (!chatTemplate?.ready) return;
       setSending(true);
       try {
@@ -218,6 +223,7 @@ export default function InboxPage() {
         });
         setConversation(data.conversation);
         setChatTemplate(null);
+        setUseTemplate(false);
         toast.success(data.message || "Modelo enviado.");
         void loadList();
       } catch (error) {
@@ -553,7 +559,7 @@ export default function InboxPage() {
                   </div>
                   {canReply ? (
                     <form onSubmit={send} className="border-t border-border p-3">
-                      {replyTo && !internal && !requiresTemplate ? (
+                      {replyTo && !internal && !showTemplateComposer ? (
                         <div className="mb-2 flex items-start justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2">
                           <QuotedBlock quoted={replyTo} contactName={selected.displayName} className="min-w-0 flex-1" />
                           <button type="button" onClick={() => setReplyTo(null)} className="mt-0.5 rounded-full p-1 text-muted hover:bg-bg" aria-label="Cancelar resposta">
@@ -569,12 +575,14 @@ export default function InboxPage() {
                           </button>
                         </div>
                       ) : null}
-                      {requiresTemplate && !internal ? (
+                      {showTemplateComposer ? (
                         <div className="mb-3">
                           <p className="mb-2 text-xs text-amber-200">
                             {isClosed
                               ? "Reabra a conversa para enviar um modelo."
-                              : "A janela de 24 horas está fechada. Selecione um modelo aprovado para falar com o cliente."}
+                              : requiresTemplate
+                                ? "A janela de 24 horas está fechada. Selecione um modelo aprovado para falar com o cliente."
+                                : "Selecione um modelo aprovado da 360dialog."}
                           </p>
                           {!isClosed ? (
                             <WhatsappTemplatePicker
@@ -583,6 +591,11 @@ export default function InboxPage() {
                               disabled={sending}
                               onChange={setChatTemplate}
                             />
+                          ) : null}
+                          {isOfficial && !requiresTemplate ? (
+                            <Button type="button" variant="ghost" className="mt-2 px-2 py-1 text-xs" onClick={() => { setUseTemplate(false); setChatTemplate(null); }}>
+                              Voltar para texto livre
+                            </Button>
                           ) : null}
                         </div>
                       ) : (
@@ -625,12 +638,23 @@ export default function InboxPage() {
                             type="button"
                             variant="ghost"
                             className="px-2 py-1.5"
-                            disabled={sending || internal || requiresTemplate || (isClosed && !internal)}
+                            disabled={sending || internal || showTemplateComposer || (isClosed && !internal)}
                             onClick={() => fileRef.current?.click()}
                           >
                             <Paperclip size={16} />
                             Anexar
                           </Button>
+                          {isOfficial && !internal && !requiresTemplate && !useTemplate ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-2 py-1.5"
+                              disabled={sending || isClosed}
+                              onClick={() => { setUseTemplate(true); setFile(null); setReplyTo(null); }}
+                            >
+                              Enviar modelo
+                            </Button>
+                          ) : null}
                         </div>
                         <Button
                           type="submit"
@@ -638,11 +662,11 @@ export default function InboxPage() {
                             sending
                             || (isClosed && !internal)
                             || (internal && !draft.trim())
-                            || (!internal && requiresTemplate && !chatTemplate?.ready)
-                            || (!internal && !requiresTemplate && !draft.trim() && !file)
+                            || (!internal && showTemplateComposer && !chatTemplate?.ready)
+                            || (!internal && !showTemplateComposer && !draft.trim() && !file)
                           }
                         >
-                          {sending ? "Enviando..." : internal ? "Registrar nota" : requiresTemplate ? "Enviar modelo" : "Enviar"}
+                          {sending ? "Enviando..." : internal ? "Registrar nota" : showTemplateComposer ? "Enviar modelo" : "Enviar"}
                         </Button>
                       </div>
                     </form>

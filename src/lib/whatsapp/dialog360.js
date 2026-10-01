@@ -20,16 +20,85 @@ export function dialog360Headers(apiKey) {
 const templateCache = new Map();
 const TEMPLATE_CACHE_MS = 60_000;
 
+function templateStatus(raw) {
+  const value = raw?.status;
+  if (value && typeof value === "object") return String(value.status || value.name || "").toUpperCase();
+  return String(value || "").toUpperCase();
+}
+
+function templateLanguage(raw) {
+  if (raw?.language && typeof raw.language === "object") {
+    return String(raw.language.code || raw.language.id || "pt_BR");
+  }
+  return String(raw?.language || raw?.language_code || "pt_BR");
+}
+
 function normalizeDialog360Template(raw) {
   return {
     name: raw.name,
-    language: raw.language || raw.language_code || "pt_BR",
-    status: String(raw.status || "").toUpperCase(),
+    language: templateLanguage(raw),
+    status: templateStatus(raw),
     category: raw.category || null,
     namespace: raw.namespace || null,
     components: Array.isArray(raw.components) ? raw.components : [],
     rejectedReason: raw.rejected_reason || null,
   };
+}
+
+function collectRawTemplates(data) {
+  const buckets = [data?.data, data?.waba_templates, data?.templates, data?.message_templates];
+  for (const bucket of buckets) {
+    if (Array.isArray(bucket) && bucket.length) return bucket;
+  }
+  return [];
+}
+
+function dialog360ListError(data, fallback) {
+  return (
+    data?.error?.message ||
+    (typeof data?.error === "string" ? data.error : null) ||
+    data?.message ||
+    data?.meta?.developer_message ||
+    fallback
+  );
+}
+
+async function dialog360GetJson(channel, path) {
+  const response = await fetch(`${baseUrl()}${path}`, {
+    headers: { "D360-API-KEY": channel.apiKey },
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, data };
+}
+
+function isApprovedTemplate(item) {
+  return ["APPROVED", "ACTIVE", "ENABLED"].includes(item.status);
+}
+
+async function fetchCloudTemplates(channel) {
+  const fields = "name,status,language,category,components";
+  const collected = [];
+  let after = "";
+  for (let page = 0; page < 10; page += 1) {
+    const query = new URLSearchParams({ fields, limit: "1000" });
+    if (after) query.set("after", after);
+    const { ok, data } = await dialog360GetJson(channel, `/message_templates?${query.toString()}`);
+    if (!ok) {
+      throw validationError(dialog360ListError(data, "Não foi possível listar os modelos da 360dialog."));
+    }
+    collected.push(...collectRawTemplates(data));
+    after = data?.paging?.cursors?.after || "";
+    if (!after) break;
+  }
+  return collected;
+}
+
+async function fetchLegacyTemplates(channel) {
+  const { ok, data } = await dialog360GetJson(channel, "/v1/configs/templates?limit=1000");
+  if (!ok) {
+    throw validationError(dialog360ListError(data, "Não foi possível listar os modelos da 360dialog."));
+  }
+  return collectRawTemplates(data);
 }
 
 export async function listDialog360Templates(channel, { force = false } = {}) {
@@ -38,18 +107,26 @@ export async function listDialog360Templates(channel, { force = false } = {}) {
   const hit = templateCache.get(cacheKey);
   if (!force && hit && Date.now() - hit.at < TEMPLATE_CACHE_MS) return hit.items;
 
-  const response = await fetch(`${baseUrl()}/v1/configs/templates?limit=1000`, {
-    headers: { "D360-API-KEY": channel.apiKey },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw validationError(data?.error?.message || data?.message || "Não foi possível listar os modelos da 360dialog.");
+  let raw = [];
+  let lastError = null;
+  try {
+    raw = await fetchCloudTemplates(channel);
+  } catch (error) {
+    lastError = error;
   }
-  const items = (data.waba_templates || data.data || data.templates || [])
-    .map(normalizeDialog360Template)
-    .filter((item) => item.name && ["APPROVED", "ACTIVE"].includes(item.status));
-  templateCache.set(cacheKey, { at: Date.now(), items });
-  return items;
+  if (!raw.length) {
+    try {
+      raw = await fetchLegacyTemplates(channel);
+    } catch (error) {
+      if (!raw.length) throw lastError || error;
+    }
+  }
+
+  const items = raw.map(normalizeDialog360Template).filter((item) => item.name);
+  const approved = items.filter(isApprovedTemplate);
+  const result = approved.length ? approved : items.filter((item) => !["REJECTED", "DISABLED", "DELETED"].includes(item.status));
+  if (result.length) templateCache.set(cacheKey, { at: Date.now(), items: result });
+  return result;
 }
 
 async function uploadDialog360Media(channel, media) {

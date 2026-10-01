@@ -6,6 +6,7 @@ import { listDialog360Templates } from "../whatsapp/dialog360";
 import {
   assertTemplateVariables,
   buildTemplateComponents,
+  describeTemplate,
   renderTemplatePreview,
   serializeTemplate,
 } from "../whatsapp/templates";

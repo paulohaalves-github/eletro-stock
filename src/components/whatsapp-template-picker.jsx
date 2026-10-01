@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
-import { Field, Input, Select } from "@/components/ui";
+import { Button, Field, Input, Select } from "@/components/ui";
 import { assertTemplateVariables, renderTemplatePreview } from "@/lib/whatsapp/templates";
 
 function languageLabel(code) {
@@ -27,6 +27,7 @@ export function WhatsappTemplatePicker({ channelId, disabled, onChange }) {
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [variables, setVariables] = useState({});
+  const [reloadKey, setReloadKey] = useState(0);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -54,7 +55,7 @@ export function WhatsappTemplatePicker({ channelId, disabled, onChange }) {
     return () => {
       cancelled = true;
     };
-  }, [channelId]);
+  }, [channelId, reloadKey]);
 
   const selected = useMemo(
     () => templates.find((item) => item.id === selectedId) || null,
@@ -102,7 +103,14 @@ export function WhatsappTemplatePicker({ channelId, disabled, onChange }) {
           ))}
         </Select>
       </Field>
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {error ? (
+        <div className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <p>{error}</p>
+          <Button type="button" variant="ghost" className="mt-1 px-2 py-1 text-xs" onClick={() => setReloadKey((value) => value + 1)}>
+            Tentar de novo
+          </Button>
+        </div>
+      ) : null}
       {!loading && channelId && !error && !templates.length ? (
         <p className="text-xs text-muted">Nenhum modelo aprovado neste canal. Cadastre na 360dialog ou no WhatsApp Manager.</p>
       ) : null}
