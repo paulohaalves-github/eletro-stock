@@ -21,7 +21,7 @@ const CATALOG_KEYS = {
 const CATALOG_DEFAULTS = {
   online: true,
   offlineMessage: "Catálogo temporariamente indisponível.",
-  pickupNote: "Os produtos devem ser retirados na loja pelo cliente.",
+  pickupNote: "Todos os produtos adquiridos deverão ser retirados pelo comprador, ou por pessoa por ele autorizada, no prazo máximo de até 5 (cinco) dias úteis contados a partir da data da compra. Embora todos os itens sejam devidamente embalados para transporte, o deslocamento, o manuseio e eventuais danos ocorridos após a retirada são de inteira responsabilidade do cliente.",
   payCash: true,
   payCard: true,
   payPix: true,

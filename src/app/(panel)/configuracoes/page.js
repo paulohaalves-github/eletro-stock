@@ -16,7 +16,7 @@ const emptyCare = {
 const emptyCatalog = {
   online: true,
   offlineMessage: "Catálogo temporariamente indisponível.",
-  pickupNote: "Os produtos devem ser retirados na loja pelo cliente.",
+  pickupNote: "Todos os produtos adquiridos deverão ser retirados pelo comprador, ou por pessoa por ele autorizada, no prazo máximo de até 5 (cinco) dias úteis contados a partir da data da compra. Embora todos os itens sejam devidamente embalados para transporte, o deslocamento, o manuseio e eventuais danos ocorridos após a retirada são de inteira responsabilidade do cliente.",
   payCash: true,
   payCard: true,
   payPix: true,
@@ -205,9 +205,9 @@ function CatalogSettings() {
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Formas de pagamento</p>
             <div className="grid gap-2">
-              <CheckOption checked={form.payCash} disabled={loading} onChange={(payCash) => setForm({ ...form, payCash })} title="Dinheiro" />
+              <CheckOption checked={form.payCash} disabled={loading} onChange={(payCash) => setForm({ ...form, payCash })} title="Dinheiro" hint="No catálogo, aparece com 5% de desconto." />
               <CheckOption checked={form.payCard} disabled={loading} onChange={(payCard) => setForm({ ...form, payCard })} title="Cartão de crédito e débito" />
-              <CheckOption checked={form.payPix} disabled={loading} onChange={(payPix) => setForm({ ...form, payPix })} title="Pix" />
+              <CheckOption checked={form.payPix} disabled={loading} onChange={(payPix) => setForm({ ...form, payPix })} title="Pix" hint="No catálogo, aparece com 5% de desconto." />
             </div>
           </div>
           <Button type="submit" disabled={loading || saving}>{saving ? "Salvando..." : "Salvar catálogo"}</Button>

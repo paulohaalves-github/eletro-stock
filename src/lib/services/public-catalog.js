@@ -83,9 +83,9 @@ export function whatsAppHref(phone, text) {
 
 function paymentLabels(settings) {
   const items = [];
-  if (settings.payCash) items.push("Dinheiro");
-  if (settings.payCard) items.push("Cartão de crédito e débito");
-  if (settings.payPix) items.push("Pix");
+  if (settings.payCash) items.push({ id: "cash", label: "Dinheiro", note: "5% de desconto" });
+  if (settings.payCard) items.push({ id: "card", label: "Cartão de crédito e débito" });
+  if (settings.payPix) items.push({ id: "pix", label: "Pix", note: "5% de desconto" });
   return items;
 }
 
@@ -242,6 +242,16 @@ export async function getPublicCatalog(filters = {}) {
       installmentFrom: minPositive(installmentValues),
       installmentTo: maxPositive(installmentValues),
     };
+  });
+
+  const priceDesc = queryText(filters.ordem) === "preco-desc";
+  items.sort((a, b) => {
+    const aMissing = !(a.cashFrom > 0);
+    const bMissing = !(b.cashFrom > 0);
+    if (aMissing !== bMissing) return aMissing ? 1 : -1;
+    const diff = priceDesc ? b.cashFrom - a.cashFrom : a.cashFrom - b.cashFrom;
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name, "pt-BR");
   });
 
   const categories = [...new Map(

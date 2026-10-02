@@ -1,4 +1,5 @@
-import { CatalogFilters, CatalogFooter, CatalogShell, OfflineNotice, ProductGrid } from "@/components/catalog-public";
+import { CatalogFooter, CatalogShell, OfflineNotice, ProductGrid } from "@/components/catalog-public";
+import { CatalogFilters } from "@/components/catalog-filters";
 import { getPublicCatalog } from "@/lib/services/public-catalog";
 
 function one(value) {
@@ -11,6 +12,7 @@ export default async function CatalogPage({ searchParams }) {
     q: one(params.q),
     categoria: one(params.categoria),
     unidade: one(params.unidade),
+    ordem: one(params.ordem) === "preco-desc" ? "preco-desc" : "preco-asc",
   };
   const catalog = await getPublicCatalog(filters);
 
