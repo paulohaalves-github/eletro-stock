@@ -31,12 +31,15 @@ function countText(count) {
 export function CatalogShell({ children }) {
   return (
     <div className="catalog-root">
-      <header className="bg-[#1e3a8a] text-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-          <Link href="/catalogo" className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">Eletromall Outlet</p>
-            <p className="truncate text-lg font-semibold">Catálogo de produtos</p>
-          </Link>
+      <header className="sticky top-0 z-50 border-b border-[#e5e7eb] bg-white/95 text-[#05061a] backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5">
+          <a href="https://eletromalloutlet.com.br/" className="shrink-0">
+            <img src="/eletromall-logo.png" alt="Eletromall Outlet" className="h-[38px] w-auto" />
+          </a>
+          <p className="hidden text-sm font-medium sm:block">Catálogo</p>
+          <a href="https://eletromalloutlet.com.br/#contato" className="inline-flex items-center rounded-full bg-[#0482a4] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#04445f]">
+            Fale conosco
+          </a>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
@@ -55,7 +58,7 @@ export function OfflineNotice({ message }) {
 
 function ProductCard({ item }) {
   return (
-    <Link href={`/catalogo/item/${item.key}`} className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface transition hover:-translate-y-0.5 hover:border-[#1e3a8a]/40">
+    <Link href={`/catalogo/item/${item.key}`} className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface transition hover:-translate-y-0.5 hover:border-[#0482a4]/40">
       <div className="flex h-48 items-center justify-center bg-white">
         {item.imageId ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -65,7 +68,7 @@ function ProductCard({ item }) {
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
-        {item.categoryName ? <p className="text-xs font-semibold uppercase tracking-wide text-[#1e3a8a]">{item.categoryName}</p> : null}
+        {item.categoryName ? <p className="text-xs font-semibold uppercase tracking-wide text-[#0482a4]">{item.categoryName}</p> : null}
         <h2 className="text-base font-semibold leading-snug">{item.name}</h2>
         <p className="text-sm text-muted">
           {[item.voltageLabel, item.conditionLabel, countText(item.count)].filter(Boolean).join(" · ")}
@@ -112,10 +115,10 @@ export function CatalogFooter({ catalog }) {
                 const Icon = PAYMENT_ICONS[item.id] || CreditCard;
                 return (
                   <li key={item.id} className="flex items-start gap-2.5">
-                    <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#1e3a8a]" />
+                    <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#0482a4]" />
                     <span>
                       <span className="font-medium">{item.label}</span>
-                      {item.note ? <span className="mt-0.5 block text-xs text-[#1e3a8a]">{item.note}</span> : null}
+                      {item.note ? <span className="mt-0.5 block text-xs text-[#0482a4]">{item.note}</span> : null}
                     </span>
                   </li>
                 );
@@ -141,13 +144,13 @@ function StoreContact({ store, interest, showName = true }) {
     <article className="text-sm leading-6">
       {showName ? <p className="font-semibold">{store.name}</p> : null}
       {store.address ? <p className="text-muted">{store.address}</p> : null}
-      {store.phone ? <p><a className="text-[#1e3a8a] hover:underline" href={`tel:${store.phone}`}>{store.phone}</a></p> : null}
-      {store.phoneSecondary ? <p><a className="text-[#1e3a8a] hover:underline" href={`tel:${store.phoneSecondary}`}>{store.phoneSecondary}</a></p> : null}
-      {store.email ? <p><a className="text-[#1e3a8a] hover:underline" href={`mailto:${store.email}`}>{store.email}</a></p> : null}
-      {store.mapsUrl ? <p><a className="font-medium text-[#1e3a8a] hover:underline" href={store.mapsUrl} target="_blank" rel="noreferrer">Ver no mapa</a></p> : null}
+      {store.phone ? <p><a className="text-[#0482a4] hover:underline" href={`tel:${store.phone}`}>{store.phone}</a></p> : null}
+      {store.phoneSecondary ? <p><a className="text-[#0482a4] hover:underline" href={`tel:${store.phoneSecondary}`}>{store.phoneSecondary}</a></p> : null}
+      {store.email ? <p><a className="text-[#0482a4] hover:underline" href={`mailto:${store.email}`}>{store.email}</a></p> : null}
+      {store.mapsUrl ? <p><a className="font-medium text-[#0482a4] hover:underline" href={store.mapsUrl} target="_blank" rel="noreferrer">Ver no mapa</a></p> : null}
       {whatsapp ? (
         <p className="mt-2">
-          <a href={whatsapp} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#128C7E] px-3 py-1.5 text-xs font-semibold text-white">
+          <a href={whatsapp} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#10b981] px-3 py-1.5 text-xs font-semibold text-white">
             <WhatsAppIcon className="h-3.5 w-3.5" />
             Pedir no WhatsApp
           </a>
@@ -170,9 +173,9 @@ export function ProductDetail({ item }) {
         )}
       </div>
       <div>
-        <Link href="/catalogo" className="text-sm font-medium text-[#1e3a8a] hover:underline">Voltar ao catálogo</Link>
-        {item.categoryName ? <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#1e3a8a]">{item.categoryName}</p> : null}
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">{item.name}</h1>
+        <Link href="/catalogo" className="text-sm font-medium text-[#0482a4] hover:underline">Voltar ao catálogo</Link>
+        {item.categoryName ? <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#0482a4]">{item.categoryName}</p> : null}
+        <h1 className="catalog-display mt-1 text-4xl leading-none">{item.name}</h1>
         <p className="mt-2 text-sm text-muted">
           {[item.voltageLabel, item.conditionLabel, countText(item.count)].filter(Boolean).join(" · ")}
         </p>

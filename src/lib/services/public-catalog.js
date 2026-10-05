@@ -1,6 +1,12 @@
 import { prisma } from "../db";
 import { notFound } from "../errors";
-import { CONDITION_LABELS, STATUSES, VOLTAGE_LABELS } from "../constants";
+import { STATUSES, VOLTAGE_LABELS } from "../constants";
+
+const PUBLIC_CONDITION_LABELS = {
+  NOVO: "Novo",
+  NOVO_COM_AVARIA: "Avaria estética leve",
+  REVISADO: "Revisado",
+};
 import { formatUnitAddress } from "../units";
 import { normalizeWhatsAppPhone } from "../phone";
 import { getCatalogSettings } from "./settings";
@@ -83,9 +89,9 @@ export function whatsAppHref(phone, text) {
 
 function paymentLabels(settings) {
   const items = [];
-  if (settings.payCash) items.push({ id: "cash", label: "Dinheiro", note: "5% de desconto" });
-  if (settings.payCard) items.push({ id: "card", label: "Cartão de crédito e débito" });
-  if (settings.payPix) items.push({ id: "pix", label: "Pix", note: "5% de desconto" });
+  if (settings.payCash) items.push({ id: "cash", label: "Dinheiro" });
+  if (settings.payCard) items.push({ id: "card", label: "Cartão de crédito", note: "até 10x" });
+  if (settings.payPix) items.push({ id: "pix", label: "Pix", note: "5% de desconto à vista" });
   return items;
 }
 
@@ -138,7 +144,7 @@ function buildGroups(products) {
         voltage: product.voltage || "",
         voltageLabel: VOLTAGE_LABELS[product.voltage] || product.voltage || "",
         condition: product.condition || "",
-        conditionLabel: CONDITION_LABELS[product.condition] || product.condition || "",
+        conditionLabel: PUBLIC_CONDITION_LABELS[product.condition] || product.condition || "",
         categoryId: product.category?.id || null,
         categoryName: product.category?.name || "",
         imageId: null,

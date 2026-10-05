@@ -428,6 +428,18 @@ export const DOCUMENT_MIME_TYPES = [
 export const DOCUMENT_EXTENSIONS = [".pdf", ".doc", ".docx"];
 export const INBOX_VIDEO_MIME_TYPES = ["video/mp4", "video/3gpp", "video/quicktime"];
 export const INBOX_VIDEO_EXTENSIONS = [".mp4", ".3gp", ".mov"];
+export const INBOX_AUDIO_MIME_TYPES = [
+  "audio/ogg",
+  "audio/opus",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/aac",
+  "audio/amr",
+  "audio/3gpp",
+  "audio/webm",
+];
+export const INBOX_AUDIO_EXTENSIONS = [".ogg", ".opus", ".oga", ".mp3", ".m4a", ".aac", ".amr", ".webm"];
 export const INBOX_DOCUMENT_MIME_TYPES = [
   ...DOCUMENT_MIME_TYPES,
   "application/vnd.ms-excel",

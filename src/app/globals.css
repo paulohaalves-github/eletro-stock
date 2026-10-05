@@ -105,26 +105,33 @@ textarea {
 }
 
 .catalog-root {
-  --bg: #f4f7fb;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #e8eef6;
-  --border: #d5deea;
-  --text: #0f172a;
-  --muted: #5b6b82;
-  --accent: #1d4ed8;
-  --accent-2: #1e3a8a;
+  --surface-2: #f5f5f5;
+  --border: #e5e7eb;
+  --text: #05061a;
+  --muted: #6b7280;
+  --accent: #0482a4;
+  --accent-2: #04445f;
   --danger: #e11d48;
   --warning: #d97706;
-  --success: #059669;
-  --glow: rgba(29, 78, 216, 0.16);
+  --success: #10b981;
+  --glow: rgba(4, 130, 164, 0.16);
   color-scheme: light;
-  background: #f4f7fb;
-  color: #0f172a;
-  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #ffffff;
+  color: #05061a;
+  font-family: var(--font-catalog), Roboto, "Segoe UI", sans-serif;
   min-height: 100vh;
   overflow-x: clip;
   position: relative;
   z-index: 1;
+}
+
+.catalog-display {
+  font-family: var(--font-catalog-display), var(--font-catalog), sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 @media print {

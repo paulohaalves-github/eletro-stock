@@ -39,7 +39,7 @@ export function CatalogHighlights() {
   }
 
   return (
-    <div className="relative left-1/2 w-screen -translate-x-1/2 bg-[#0b1220] text-white">
+    <div className="relative left-1/2 w-screen -translate-x-1/2 bg-[#05061a] text-white">
       <div className="relative mx-auto max-w-6xl">
         {edges.left ? (
           <button
@@ -59,7 +59,7 @@ export function CatalogHighlights() {
             const Icon = item.icon;
             return (
               <div key={item.title} className="flex min-w-56 shrink-0 items-center gap-3 lg:min-w-0 lg:flex-1">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5 text-[#f5c451] ring-1 ring-[#f5c451]/30">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#0482a4]/35 text-[#ffc93c]">
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
                 </span>
                 <p className="text-sm font-medium leading-snug">

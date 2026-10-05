@@ -205,9 +205,9 @@ function CatalogSettings() {
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Formas de pagamento</p>
             <div className="grid gap-2">
-              <CheckOption checked={form.payCash} disabled={loading} onChange={(payCash) => setForm({ ...form, payCash })} title="Dinheiro" hint="No catálogo, aparece com 5% de desconto." />
-              <CheckOption checked={form.payCard} disabled={loading} onChange={(payCard) => setForm({ ...form, payCard })} title="Cartão de crédito e débito" />
-              <CheckOption checked={form.payPix} disabled={loading} onChange={(payPix) => setForm({ ...form, payPix })} title="Pix" hint="No catálogo, aparece com 5% de desconto." />
+              <CheckOption checked={form.payCash} disabled={loading} onChange={(payCash) => setForm({ ...form, payCash })} title="Dinheiro" />
+              <CheckOption checked={form.payCard} disabled={loading} onChange={(payCard) => setForm({ ...form, payCard })} title="Cartão de crédito e débito" hint="No catálogo, aparece como cartão em até 10x." />
+              <CheckOption checked={form.payPix} disabled={loading} onChange={(payPix) => setForm({ ...form, payPix })} title="Pix" hint="No catálogo, aparece com 5% de desconto à vista." />
             </div>
           </div>
           <Button type="submit" disabled={loading || saving}>{saving ? "Salvando..." : "Salvar catálogo"}</Button>

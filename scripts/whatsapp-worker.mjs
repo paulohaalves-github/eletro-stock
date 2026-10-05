@@ -75,6 +75,30 @@ function mediaMeta(content) {
   return null;
 }
 
+function extractLocation(content) {
+  const loc = content.locationMessage || content.liveLocationMessage;
+  if (!loc) return null;
+  const latitude = Number(loc.degreesLatitude);
+  const longitude = Number(loc.degreesLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return {
+    latitude,
+    longitude,
+    name: loc.name || null,
+    address: loc.address || null,
+  };
+}
+
+function encodeLocation(location) {
+  return JSON.stringify({
+    type: "location",
+    latitude: location.latitude,
+    longitude: location.longitude,
+    name: location.name || null,
+    address: location.address || null,
+  });
+}
+
 async function saveInboundMedia(sock, message, channelId) {
   const content = unwrapContent(message);
   const meta = mediaMeta(content);
@@ -82,7 +106,12 @@ async function saveInboundMedia(sock, message, channelId) {
   try {
     const baileys = await import("@whiskeysockets/baileys");
     const downloadMediaMessage = baileys.downloadMediaMessage;
-    const buffer = await downloadMediaMessage(message, "buffer", {});
+    const buffer = await downloadMediaMessage(
+      message,
+      "buffer",
+      {},
+      sock?.updateMediaMessage ? { reuploadRequest: sock.updateMediaMessage } : undefined,
+    );
     if (!buffer?.length) return { mediaType: meta.kind, fileName: meta.fileName };
     const ext = path.extname(meta.fileName) || "";
     const filename = `${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`;
@@ -129,6 +158,7 @@ function extractText(message) {
     (content.videoMessage ? "[Vídeo]" : "") ||
     (content.documentMessage ? "[Documento]" : "") ||
     (content.stickerMessage ? "[Figurinha]" : "") ||
+    (content.locationMessage || content.liveLocationMessage ? "[Localização]" : "") ||
     (content.reactionMessage ? "" : "") ||
     ""
   );
@@ -142,6 +172,8 @@ function extractQuotedId(message) {
     content.videoMessage?.contextInfo?.stanzaId ||
     content.documentMessage?.contextInfo?.stanzaId ||
     content.audioMessage?.contextInfo?.stanzaId ||
+    content.locationMessage?.contextInfo?.stanzaId ||
+    content.liveLocationMessage?.contextInfo?.stanzaId ||
     null
   );
 }
@@ -313,8 +345,9 @@ async function startSession(channelId, { forceQr = false } = {}) {
       if (String(message.key?.remoteJid || "").endsWith("@g.us")) continue;
       const content = unwrapContent(message);
       if (!content || Object.keys(content).length === 0) continue;
-      const body = extractText(message);
-      const media = await saveInboundMedia(sock, message, channelId);
+      const location = extractLocation(content);
+      const body = location ? encodeLocation(location) : extractText(message);
+      const media = location ? { mediaType: "location" } : await saveInboundMedia(sock, message, channelId);
       if (!body && !media) continue;
       const peer = extractPeer(message);
       let jid = peer.jid;
@@ -361,17 +394,33 @@ function safeUploadPath(relativePath) {
   return full;
 }
 
-async function sendMessage(channelId, to, text, jid, media, quotedId) {
+async function sendMessage(channelId, to, text, jid, media, quotedId, location) {
   const entry = await waitForReady(channelId);
   const dest = await resolveSendJid(entry.sock, to, jid);
   console.log(`[whatsapp] enviando canal ${channelId} para ${dest}`);
   let content;
-  if (media?.relativePath) {
+  if (location && Number.isFinite(Number(location.latitude)) && Number.isFinite(Number(location.longitude))) {
+    content = {
+      location: {
+        degreesLatitude: Number(location.latitude),
+        degreesLongitude: Number(location.longitude),
+        name: location.name || undefined,
+        address: location.address || undefined,
+      },
+    };
+  } else if (media?.relativePath) {
     const buffer = fs.readFileSync(safeUploadPath(media.relativePath));
     const caption = String(text || "") || undefined;
     if (media.kind === "image") content = { image: buffer, caption };
     else if (media.kind === "video") content = { video: buffer, caption };
-    else {
+    else if (media.kind === "audio") {
+      const mime = media.mimeType || "audio/ogg; codecs=opus";
+      content = {
+        audio: buffer,
+        mimetype: mime,
+        ptt: /ogg|opus/i.test(mime),
+      };
+    } else {
       content = {
         document: buffer,
         mimetype: media.mimeType || "application/octet-stream",
@@ -420,7 +469,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "POST" && req.url === "/send") {
-      const result = await sendMessage(body.channelId, body.to, body.text, body.jid, body.media, body.quotedId);
+      const result = await sendMessage(body.channelId, body.to, body.text, body.jid, body.media, body.quotedId, body.location);
       json(res, 200, result);
       return;
     }

@@ -3,6 +3,16 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { sendConversationMessage } from "@/lib/services/inbox-conversations";
 import { parseId } from "@/lib/validations";
 
+function parseFormLocation(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return null;
+  }
+}
+
 export const POST = apiHandler(
   async (request, { params, session }) => {
     const { id } = await params;
@@ -15,6 +25,7 @@ export const POST = apiHandler(
         internal: form.get("internal") === "1" || form.get("internal") === "true",
         quotedMessageId: form.get("quotedMessageId") || null,
         file: form.get("file"),
+        location: parseFormLocation(form.get("location")),
       };
     } else {
       payload = await readJson(request);

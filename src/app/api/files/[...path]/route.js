@@ -14,6 +14,14 @@ const MIME = {
   ".mp4": "video/mp4",
   ".3gp": "video/3gpp",
   ".mov": "video/quicktime",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".opus": "audio/ogg",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".amr": "audio/amr",
+  ".webm": "audio/webm",
   ".pdf": "application/pdf",
   ".doc": "application/msword",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -43,6 +51,8 @@ export const GET = apiHandler(
     return new Response(bytes, {
       headers: {
         "Content-Type": MIME[path.extname(full).toLowerCase()] || "application/octet-stream",
+        "Content-Length": String(bytes.length),
+        "Accept-Ranges": "bytes",
         "Cache-Control": "private, max-age=31536000, immutable",
       },
     });

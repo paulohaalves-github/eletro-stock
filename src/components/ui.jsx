@@ -52,9 +52,10 @@ export function Select({ className, children, ...props }) {
   );
 }
 
-export function Textarea({ className, ...props }) {
+export const Textarea = forwardRef(function Textarea({ className, ...props }, ref) {
   return (
     <textarea
+      ref={ref}
       className={cn(
         "w-full min-h-28 rounded-xl border border-border bg-bg px-3.5 py-2.5 text-sm outline-none transition placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20",
         className,
@@ -62,7 +63,7 @@ export function Textarea({ className, ...props }) {
       {...props}
     />
   );
-}
+});
 
 export function Label({ children, required }) {
   return (

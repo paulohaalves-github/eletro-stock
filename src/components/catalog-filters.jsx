@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 function catalogHref({ q, categoria, unidade, ordem }) {
@@ -17,8 +16,8 @@ function Chip({ href, active, children }) {
   return (
     <Link
       href={href}
-      className={`inline-flex shrink-0 items-center rounded-full border bg-white px-4 py-2 text-sm font-medium text-[#1d4ed8] transition ${
-        active ? "border-[#1d4ed8] shadow-[0_0_0_1px_#1d4ed8]" : "border-slate-200 hover:border-[#1d4ed8]/40"
+      className={`inline-flex shrink-0 items-center rounded-full border bg-white px-4 py-2 text-sm font-medium text-[#0482a4] transition ${
+        active ? "border-[#0482a4] shadow-[0_0_0_1px_#0482a4]" : "border-slate-200 hover:border-[#0482a4]/40"
       }`}
     >
       {children}
@@ -26,63 +25,8 @@ function Chip({ href, active, children }) {
   );
 }
 
-function ChipScroller({ label, children }) {
-  const scroller = useRef(null);
-  const [edges, setEdges] = useState({ left: false, right: false });
-
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return undefined;
-    function update() {
-      setEdges({
-        left: el.scrollLeft > 4,
-        right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-      });
-    }
-    update();
-    el.addEventListener("scroll", update, { passive: true });
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => {
-      el.removeEventListener("scroll", update);
-      observer.disconnect();
-    };
-  }, []);
-
-  function scrollBy(direction) {
-    scroller.current?.scrollBy({ left: direction * 280, behavior: "smooth" });
-  }
-
-  return (
-    <div className="relative">
-      {edges.left ? (
-        <button
-          type="button"
-          aria-label={`${label} anteriores`}
-          onClick={() => scrollBy(-1)}
-          className="absolute top-1/2 left-0 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
-        >
-          ‹
-        </button>
-      ) : null}
-      <div
-        ref={scroller}
-        className="flex gap-2 overflow-x-auto scroll-smooth px-10 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {children}
-      </div>
-      {edges.right ? (
-        <button
-          type="button"
-          aria-label={`Próximas ${label}`}
-          onClick={() => scrollBy(1)}
-          className="absolute top-1/2 right-0 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
-        >
-          ›
-        </button>
-      ) : null}
-    </div>
-  );
+function ChipRow({ children }) {
+  return <div className="flex flex-wrap gap-2">{children}</div>;
 }
 
 export function CatalogFilters({ catalog, filters }) {
@@ -101,12 +45,12 @@ export function CatalogFilters({ catalog, filters }) {
             name="q"
             defaultValue={filters.q}
             placeholder="Pesquisar"
-            className="w-full rounded-full border border-slate-200 bg-white py-3 pr-12 pl-5 text-sm outline-none placeholder:text-slate-400 focus:border-[#1d4ed8]"
+            className="w-full rounded-full border border-slate-200 bg-white py-3 pr-12 pl-5 text-sm outline-none placeholder:text-slate-400 focus:border-[#0482a4]"
           />
           <button
             type="submit"
             aria-label="Pesquisar"
-            className="absolute top-1/2 right-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-[#1d4ed8]"
+            className="absolute top-1/2 right-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-[#0482a4]"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
@@ -125,7 +69,7 @@ export function CatalogFilters({ catalog, filters }) {
         </Link>
       </div>
 
-      <ChipScroller label="categorias">
+      <ChipRow>
         <Chip href={catalogHref({ ...shared, categoria: "" })} active={!filters.categoria}>Todos</Chip>
         {catalog.categories.map((category) => (
           <Chip
@@ -136,10 +80,10 @@ export function CatalogFilters({ catalog, filters }) {
             {category.name}
           </Chip>
         ))}
-      </ChipScroller>
+      </ChipRow>
 
       {catalog.stockedStores.length > 1 ? (
-        <ChipScroller label="lojas">
+        <ChipRow>
           <Chip href={catalogHref({ ...shared, categoria: filters.categoria, unidade: "" })} active={!filters.unidade}>Todas as lojas</Chip>
           {catalog.stockedStores.map((store) => (
             <Chip
@@ -150,7 +94,7 @@ export function CatalogFilters({ catalog, filters }) {
               {store.name}
             </Chip>
           ))}
-        </ChipScroller>
+        </ChipRow>
       ) : null}
     </div>
   );

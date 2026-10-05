@@ -34,7 +34,7 @@ async function workerRequest(path, payload) {
   return data;
 }
 
-export async function sendUnofficialMessage(channel, { to, body, jid, media, quotedExternalId }) {
+export async function sendUnofficialMessage(channel, { to, body, jid, media, location, quotedExternalId }) {
   const phone = normalizeWhatsAppPhone(to);
   if (!phone) throw validationError("Telefone de destino inválido.");
   const result = await workerRequest("/send", {
@@ -43,6 +43,14 @@ export async function sendUnofficialMessage(channel, { to, body, jid, media, quo
     jid: jid || null,
     text: String(body || "").trim(),
     quotedId: quotedExternalId || null,
+    location: location
+      ? {
+          latitude: Number(location.latitude),
+          longitude: Number(location.longitude),
+          name: location.name || null,
+          address: location.address || null,
+        }
+      : null,
     media: media
       ? {
           kind: media.kind,

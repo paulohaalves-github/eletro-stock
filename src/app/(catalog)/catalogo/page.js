@@ -21,7 +21,7 @@ export default async function CatalogPage({ searchParams }) {
       {catalog.online ? (
         <div className="space-y-6">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Produtos disponíveis</h1>
+            <h1 className="catalog-display text-4xl leading-none">Produtos disponíveis</h1>
             <p className="mt-1 text-sm text-muted">
               {catalog.total === 1 ? "1 unidade em estoque." : `${catalog.total} unidades em estoque.`}
             </p>

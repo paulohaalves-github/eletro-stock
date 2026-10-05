@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { validationError } from "../errors";
 import { normalizeWhatsAppPhone } from "../phone";
 import { resolveUploadPath } from "../services/images";
+import { encodeInboxLocation, isVoiceAudioMime } from "../inbox-payload";
 import { saveInboxMediaBuffer } from "../services/inbox-media";
 
 const DEFAULT_BASE_URL = "https://waba-v2.360dialog.io";
@@ -237,28 +238,48 @@ export async function downloadDialog360Media(channel, { mediaId, mediaUrl, media
 
   if (!buffer?.length) return null;
 
+  const resolved = resolvedMime || mediaType || "application/octet-stream";
+  const fallbackName = String(resolved).toLowerCase().includes("audio") ? "audio.ogg" : `whatsapp-${mediaId || "media"}`;
   return saveInboxMediaBuffer(channel.id, buffer, {
-    mimeType: resolvedMime || mediaType || "application/octet-stream",
-    fileName: fileName || `whatsapp-${mediaId || "media"}`,
+    mimeType: resolved,
+    fileName: fileName || fallbackName,
   });
 }
 
-export async function sendDialog360Message(channel, { to, body, media, templateName, templateLanguage, templateComponents, quotedExternalId }) {
+export async function sendDialog360Message(channel, { to, body, media, location, templateName, templateLanguage, templateComponents, quotedExternalId }) {
   if (!channel.apiKey) throw validationError("Canal 360dialog sem API key.");
   const phone = normalizeWhatsAppPhone(to);
   if (!phone) throw validationError("Telefone de destino inválido.");
 
   let payload;
-  if (media?.relativePath) {
+  if (location && Number.isFinite(Number(location.latitude)) && Number.isFinite(Number(location.longitude))) {
+    payload = {
+      messaging_product: "whatsapp",
+      to: phone,
+      type: "location",
+      location: {
+        latitude: Number(location.latitude),
+        longitude: Number(location.longitude),
+        ...(location.name ? { name: String(location.name) } : {}),
+        ...(location.address ? { address: String(location.address) } : {}),
+      },
+    };
+  } else if (media?.relativePath) {
     const mediaId = await uploadDialog360Media(channel, media);
-    const type = media.kind === "video" ? "video" : media.kind === "image" ? "image" : "document";
+    const type =
+      media.kind === "video" ? "video"
+      : media.kind === "image" ? "image"
+      : media.kind === "audio" ? "audio"
+      : "document";
+    const caption = type === "audio" ? undefined : body || undefined;
     payload = {
       messaging_product: "whatsapp",
       to: phone,
       type,
       [type]: {
         id: mediaId,
-        ...(body ? { caption: body } : {}),
+        ...(caption ? { caption } : {}),
+        ...(type === "audio" && isVoiceAudioMime(media.mimeType || media.mediaType) ? { voice: true } : {}),
         ...(type === "document" ? { filename: media.fileName || "arquivo" } : {}),
       },
     };
@@ -318,6 +339,7 @@ export function extractDialog360Events(payload) {
       );
       for (const message of value.messages || []) {
         const media = messageMedia(message);
+        const location = messageLocation(message);
         events.push({
           kind: "message",
           phoneNumberId: metadata.phone_number_id || null,
@@ -327,12 +349,12 @@ export function extractDialog360Events(payload) {
           externalId: message.id,
           timestamp: message.timestamp,
           type: message.type,
-          body: messageText(message),
+          body: location ? encodeInboxLocation(location) : messageText(message),
           mediaId: media.mediaId,
           mediaUrl: media.mediaUrl,
           fileName: media.fileName,
           mimeType: media.mimeType,
-          mediaType: media.mimeType || message.type,
+          mediaType: location ? "location" : media.mimeType || message.type,
           quotedExternalId: message.context?.id || message.context?.message_id || null,
         });
       }
@@ -354,11 +376,27 @@ export function extractDialog360Events(payload) {
 function messageMedia(message) {
   const block = message.image || message.sticker || message.audio || message.video || message.document || null;
   if (!block) return { mediaId: null, mediaUrl: null, fileName: null, mimeType: null };
+  const mimeType = block.mime_type || block.mimeType || null;
+  const fallbackName = message.type === "audio" ? "audio.ogg" : message.type === "video" ? "video.mp4" : message.type === "image" ? "imagem.jpg" : null;
   return {
     mediaId: block.id || null,
     mediaUrl: block.url || block.link || null,
-    fileName: block.filename || block.file_name || null,
-    mimeType: block.mime_type || block.mimeType || null,
+    fileName: block.filename || block.file_name || fallbackName,
+    mimeType,
+  };
+}
+
+function messageLocation(message) {
+  if (message.type !== "location" && message.type !== "live_location") return null;
+  const loc = message.location || {};
+  const latitude = Number(loc.latitude);
+  const longitude = Number(loc.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return {
+    latitude,
+    longitude,
+    name: loc.name || null,
+    address: loc.address || null,
   };
 }
 

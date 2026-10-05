@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Paperclip, Reply, X } from "lucide-react";
+import { MapPin, Paperclip, Reply, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { CustomerPicker } from "@/components/customer-picker";
+import { EmojiPicker, insertEmoji } from "@/components/emoji-picker";
 import { WhatsappTemplatePicker } from "@/components/whatsapp-template-picker";
 import { ConversationStatusBadge, InboxProviderBadge } from "@/components/badges";
 import {
@@ -20,6 +21,7 @@ import {
   INBOX_PROVIDERS,
   MESSAGE_DIRECTIONS,
 } from "@/lib/constants";
+import { mapsUrl, parseInboxLocation } from "@/lib/inbox-payload";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { cn, formatDateTime, formatDuration, formatRelativeTime } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
@@ -39,26 +41,76 @@ const SCOPES = [
 ];
 
 const EMPTY_START = { channelId: "", customer: null, phone: "", contactName: "", body: "" };
-const MEDIA_ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip";
+const MEDIA_ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,audio/ogg,audio/mpeg,audio/mp4,audio/aac,audio/amr,audio/webm,.ogg,.opus,.oga,.mp3,.m4a,.aac,.amr,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip";
 
 function mediaKind(message) {
-  const mime = String(message.mediaType || "").toLowerCase();
+  if (parseInboxLocation(message)?.latitude != null) return "location";
+  const mime = String(message.mediaType || "").toLowerCase().split(";")[0].trim();
   const name = String(message.fileName || message.mediaUrl || "");
+  const body = String(message.body || "");
+  if (mime === "location") return "location";
   if (mime.startsWith("image/") || mime === "image" || /\.(jpe?g|png|webp|gif)$/i.test(name)) return "image";
   if (mime.startsWith("video/") || mime === "video" || /\.(mp4|mov|3gp)$/i.test(name)) return "video";
+  if (
+    mime.startsWith("audio/")
+    || mime === "audio"
+    || /\.(ogg|opus|oga|mp3|m4a|aac|amr|webm)$/i.test(name)
+    || (message.mediaUrl && /\[Áudio\]/.test(body))
+  ) {
+    return "audio";
+  }
   if (message.mediaUrl || message.fileName || mime.startsWith("application/") || mime === "document") return "document";
   return null;
 }
 
+function messageCaption(message, kind, location) {
+  if (location) return null;
+  const text = String(message.body || "").trim();
+  if (!text) return null;
+  if (text.startsWith("{") && text.includes('"type":"location"')) return null;
+  if (kind === "audio" && /^\[Áudio\]/.test(text)) {
+    return text.replace(/^\[Áudio\]\s*/, "") || null;
+  }
+  return text;
+}
+
 function quotedText(quoted) {
   if (!quoted) return "Mensagem original indisponível";
-  if (quoted.body) return quoted.body;
-  if (quoted.fileName) return quoted.fileName;
+  const location = parseInboxLocation(quoted);
+  if (location) return location.name || location.address || "Localização";
   const kind = mediaKind(quoted);
+  if (kind === "audio") return "Áudio";
+  if (kind === "location") return "Localização";
+  if (quoted.body && !String(quoted.body).trim().startsWith("{")) return quoted.body;
+  if (quoted.fileName) return quoted.fileName;
   if (kind === "image") return "Imagem";
   if (kind === "video") return "Vídeo";
   if (kind === "document") return "Documento";
   return "Mensagem";
+}
+
+function LocationCard({ location }) {
+  const href = mapsUrl(location);
+  const title = location.name || location.address || "Localização";
+  const coords = Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
+    ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
+    : null;
+  return (
+    <a
+      href={href || undefined}
+      target={href ? "_blank" : undefined}
+      rel={href ? "noreferrer" : undefined}
+      className="mb-2 flex items-start gap-2 rounded-xl bg-bg/60 px-3 py-2 text-xs hover:bg-bg"
+    >
+      <MapPin size={16} className="mt-0.5 shrink-0" />
+      <span className="min-w-0">
+        <span className="block font-medium">{title}</span>
+        {location.address && location.name ? <span className="block text-muted">{location.address}</span> : null}
+        {coords ? <span className="block text-muted">{coords}</span> : null}
+        {href ? <span className="mt-1 block text-accent">Abrir no mapa</span> : null}
+      </span>
+    </a>
+  );
 }
 
 function QuotedBlock({ quoted, contactName, className }) {
@@ -97,6 +149,8 @@ export default function InboxPage() {
   const [draft, setDraft] = useState("");
   const [internal, setInternal] = useState(false);
   const [file, setFile] = useState(null);
+  const [pendingLocation, setPendingLocation] = useState(null);
+  const [locating, setLocating] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
   const [sending, setSending] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
@@ -113,6 +167,8 @@ export default function InboxPage() {
   const [startTemplate, setStartTemplate] = useState(null);
   const [useTemplate, setUseTemplate] = useState(false);
   const fileRef = useRef(null);
+  const draftRef = useRef(null);
+  const startBodyRef = useRef(null);
   const messagesRef = useRef(null);
   const selectedIdRef = useRef(null);
 
@@ -167,6 +223,8 @@ export default function InboxPage() {
     if (selectedId) void loadConversation(selectedId);
     else setConversation(null);
     setReplyTo(null);
+    setFile(null);
+    setPendingLocation(null);
     setUseTemplate(false);
     setChatTemplate(null);
   }, [selectedId, loadConversation]);
@@ -233,11 +291,20 @@ export default function InboxPage() {
       }
       return;
     }
-    if (!draft.trim() && !file) return;
+    if (!draft.trim() && !file && !pendingLocation) return;
     setSending(true);
     try {
       let data;
-      if (file && !internal) {
+      if (pendingLocation && !internal) {
+        data = await api(`/api/inbox/conversations/${selected.id}/messages`, {
+          method: "POST",
+          json: {
+            body: draft,
+            location: pendingLocation,
+            quotedMessageId: replyTo?.id || null,
+          },
+        });
+      } else if (file && !internal) {
         const form = new FormData();
         form.append("body", draft);
         form.append("internal", "false");
@@ -254,6 +321,7 @@ export default function InboxPage() {
       setDraft("");
       setInternal(false);
       setFile(null);
+      setPendingLocation(null);
       setReplyTo(null);
       void loadList();
     } catch (error) {
@@ -261,6 +329,29 @@ export default function InboxPage() {
     } finally {
       setSending(false);
     }
+  }
+
+  function pickLocation() {
+    if (!navigator.geolocation) {
+      toast.error("Seu navegador não informa localização.");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setPendingLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        setFile(null);
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+        toast.error("Não foi possível obter sua localização. Permita o acesso no navegador.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
   }
 
   async function submitTransfer(event) {
@@ -499,7 +590,9 @@ export default function InboxPage() {
                       const message = entry.item;
                       const incoming = message.direction === MESSAGE_DIRECTIONS.IN;
                       const note = message.direction === MESSAGE_DIRECTIONS.INTERNAL;
-                      const kind = mediaKind(message);
+                      const location = parseInboxLocation(message);
+                      const kind = location ? "location" : mediaKind(message);
+                      const caption = messageCaption(message, kind, location);
                       return (
                         <div key={`msg-${message.id}`} className={cn("flex", incoming ? "justify-start" : "justify-end")}>
                           <div
@@ -519,6 +612,7 @@ export default function InboxPage() {
                             {message.quotedExternalId ? (
                               <QuotedBlock quoted={message.quotedMessage} contactName={selected.displayName} className="mb-2" />
                             ) : null}
+                            {location ? <LocationCard location={location} /> : null}
                             {message.mediaUrl && kind === "image" ? (
                               <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="mb-2 block">
                                 <img src={message.mediaUrl} alt={message.fileName || "Imagem"} className="max-h-56 rounded-xl object-contain" />
@@ -527,15 +621,18 @@ export default function InboxPage() {
                             {message.mediaUrl && kind === "video" ? (
                               <video src={message.mediaUrl} controls className="mb-2 max-h-56 w-full rounded-xl" />
                             ) : null}
+                            {message.mediaUrl && kind === "audio" ? (
+                              <audio src={message.mediaUrl} controls preload="metadata" className="mb-2 w-full max-w-xs" />
+                            ) : null}
                             {message.mediaUrl && kind === "document" ? (
                               <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="mb-2 inline-flex items-center gap-2 rounded-xl bg-bg/60 px-3 py-2 text-xs font-medium hover:underline">
                                 {message.fileName || "Documento"}
                               </a>
                             ) : null}
-                            {!message.mediaUrl && message.mediaType && !message.body ? (
+                            {!message.mediaUrl && message.mediaType && !caption && kind !== "location" ? (
                               <p className="mb-1 text-xs text-muted">{message.fileName || message.mediaType}</p>
                             ) : null}
-                            {message.body ? <p className="whitespace-pre-wrap">{message.body}</p> : null}
+                            {caption ? <p className="whitespace-pre-wrap">{caption}</p> : null}
                             <p className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted">
                               <span>
                                 {message.user?.name ? `${message.user.name} · ` : ""}
@@ -575,6 +672,16 @@ export default function InboxPage() {
                           </button>
                         </div>
                       ) : null}
+                      {pendingLocation ? (
+                        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
+                          <span className="truncate">
+                            Localização · {pendingLocation.latitude.toFixed(5)}, {pendingLocation.longitude.toFixed(5)}
+                          </span>
+                          <button type="button" onClick={() => setPendingLocation(null)} className="rounded-full p-1 text-muted hover:bg-bg" aria-label="Remover localização">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : null}
                       {showTemplateComposer ? (
                         <div className="mb-3">
                           <p className="mb-2 text-xs text-amber-200">
@@ -601,17 +708,18 @@ export default function InboxPage() {
                       ) : (
                         <>
                           <Textarea
+                            ref={draftRef}
                             className="min-h-20"
                             value={draft}
                             onChange={(e) => setDraft(e.target.value)}
                             onKeyDown={(event) => {
                               if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
                               event.preventDefault();
-                              if (!sending && (draft.trim() || (!internal && file))) {
+                              if (!sending && (draft.trim() || (!internal && (file || pendingLocation)))) {
                                 event.currentTarget.form?.requestSubmit();
                               }
                             }}
-                            placeholder={isClosed ? "Reabra a conversa para responder." : internal ? "Nota visível só para o time..." : "Escreva a resposta..."}
+                            placeholder={isClosed ? "Reabra a conversa para responder." : internal ? "Nota visível só para o time..." : pendingLocation ? "Nome do local (opcional)..." : "Escreva a resposta..."}
                             disabled={sending || (isClosed && !internal)}
                           />
                           <p className="mt-1 text-[11px] text-muted">Enter envia · Shift+Enter nova linha</p>
@@ -620,9 +728,14 @@ export default function InboxPage() {
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-2 text-xs text-muted">
-                            <input type="checkbox" checked={internal} onChange={(e) => { setInternal(e.target.checked); if (e.target.checked) { setFile(null); setReplyTo(null); } }} />
+                            <input type="checkbox" checked={internal} onChange={(e) => { setInternal(e.target.checked); if (e.target.checked) { setFile(null); setPendingLocation(null); setReplyTo(null); } }} />
                             Nota interna
                           </label>
+                          <EmojiPicker
+                            key={selected.id}
+                            disabled={sending || showTemplateComposer || (isClosed && !internal)}
+                            onSelect={(emoji) => insertEmoji(draftRef.current, draft, emoji, setDraft)}
+                          />
                           <input
                             ref={fileRef}
                             type="file"
@@ -631,6 +744,7 @@ export default function InboxPage() {
                             onChange={(event) => {
                               const next = event.target.files?.[0] || null;
                               setFile(next);
+                              if (next) setPendingLocation(null);
                               event.target.value = "";
                             }}
                           />
@@ -644,13 +758,23 @@ export default function InboxPage() {
                             <Paperclip size={16} />
                             Anexar
                           </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="px-2 py-1.5"
+                            disabled={sending || internal || showTemplateComposer || locating || (isClosed && !internal)}
+                            onClick={pickLocation}
+                          >
+                            <MapPin size={16} />
+                            {locating ? "Obtendo..." : "Localização"}
+                          </Button>
                           {isOfficial && !internal && !requiresTemplate && !useTemplate ? (
                             <Button
                               type="button"
                               variant="ghost"
                               className="px-2 py-1.5"
                               disabled={sending || isClosed}
-                              onClick={() => { setUseTemplate(true); setFile(null); setReplyTo(null); }}
+                              onClick={() => { setUseTemplate(true); setFile(null); setPendingLocation(null); setReplyTo(null); }}
                             >
                               Enviar modelo
                             </Button>
@@ -663,7 +787,7 @@ export default function InboxPage() {
                             || (isClosed && !internal)
                             || (internal && !draft.trim())
                             || (!internal && showTemplateComposer && !chatTemplate?.ready)
-                            || (!internal && !showTemplateComposer && !draft.trim() && !file)
+                            || (!internal && !showTemplateComposer && !draft.trim() && !file && !pendingLocation)
                           }
                         >
                           {sending ? "Enviando..." : internal ? "Registrar nota" : showTemplateComposer ? "Enviar modelo" : "Enviar"}
@@ -835,10 +959,16 @@ export default function InboxPage() {
           ) : (
             <Field label="Mensagem" required>
               <Textarea
+                ref={startBodyRef}
                 className="min-h-24"
                 value={start.body}
                 onChange={(e) => setStart({ ...start, body: e.target.value })}
                 placeholder="Escreva a primeira mensagem..."
+              />
+              <EmojiPicker
+                className="mt-2"
+                disabled={starting}
+                onSelect={(emoji) => insertEmoji(startBodyRef.current, start.body, emoji, (body) => setStart((current) => ({ ...current, body })))}
               />
             </Field>
           )}

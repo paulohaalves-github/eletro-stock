@@ -15,6 +15,7 @@ import { addCustomerPhone, serializeCustomer } from "./customers";
 import { assertInboxTeamAccess, getAgentTeamIds, isInboxAdmin } from "./inbox-access";
 import { getInboxChannelRecord } from "./inbox-channels";
 import { inboxMediaPreview, saveInboxAttachment } from "./inbox-media";
+import { encodeInboxLocation } from "../inbox-payload";
 import { sendDialog360Message } from "../whatsapp/dialog360";
 import { sendUnofficialMessage } from "../whatsapp/unofficial";
 import { getCustomerServiceWindow } from "../whatsapp/templates";
@@ -595,6 +596,26 @@ export async function reopenConversation(id, session) {
   return getConversation(id, session);
 }
 
+function parseLocationInput(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const latitude = Number(raw.latitude);
+  const longitude = Number(raw.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw validationError("Localização inválida.");
+  }
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    throw validationError("Localização inválida.");
+  }
+  const name = String(raw.name || "").trim().slice(0, 120);
+  const address = String(raw.address || "").trim().slice(0, 300);
+  return {
+    latitude,
+    longitude,
+    name: name || null,
+    address: address || null,
+  };
+}
+
 async function sendViaChannel(channel, payload) {
   if (channel.provider === INBOX_PROVIDERS.DIALOG_360) {
     return sendDialog360Message(channel, payload);
@@ -616,11 +637,15 @@ export async function sendConversationMessage(id, payload, session) {
   const internal = Boolean(payload.internal);
   const body = String(payload.body || "").trim();
   const file = payload.file && typeof payload.file.arrayBuffer === "function" && payload.file.size > 0 ? payload.file : null;
+  const location = payload.location ? parseLocationInput(payload.location) : null;
   const isTemplate = Boolean(emptyToNull(payload.templateName));
-  if (!internal && !isTemplate && !body && !file) throw validationError("Escreva a mensagem ou anexe um arquivo.");
+  if (!internal && !isTemplate && !body && !file && !location) throw validationError("Escreva a mensagem, anexe um arquivo ou envie a localização.");
   if (internal && file) throw validationError("Notas internas não enviam arquivo. Use uma mensagem de texto.");
+  if (internal && location) throw validationError("Notas internas não enviam localização.");
   if (internal && isTemplate) throw validationError("Notas internas não enviam modelo.");
   if (isTemplate && file) throw validationError("Modelos não enviam anexo neste fluxo.");
+  if (isTemplate && location) throw validationError("Modelos não enviam localização neste fluxo.");
+  if (location && file) throw validationError("Envie a localização sem anexo.");
 
   if (internal) {
     const now = new Date();
@@ -660,6 +685,9 @@ export async function sendConversationMessage(id, payload, session) {
 
   const template = isTemplate ? await resolveTemplateSend(channel, payload) : null;
   const attachment = file ? await saveInboxAttachment(conversation.id, file) : null;
+  const locationPayload = location
+    ? { ...location, name: location.name || body || null }
+    : null;
   let quotedExternalId = null;
   const quotedMessageId = Number(payload.quotedMessageId);
   if (Number.isInteger(quotedMessageId) && quotedMessageId > 0) {
@@ -674,13 +702,19 @@ export async function sendConversationMessage(id, payload, session) {
     quotedExternalId = quoted.externalId || null;
   }
 
-  const storedBody = template ? template.preview : body;
-  const outboundBody = template ? storedBody : withAgentName(session.name, body);
+  const skipCaption = Boolean(locationPayload || attachment?.kind === "audio");
+  const storedBody = template
+    ? template.preview
+    : locationPayload
+      ? encodeInboxLocation(locationPayload)
+      : body;
+  const outboundBody = template ? storedBody : skipCaption ? body : withAgentName(session.name, body);
   const sent = await sendViaChannel(channel, {
     to: conversation.phone,
     jid: conversation.whatsappJid,
     body: outboundBody,
     media: attachment,
+    location: locationPayload,
     templateName: template?.name || null,
     templateLanguage: template?.language || null,
     templateComponents: template?.components || null,
@@ -696,7 +730,7 @@ export async function sendConversationMessage(id, payload, session) {
         direction: MESSAGE_DIRECTIONS.OUT,
         body: emptyToNull(storedBody),
         mediaUrl: attachment?.mediaUrl || null,
-        mediaType: attachment?.mediaType || null,
+        mediaType: locationPayload ? "location" : attachment?.mediaType || null,
         fileName: attachment?.fileName || null,
         quotedExternalId: emptyToNull(quotedExternalId),
         externalId: sent.externalId,
@@ -717,7 +751,7 @@ export async function sendConversationMessage(id, payload, session) {
       where: { id: conversation.id },
       data: {
         status: CONVERSATION_STATUSES.AGENT_REPLIED,
-        lastMessagePreview: previewOf(storedBody, attachment?.mediaType, attachment?.fileName),
+        lastMessagePreview: previewOf(storedBody, locationPayload ? "location" : attachment?.mediaType, attachment?.fileName),
         lastMessageDirection: MESSAGE_DIRECTIONS.OUT,
         lastMessageAt: now,
         lastAgentMessageAt: now,

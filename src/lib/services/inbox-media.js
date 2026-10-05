@@ -1,23 +1,30 @@
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { validationError } from "../errors";
 import {
   IMAGE_EXTENSIONS,
   IMAGE_MIME_TYPES,
+  INBOX_AUDIO_EXTENSIONS,
+  INBOX_AUDIO_MIME_TYPES,
   INBOX_DOCUMENT_EXTENSIONS,
   INBOX_DOCUMENT_MIME_TYPES,
   INBOX_MAX_UPLOAD_BYTES,
   INBOX_VIDEO_EXTENSIONS,
   INBOX_VIDEO_MIME_TYPES,
 } from "../constants";
+import { parseInboxLocation } from "../inbox-payload";
 import { extFromName, saveBuffer } from "./images";
 
+function baseMime(mimeType) {
+  return String(mimeType || "").toLowerCase().split(";")[0].trim();
+}
+
 export function inboxMediaKind(mimeType, mediaType, fileName) {
-  const mime = String(mimeType || mediaType || "").toLowerCase();
+  const mime = baseMime(mimeType || mediaType);
   const ext = extFromName(fileName || "");
+  if (mime === "location") return "location";
   if (mime.startsWith("image/") || mime === "image" || IMAGE_EXTENSIONS.includes(ext)) return "image";
   if (mime.startsWith("video/") || mime === "video" || INBOX_VIDEO_EXTENSIONS.includes(ext)) return "video";
-  if (mime.startsWith("audio/") || mime === "audio") return "audio";
+  if (mime.startsWith("audio/") || mime === "audio" || INBOX_AUDIO_EXTENSIONS.includes(ext)) return "audio";
   if (mime === "document" || mime.startsWith("application/") || mime === "text/plain" || INBOX_DOCUMENT_EXTENSIONS.includes(ext)) {
     return "document";
   }
@@ -25,13 +32,20 @@ export function inboxMediaKind(mimeType, mediaType, fileName) {
 }
 
 export function inboxMediaPreview(body, mimeType, mediaType, fileName) {
+  const loc = parseInboxLocation({ body, mediaType: mediaType || mimeType });
+  if (loc) {
+    const label = loc.name || loc.address;
+    return label ? `[Localização] ${String(label).slice(0, 140)}` : "[Localização]";
+  }
   const text = String(body || "").replace(/\s+/g, " ").trim();
+  if (text.startsWith("{") && text.includes('"type":"location"')) return "[Localização]";
   if (text) return text.slice(0, 180);
   const kind = inboxMediaKind(mimeType, mediaType, fileName);
   if (kind === "image") return "[Imagem]";
   if (kind === "video") return "[Vídeo]";
   if (kind === "document") return "[Documento]";
   if (kind === "audio") return "[Áudio]";
+  if (kind === "location") return "[Localização]";
   return fileName || "[Arquivo]";
 }
 
@@ -49,16 +63,18 @@ export async function saveInboxAttachment(conversationId, file, { prefix = "inbo
     ...IMAGE_MIME_TYPES,
     "image/gif",
     ...INBOX_VIDEO_MIME_TYPES,
+    ...INBOX_AUDIO_MIME_TYPES,
     ...INBOX_DOCUMENT_MIME_TYPES,
   ]);
   const allowedExt = new Set([
     ...IMAGE_EXTENSIONS,
     ".gif",
     ...INBOX_VIDEO_EXTENSIONS,
+    ...INBOX_AUDIO_EXTENSIONS,
     ...INBOX_DOCUMENT_EXTENSIONS,
   ]);
-  if (!kind || (!allowed.has(mime) && !allowedExt.has(ext))) {
-    throw validationError("Envie imagem, vídeo MP4 ou documento (PDF, Word, Excel, TXT ou ZIP).");
+  if (!kind || (!allowed.has(baseMime(mime)) && !allowedExt.has(ext))) {
+    throw validationError("Envie imagem, áudio, vídeo MP4 ou documento (PDF, Word, Excel, TXT ou ZIP).");
   }
   const bytes = Buffer.from(await file.arrayBuffer());
   const filename = `${randomUUID()}${ext || ""}`;
@@ -100,7 +116,14 @@ function mimeToExt(mime) {
     "video/mp4": ".mp4",
     "video/3gpp": ".3gp",
     "audio/ogg": ".ogg",
+    "audio/opus": ".ogg",
     "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/aac": ".aac",
+    "audio/amr": ".amr",
+    "audio/3gpp": ".amr",
+    "audio/webm": ".webm",
     "application/pdf": ".pdf",
     "application/msword": ".doc",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
@@ -108,5 +131,5 @@ function mimeToExt(mime) {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
     "text/plain": ".txt",
   };
-  return map[String(mime || "").toLowerCase()] || "";
+  return map[baseMime(mime)] || "";
 }
