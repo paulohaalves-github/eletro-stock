@@ -22,22 +22,18 @@ import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picke
 import { ProductTrashDialog } from "@/components/product-trash-dialog";
 import { PriceImportButton } from "@/components/price-import";
 import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
+import {
+  EMPTY_ESTOQUE_FILTERS,
+  clearEstoqueListState,
+  estoqueListPath,
+  filtersFromParams,
+  hasEstoqueListQuery,
+  readEstoqueListState,
+  writeEstoqueListState,
+} from "@/lib/estoque-list-state";
 import { MAX_TRANSFER_BATCH } from "@/lib/validations";
 
-const EMPTY_FILTERS = {
-  categoryId: "",
-  condition: "",
-  status: "",
-  voltage: "",
-  minPrice: "",
-  maxPrice: "",
-  from: "",
-  to: "",
-  locationTypeId: "",
-  locationId: "",
-  stalePriceDays: "",
-  priceUpdatedOn: "",
-};
+const EMPTY_FILTERS = EMPTY_ESTOQUE_FILTERS;
 
 function buildQuery(pageNumber, q, filters) {
   const search = new URLSearchParams({
@@ -65,8 +61,11 @@ function EstoqueContent() {
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [labelIds, setLabelIds] = useState([]);
   const [q, setQ] = useState(params.get("q") || "");
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [applied, setApplied] = useState({ q: params.get("q") || "", filters: EMPTY_FILTERS });
+  const [filters, setFilters] = useState(() => filtersFromParams(params));
+  const [applied, setApplied] = useState(() => ({
+    q: params.get("q") || "",
+    filters: filtersFromParams(params),
+  }));
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -87,6 +86,7 @@ function EstoqueContent() {
       if (!append) {
         setSelected(new Set());
         setApplied({ q: searchQ, filters: searchFilters });
+        writeEstoqueListState(searchQ, searchFilters);
       }
     } catch (error) {
       toast.error(error.message);
@@ -106,8 +106,20 @@ function EstoqueContent() {
   }, []);
 
   useEffect(() => {
-    void fetchPage(1, { qValue: params.get("q") || "" });
-    // Carga inicial: busca só no mount (e quando a URL já traz ?q=).
+    let qValue = params.get("q") || "";
+    let filterValue = filtersFromParams(params);
+    if (!hasEstoqueListQuery(qValue, filterValue)) {
+      const stored = readEstoqueListState();
+      if (hasEstoqueListQuery(stored.q, stored.filters)) {
+        qValue = stored.q;
+        filterValue = stored.filters;
+        setQ(qValue);
+        setFilters(filterValue);
+        router.replace(estoqueListPath(qValue, filterValue));
+      }
+    }
+    void fetchPage(1, { qValue, filterValue });
+    // Carga inicial: URL, ou últimos filtros da sessão se a listagem vier limpa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -118,11 +130,10 @@ function EstoqueContent() {
   const canImportPrices = me ? can(me.role, PERMISSIONS.PRICE_IMPORT) : false;
 
   function searchNow(qValue) {
-    if (qValue !== undefined) {
-      setQ(qValue);
-      router.push(qValue ? `/estoque?q=${encodeURIComponent(qValue)}` : "/estoque");
-    }
-    void fetchPage(1, { qValue: qValue !== undefined ? qValue : q });
+    const nextQ = qValue !== undefined ? qValue : q;
+    if (qValue !== undefined) setQ(qValue);
+    router.replace(estoqueListPath(nextQ, filters));
+    void fetchPage(1, { qValue: nextQ, filterValue: filters });
   }
 
   function toggleSelected(id, checked) {
@@ -359,7 +370,8 @@ function EstoqueContent() {
               onClick={() => {
                 setQ("");
                 setFilters(EMPTY_FILTERS);
-                router.push("/estoque");
+                clearEstoqueListState();
+                router.replace("/estoque");
                 void fetchPage(1, { qValue: "", filterValue: EMPTY_FILTERS });
               }}
               disabled={loading}

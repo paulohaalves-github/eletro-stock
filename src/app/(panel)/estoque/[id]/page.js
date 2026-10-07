@@ -16,6 +16,7 @@ import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picke
 import { ProductTrashDialog } from "@/components/product-trash-dialog";
 import { CLOSED_STATUSES, STATUSES, UNIT_TYPE_LABELS, canOperateStock } from "@/lib/constants";
 import { formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
+import { estoqueListPath, readEstoqueListState } from "@/lib/estoque-list-state";
 import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
 
 export default function ProductDetailPage() {
@@ -37,6 +38,7 @@ export default function ProductDetailPage() {
   const [saving, setSaving] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
+  const [listHref, setListHref] = useState("/estoque");
 
   const load = useCallback(async () => {
     const [{ product: item }, { user }, types, locs, unitData] = await Promise.all([
@@ -60,6 +62,11 @@ export default function ProductDetailPage() {
   useEffect(() => {
     void load().catch((error) => toast.error(error.message));
   }, [load]);
+
+  useEffect(() => {
+    const stored = readEstoqueListState();
+    setListHref(estoqueListPath(stored.q, stored.filters));
+  }, []);
 
   if (!product || !me) return <p className="text-muted">Carregando produto...</p>;
 
@@ -167,6 +174,9 @@ export default function ProductDetailPage() {
         subtitle={product.commercialName || product.supplierModelCode || product.serialOnyx}
         actions={
           <>
+            <Link href={listHref}>
+              <Button variant="secondary">Voltar</Button>
+            </Link>
             <ActionMenu
               items={[
                 canEdit && operable && !inTrash ? { label: "Editar", onClick: () => router.push(`/estoque/${product.id}/editar`) } : null,
