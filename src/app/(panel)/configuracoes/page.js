@@ -143,6 +143,82 @@ function SystemSettings() {
   );
 }
 
+const emptyIcecat = {
+  username: "",
+  apiToken: "",
+  tokenSet: false,
+  configured: false,
+};
+
+function IcecatSettings() {
+  const [form, setForm] = useState(emptyIcecat);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api("/api/settings/icecat")
+      .then((data) => setForm({ ...emptyIcecat, ...data.settings, apiToken: "" }))
+      .catch((error) => toast.error(error.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const data = await api("/api/settings/icecat", { method: "PUT", json: form });
+      setForm({ ...emptyIcecat, ...data.settings, apiToken: "" });
+      toast.success(data.message);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section>
+      <SectionHeading
+        title="Icecat"
+        description="Conta gratuita do Open Icecat. Sem usuário e chave, a ficha e as fotos continuam manuais. A consulta pelo EAN só começa depois que estes dados forem salvos."
+      />
+      <Card>
+        <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Field label="Usuário" hint={form.configured ? "A consulta pelo EAN está ativa." : "A consulta fica desligada até a chave ser salva."}>
+              <Input
+                value={form.username}
+                disabled={loading}
+                autoComplete="off"
+                onChange={(event) => setForm({ ...form, username: event.target.value })}
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field
+              label="Chave de acesso"
+              required={!form.tokenSet && Boolean(form.username.trim())}
+              hint={form.tokenSet ? "Deixe em branco para manter a chave já salva. Ela não volta para a tela." : "A chave fica só no servidor."}
+            >
+              <Input
+                type="password"
+                value={form.apiToken}
+                disabled={loading}
+                autoComplete="new-password"
+                placeholder={form.tokenSet ? "••••••••" : ""}
+                onChange={(event) => setForm({ ...form, apiToken: event.target.value })}
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Button type="submit" disabled={loading || saving}>{saving ? "Salvando..." : "Salvar Icecat"}</Button>
+          </div>
+        </form>
+      </Card>
+    </section>
+  );
+}
+
 function CatalogSettings() {
   const [form, setForm] = useState(emptyCatalog);
   const [loading, setLoading] = useState(true);
@@ -222,10 +298,11 @@ export default function ConfiguracoesPage() {
     <div className="w-full max-w-3xl space-y-10">
       <PageHeader
         title="Configurações"
-        subtitle="Sistema é o acesso interno. Catálogo é a vitrine que o cliente vê."
+        subtitle="Sistema é o acesso interno. Catálogo é a vitrine que o cliente vê. Icecat completa a ficha pelo EAN."
       />
       <SystemSettings />
       <CatalogSettings />
+      <IcecatSettings />
     </div>
   );
 }

@@ -48,6 +48,17 @@ function assertDocument(file) {
   }
 }
 
+export async function saveWebpUpload(relativeDir, buffer) {
+  const optimized = await sharp(buffer)
+    .rotate()
+    .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 82 })
+    .toBuffer();
+  const filename = `${randomUUID()}.webp`;
+  const fileUrl = await saveBuffer(relativeDir, filename, optimized);
+  return { fileUrl, fileName: filename, mimeType: "image/webp", fileSize: optimized.length };
+}
+
 async function saveBuffer(relativeDir, filename, buffer) {
   const dir = path.join(process.cwd(), UPLOADS_DIR, relativeDir);
   await mkdir(dir, { recursive: true });
@@ -150,6 +161,30 @@ export async function setPrimaryImage(productId, imageId, user) {
     entity: "product",
     entityId: Number(productId),
     newData: { imageId: image.id },
+  });
+
+  return getProduct(productId);
+}
+
+export async function setCatalogPublic(productId, imageId, catalogPublic, user) {
+  const product = await getProduct(productId);
+  assertProductWritable(user, product);
+  const image = await prisma.productImage.findFirst({
+    where: { id: Number(imageId), productId: Number(productId) },
+  });
+  if (!image) throw notFound("Imagem não encontrada.");
+
+  await prisma.productImage.update({
+    where: { id: image.id },
+    data: { catalogPublic: Boolean(catalogPublic) },
+  });
+
+  await writeAudit({
+    userId: user.id,
+    action: "IMAGE_CATALOG_PUBLIC",
+    entity: "product",
+    entityId: Number(productId),
+    newData: { imageId: image.id, catalogPublic: Boolean(catalogPublic) },
   });
 
   return getProduct(productId);

@@ -1,5 +1,6 @@
 export const EMPTY_ESTOQUE_FILTERS = {
   categoryId: "",
+  manufacturerId: "",
   condition: "",
   status: "",
   voltage: "",

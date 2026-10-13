@@ -1,14 +1,20 @@
 import { apiHandler, readJson } from "@/lib/api";
 import { PERMISSIONS } from "@/lib/permissions";
-import { deleteProductImage, setPrimaryImage } from "@/lib/services/images";
+import { deleteProductImage, setCatalogPublic, setPrimaryImage } from "@/lib/services/images";
 import { parseId } from "@/lib/validations";
 
 export const PATCH = apiHandler(
   async (request, { params, session }) => {
     const { id, imageId } = await params;
     const body = await readJson(request);
+    const productId = parseId(id);
+    const currentImageId = parseId(imageId);
+    if (typeof body.catalogPublic === "boolean") {
+      const product = await setCatalogPublic(productId, currentImageId, body.catalogPublic, session);
+      if (!body.isPrimary) return { product, message: body.catalogPublic ? "Foto liberada no catálogo." : "Foto retirada do catálogo." };
+    }
     if (body.isPrimary) {
-      const product = await setPrimaryImage(parseId(id), parseId(imageId), session);
+      const product = await setPrimaryImage(productId, currentImageId, session);
       return { product, message: "Imagem principal atualizada." };
     }
     return { ok: true };

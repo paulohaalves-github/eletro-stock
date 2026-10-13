@@ -54,6 +54,7 @@ function EstoqueContent() {
   const [data, setData] = useState({ items: [], total: 0 });
   const [page, setPage] = useState(1);
   const [categories, setCategories] = useState([]);
+  const [manufacturers, setManufacturers] = useState([]);
   const [locationTypes, setLocationTypes] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
@@ -97,9 +98,10 @@ function EstoqueContent() {
   }, [q, filters]);
 
   useEffect(() => {
-    Promise.all([api("/api/auth/me"), api("/api/categories"), api("/api/location-types"), api("/api/locations")]).then(([auth, c, types, locs]) => {
+    Promise.all([api("/api/auth/me"), api("/api/categories"), api("/api/manufacturers"), api("/api/location-types"), api("/api/locations")]).then(([auth, c, brands, types, locs]) => {
       setMe(auth.user);
       setCategories(c.items || []);
+      setManufacturers(brands.items || []);
       setLocationTypes(types.items || []);
       setLocations(locs.items || []);
     });
@@ -295,6 +297,12 @@ function EstoqueContent() {
           <Select value={filters.categoryId} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}>
             <option value="">Categoria</option>
             {categories.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </Select>
+          <Select value={filters.manufacturerId} onChange={(e) => setFilters({ ...filters, manufacturerId: e.target.value })}>
+            <option value="">Fabricante</option>
+            {manufacturers.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </Select>

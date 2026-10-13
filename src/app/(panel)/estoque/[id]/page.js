@@ -9,6 +9,7 @@ import { Button, Card, Field, PageHeader, Select, Textarea } from "@/components/
 import { ActionMenu } from "@/components/action-menu";
 import { ConditionBadge, StatusBadge } from "@/components/badges";
 import { RemoteGallery } from "@/components/images";
+import { ProductCommercial } from "@/components/product-commercial";
 import { Timeline } from "@/components/timeline";
 import { LocationPickers } from "@/components/location-pickers";
 import { ConfirmDialog, Modal } from "@/components/modal";
@@ -74,6 +75,7 @@ export default function ProductDetailPage() {
   const canEdit = can(me.role, PERMISSIONS.PRODUCT_EDIT);
   const canAssignLocation = can(me.role, PERMISSIONS.LOCATION_ASSIGN);
   const canPhoto = can(me.role, PERMISSIONS.PHOTO_UPLOAD);
+  const canDeletePhoto = can(me.role, PERMISSIONS.PHOTO_DELETE);
   const canTransfer = can(me.role, PERMISSIONS.STOCK_TRANSFER);
   const canRepair = can(me.role, PERMISSIONS.REPAIR_CREATE) || can(me.role, PERMISSIONS.REPAIR_VIEW);
   const canOpenSale = can(me.role, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder);
@@ -234,6 +236,7 @@ export default function ProductDetailPage() {
               <Info label="EAN" value={product.ean} />
               <Info label="Categoria" value={product.category?.name} />
               <Info label="Linha" value={product.line?.name} />
+              <Info label="Fabricante" value={product.catalogModel?.manufacturer?.name} />
               <Info label="Capacidade / Tamanho / Tipo" value={product.capacitySizeType} />
               <Info label="Tensão" value={product.voltage} />
               <Info label="Tipo de localização" value={product.location?.locationType?.name} />
@@ -288,6 +291,14 @@ export default function ProductDetailPage() {
         Última atualização de preços: {formatDateTime(product.lastPriceUpdateAt)}
       </p>
 
+      <ProductCommercial
+        product={product}
+        canEdit={canEdit && operable && !inTrash}
+        canPhoto={canPhoto && operable && !inTrash}
+        canDelete={canDeletePhoto && operable && !inTrash}
+        onChanged={load}
+      />
+
       <Card className="mb-4">
         <h2 className="mb-2 font-semibold">Descrição</h2>
         <p className="text-sm text-muted">{product.description || "Sem descrição."}</p>
@@ -310,7 +321,8 @@ export default function ProductDetailPage() {
       </Card>
 
       <Card className="w-full">
-        <h2 className="mb-3 font-semibold">Galeria</h2>
+        <h2 className="mb-1 font-semibold">Fotos do aparelho</h2>
+        <p className="mb-3 text-sm text-muted">Estas fotos ficam no estoque. Marque só as que podem aparecer para o cliente, no aparelho desta loja.</p>
         <RemoteGallery
           product={product}
           canEdit={canPhoto && operable && !inTrash}

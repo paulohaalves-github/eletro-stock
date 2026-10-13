@@ -127,16 +127,50 @@ model Line {
   @@map("lines")
 }
 
+model Manufacturer {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(160)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  catalogModels CatalogModel[]
+
+  @@map("manufacturers")
+}
+
 model CatalogModel {
   id                Int      @id @default(autoincrement())
   supplierModelCode String   @unique @map("supplier_model_code") @db.VarChar(120)
   commercialName    String   @map("commercial_name") @db.VarChar(190)
+  manufacturerId    Int?     @map("manufacturer_id")
+  specifications    String?  @db.Text
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  products Product[]
+  manufacturer     Manufacturer?            @relation(fields: [manufacturerId], references: [id], onDelete: SetNull)
+  products         Product[]
+  commercialImages CatalogCommercialImage[]
 
+  @@index([manufacturerId])
   @@map("catalog_models")
+}
+
+model CatalogCommercialImage {
+  id             Int      @id @default(autoincrement())
+  catalogModelId Int      @map("catalog_model_id")
+  fileUrl        String   @map("file_url") @db.VarChar(500)
+  fileName       String   @map("file_name") @db.VarChar(255)
+  mimeType       String?  @map("mime_type") @db.VarChar(120)
+  fileSize       Int?     @map("file_size")
+  source         String   @default("upload") @db.VarChar(20)
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  catalogModel CatalogModel @relation(fields: [catalogModelId], references: [id], onDelete: Cascade)
+
+  @@index([catalogModelId])
+  @@map("catalog_commercial_images")
 }
 
 model LocationType {
@@ -246,8 +280,9 @@ model ProductImage {
   fileName     String   @map("file_name") @db.VarChar(255)
   mimeType     String?  @map("mime_type") @db.VarChar(120)
   fileSize     Int?     @map("file_size")
-  isPrimary    Boolean  @default(false) @map("is_primary")
-  uploadedById Int      @map("uploaded_by")
+  isPrimary     Boolean  @default(false) @map("is_primary")
+  catalogPublic Boolean  @default(false) @map("catalog_public")
+  uploadedById  Int      @map("uploaded_by")
   createdAt    DateTime @default(now()) @map("created_at")
 
   product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)

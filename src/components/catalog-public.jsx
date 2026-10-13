@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Banknote, CreditCard, QrCode } from "lucide-react";
 import { CatalogHighlights } from "@/components/catalog-highlights";
+import { CatalogGallery, EvidencePhotos } from "@/components/catalog-photos";
 import { formatCurrency } from "@/lib/format";
 import { whatsAppHref } from "@/lib/services/public-catalog";
 
@@ -60,9 +61,9 @@ function ProductCard({ item }) {
   return (
     <Link href={`/catalogo/item/${item.key}`} className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface transition hover:-translate-y-0.5 hover:border-[#0482a4]/40">
       <div className="flex h-48 items-center justify-center bg-white">
-        {item.imageId ? (
+        {item.commercialImageIds?.[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={`/api/catalog/media/${item.imageId}`} alt="" className="h-full w-full object-contain" />
+          <img src={`/api/catalog/commercial/${item.commercialImageIds[0]}`} alt="" className="h-full w-full object-contain" />
         ) : (
           <span className="text-sm text-muted">Sem foto</span>
         )}
@@ -164,18 +165,12 @@ export function ProductDetail({ item }) {
   const interest = `Olá, tenho interesse em ${item.name}${item.voltageLabel ? ` ${item.voltageLabel}` : ""}${item.conditionLabel ? `, ${item.conditionLabel}` : ""}.`;
   return (
     <article className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <div className="flex min-h-72 items-center justify-center rounded-2xl border border-border bg-white">
-        {item.imageId ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={`/api/catalog/media/${item.imageId}`} alt="" className="max-h-[28rem] w-full object-contain" />
-        ) : (
-          <span className="text-sm text-muted">Sem foto</span>
-        )}
-      </div>
+      <CatalogGallery imageIds={item.commercialImageIds} alt={item.name} />
       <div>
         <Link href="/catalogo" className="text-sm font-medium text-[#0482a4] hover:underline">Voltar ao catálogo</Link>
         {item.categoryName ? <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#0482a4]">{item.categoryName}</p> : null}
         <h1 className="catalog-display mt-1 text-4xl leading-none">{item.name}</h1>
+        {item.manufacturer ? <p className="mt-2 text-sm text-muted">{item.manufacturer}</p> : null}
         <p className="mt-2 text-sm text-muted">
           {[item.voltageLabel, item.conditionLabel, countText(item.count)].filter(Boolean).join(" · ")}
         </p>
@@ -193,10 +188,17 @@ export function ProductDetail({ item }) {
               <p className="mt-1 text-sm">{priceText(unit.cashFrom, unit.cashTo)}{unit.installmentFrom > 0 ? ` · parcelado ${priceText(unit.installmentFrom, unit.installmentTo).replace("A partir de ", "a partir de ")}` : ""}</p>
               <div className="mt-3">
                 <StoreContact store={unit} showName={false} interest={`${interest} Loja: ${unit.name}.`} />
+                <EvidencePhotos imageIds={unit.evidenceImageIds} />
               </div>
             </section>
           ))}
         </div>
+        {item.specifications ? (
+          <section className="mt-6">
+            <h2 className="text-sm font-semibold">Especificações</h2>
+            <p className="mt-2 whitespace-pre-line text-sm text-muted">{item.specifications}</p>
+          </section>
+        ) : null}
       </div>
     </article>
   );

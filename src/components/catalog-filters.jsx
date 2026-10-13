@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 
-function catalogHref({ q, categoria, unidade, ordem }) {
+function catalogHref({ q, categoria, unidade, fabricante, ordem }) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (categoria) params.set("categoria", categoria);
   if (unidade) params.set("unidade", unidade);
+  if (fabricante) params.set("fabricante", fabricante);
   if (ordem === "preco-desc") params.set("ordem", ordem);
   const query = params.toString();
   return query ? `/catalogo?${query}` : "/catalogo";
@@ -32,13 +33,20 @@ function ChipRow({ children }) {
 export function CatalogFilters({ catalog, filters }) {
   const ordem = filters.ordem === "preco-desc" ? "preco-desc" : "preco-asc";
   const nextOrder = ordem === "preco-desc" ? "preco-asc" : "preco-desc";
-  const shared = { q: filters.q, unidade: filters.unidade, ordem };
+  const shared = {
+    q: filters.q,
+    categoria: filters.categoria,
+    unidade: filters.unidade,
+    fabricante: filters.fabricante,
+    ordem,
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <form method="get" action="/catalogo" className="relative min-w-0 flex-1">
           {filters.categoria ? <input type="hidden" name="categoria" value={filters.categoria} /> : null}
+          {filters.fabricante ? <input type="hidden" name="fabricante" value={filters.fabricante} /> : null}
           {filters.unidade ? <input type="hidden" name="unidade" value={filters.unidade} /> : null}
           {ordem === "preco-desc" ? <input type="hidden" name="ordem" value="preco-desc" /> : null}
           <input
@@ -59,7 +67,7 @@ export function CatalogFilters({ catalog, filters }) {
           </button>
         </form>
         <Link
-          href={catalogHref({ ...shared, ordem: nextOrder, categoria: filters.categoria })}
+          href={catalogHref({ ...shared, ordem: nextOrder })}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -82,13 +90,28 @@ export function CatalogFilters({ catalog, filters }) {
         ))}
       </ChipRow>
 
+      {catalog.manufacturers.length ? (
+        <ChipRow>
+          <Chip href={catalogHref({ ...shared, fabricante: "" })} active={!filters.fabricante}>Todos os fabricantes</Chip>
+          {catalog.manufacturers.map((manufacturer) => (
+            <Chip
+              key={manufacturer.id}
+              href={catalogHref({ ...shared, fabricante: String(manufacturer.id) })}
+              active={filters.fabricante === String(manufacturer.id)}
+            >
+              {manufacturer.name}
+            </Chip>
+          ))}
+        </ChipRow>
+      ) : null}
+
       {catalog.stockedStores.length > 1 ? (
         <ChipRow>
-          <Chip href={catalogHref({ ...shared, categoria: filters.categoria, unidade: "" })} active={!filters.unidade}>Todas as lojas</Chip>
+          <Chip href={catalogHref({ ...shared, unidade: "" })} active={!filters.unidade}>Todas as lojas</Chip>
           {catalog.stockedStores.map((store) => (
             <Chip
               key={store.id}
-              href={catalogHref({ ...shared, categoria: filters.categoria, unidade: String(store.id) })}
+              href={catalogHref({ ...shared, unidade: String(store.id) })}
               active={filters.unidade === String(store.id)}
             >
               {store.name}

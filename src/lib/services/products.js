@@ -41,10 +41,19 @@ const latestSaleInclude = {
   },
 };
 
+const catalogModelSummary = {
+  select: {
+    id: true,
+    supplierModelCode: true,
+    commercialName: true,
+    manufacturer: { select: { id: true, name: true } },
+  },
+};
+
 const productListInclude = {
   category: true,
   line: true,
-  catalogModel: true,
+  catalogModel: catalogModelSummary,
   location: { include: locationInclude },
   unit: { select: unitSelect },
   transferToUnit: { select: unitSelect },
@@ -140,6 +149,7 @@ function buildSearchWhere(query) {
         { line: { name: { contains: variant } } },
         { catalogModel: { commercialName: { contains: variant } } },
         { catalogModel: { supplierModelCode: { contains: variant } } },
+        { catalogModel: { manufacturer: { name: { contains: variant } } } },
         { location: { name: { contains: variant } } },
         { location: { locationType: { name: { contains: variant } } } },
       ]);
@@ -168,6 +178,7 @@ function buildProductListWhere(filters = {}, session) {
     locationTypeId,
     stalePriceDays,
     priceUpdatedOn,
+    manufacturerId,
   } = filters;
 
   const where = {
@@ -176,6 +187,10 @@ function buildProductListWhere(filters = {}, session) {
     ...buildSearchWhere(q),
   };
 
+  const manufacturer = Number(manufacturerId);
+  if (Number.isInteger(manufacturer) && manufacturer > 0) {
+    where.catalogModel = { manufacturerId: manufacturer };
+  }
   if (categoryId) where.categoryId = Number(categoryId);
   if (lineId) where.lineId = Number(lineId);
   if (condition) where.condition = condition;
@@ -260,7 +275,7 @@ export async function listProducts(filters = {}, session) {
 const exportInclude = {
   category: true,
   line: true,
-  catalogModel: true,
+  catalogModel: catalogModelSummary,
   location: { include: locationInclude },
   unit: { select: unitSelect },
   ...latestSaleInclude,
@@ -342,7 +357,12 @@ export async function getProduct(id, { includeDeleted = false } = {}) {
     include: {
       category: true,
       line: true,
-      catalogModel: true,
+      catalogModel: {
+        include: {
+          manufacturer: { select: { id: true, name: true } },
+          commercialImages: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
+        },
+      },
       location: { include: locationInclude },
       createdBy: { select: { id: true, name: true, email: true } },
       deletedBy: { select: { id: true, name: true } },
@@ -389,7 +409,7 @@ export async function getProductsByIds(ids, session) {
   const items = await prisma.product.findMany({
     where: { id: { in: unique }, ...PRODUCT_ACTIVE_WHERE },
     include: {
-      catalogModel: true,
+      catalogModel: catalogModelSummary,
       location: { include: locationInclude },
       unit: { select: unitSelect },
       transferToUnit: { select: unitSelect },

@@ -167,3 +167,78 @@ export async function saveCatalogSettings(payload, actor) {
 
   return settings;
 }
+
+const ICECAT_KEYS = {
+  username: "icecat.username",
+  apiToken: "icecat.apiToken",
+};
+
+export async function getIcecatSettings() {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: Object.values(ICECAT_KEYS) } },
+  });
+  const username = (stored(rows, ICECAT_KEYS.username) ?? process.env.ICECAT_USERNAME ?? "").trim();
+  const apiToken = (stored(rows, ICECAT_KEYS.apiToken) ?? process.env.ICECAT_API_TOKEN ?? "").trim();
+  const tokenSet = Boolean(apiToken);
+  return {
+    username,
+    apiToken,
+    tokenSet,
+    configured: Boolean(username && tokenSet),
+  };
+}
+
+export function publicIcecatSettings(settings) {
+  return {
+    username: settings.username,
+    tokenSet: settings.tokenSet,
+    configured: settings.configured,
+  };
+}
+
+export async function saveIcecatSettings(payload, actor) {
+  const current = await getIcecatSettings();
+  const username = String(payload.username || "").trim();
+  const typedToken = String(payload.apiToken || "").trim();
+  let apiToken = typedToken || current.apiToken;
+
+  if (!username) {
+    if (typedToken) throw validationError("Informe o usuário do Icecat.");
+    apiToken = "";
+  } else if (username.length > 190) {
+    throw validationError("O usuário do Icecat deve ter no máximo 190 caracteres.");
+  } else if (!apiToken) {
+    throw validationError("Informe a chave de acesso do Icecat.");
+  } else if (apiToken.length > 500) {
+    throw validationError("A chave de acesso do Icecat deve ter no máximo 500 caracteres.");
+  }
+
+  const values = {
+    [ICECAT_KEYS.username]: username,
+    [ICECAT_KEYS.apiToken]: apiToken,
+  };
+
+  await prisma.$transaction(
+    Object.entries(values).map(([key, value]) =>
+      prisma.appSetting.upsert({
+        where: { key },
+        create: { key, value },
+        update: { value },
+      }),
+    ),
+  );
+
+  await writeAudit({
+    userId: actor.id,
+    action: "ICECAT_SETTINGS_UPDATED",
+    entity: "settings",
+    entityId: 0,
+    newData: { username, tokenChanged: Boolean(typedToken), configured: Boolean(username && apiToken) },
+  });
+
+  return publicIcecatSettings({
+    username,
+    tokenSet: Boolean(apiToken),
+    configured: Boolean(username && apiToken),
+  });
+}

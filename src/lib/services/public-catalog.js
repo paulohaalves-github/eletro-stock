@@ -107,7 +107,18 @@ async function loadAvailableProducts() {
       supplierModelCode: true,
       description: true,
       category: { select: { id: true, name: true } },
-      catalogModel: { select: { id: true, commercialName: true } },
+      catalogModel: {
+        select: {
+          id: true,
+          commercialName: true,
+          manufacturer: { select: { id: true, name: true } },
+          specifications: true,
+          commercialImages: {
+            orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+            select: { id: true },
+          },
+        },
+      },
       unit: {
         select: {
           id: true,
@@ -126,7 +137,7 @@ async function loadAvailableProducts() {
           longitude: true,
         },
       },
-      images: { where: { isPrimary: true }, take: 1, select: { id: true } },
+      images: { where: { catalogPublic: true }, select: { id: true } },
     },
     orderBy: { id: "asc" },
   });
@@ -147,12 +158,21 @@ function buildGroups(products) {
         conditionLabel: PUBLIC_CONDITION_LABELS[product.condition] || product.condition || "",
         categoryId: product.category?.id || null,
         categoryName: product.category?.name || "",
-        imageId: null,
+        manufacturerId: null,
+        manufacturer: "",
+        specifications: "",
+        commercialImageIds: [],
         products: [],
       };
       groups.set(key, group);
     }
-    if (!group.imageId && product.images[0]?.id) group.imageId = product.images[0].id;
+    const commercialIds = product.catalogModel?.commercialImages?.map((image) => image.id) || [];
+    if (!group.commercialImageIds.length && commercialIds.length) group.commercialImageIds = commercialIds;
+    if (!group.manufacturer && product.catalogModel?.manufacturer?.name) {
+      group.manufacturerId = product.catalogModel.manufacturer.id;
+      group.manufacturer = product.catalogModel.manufacturer.name;
+    }
+    if (!group.specifications && product.catalogModel?.specifications) group.specifications = product.catalogModel.specifications;
     group.products.push(product);
   }
 
@@ -170,6 +190,7 @@ function buildGroups(products) {
         cashTo: maxPositive(rows.map((row) => row.cashPrice)),
         installmentFrom: minPositive(rows.map((row) => row.installmentPrice)),
         installmentTo: maxPositive(rows.map((row) => row.installmentPrice)),
+        evidenceImageIds: [...new Set(rows.flatMap((row) => row.images.map((image) => image.id)))],
       }))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     const cashValues = group.products.map((row) => row.cashPrice);
@@ -183,7 +204,10 @@ function buildGroups(products) {
       conditionLabel: group.conditionLabel,
       categoryId: group.categoryId,
       categoryName: group.categoryName,
-      imageId: group.imageId,
+      manufacturerId: group.manufacturerId,
+      manufacturer: group.manufacturer,
+      specifications: group.specifications,
+      commercialImageIds: group.commercialImageIds,
       count: group.products.length,
       cashFrom: minPositive(cashValues),
       cashTo: maxPositive(cashValues),
@@ -227,11 +251,13 @@ export async function getPublicCatalog(filters = {}) {
   const groups = buildGroups(products);
   const q = queryText(filters.q).toLocaleLowerCase("pt-BR");
   const categoryId = Number(queryText(filters.categoria));
+  const manufacturerId = Number(queryText(filters.fabricante));
   const unitId = Number(queryText(filters.unidade));
 
   const items = groups.filter((group) => {
-    if (q && !`${group.name} ${group.categoryName}`.toLocaleLowerCase("pt-BR").includes(q)) return false;
+    if (q && !`${group.name} ${group.categoryName} ${group.manufacturer}`.toLocaleLowerCase("pt-BR").includes(q)) return false;
     if (Number.isInteger(categoryId) && categoryId > 0 && group.categoryId !== categoryId) return false;
+    if (Number.isInteger(manufacturerId) && manufacturerId > 0 && group.manufacturerId !== manufacturerId) return false;
     if (Number.isInteger(unitId) && unitId > 0 && !group.units.some((unit) => unit.id === unitId)) return false;
     return true;
   }).map((group) => {
@@ -266,6 +292,12 @@ export async function getPublicCatalog(filters = {}) {
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
+  const manufacturers = [...new Map(
+    groups.filter((group) => group.manufacturerId).map((group) => [group.manufacturerId, group.manufacturer]),
+  ).entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
   const stockedStores = [...new Map(
     groups.flatMap((group) => group.units).map((unit) => [unit.id, { id: unit.id, name: unit.name, city: unit.city }]),
   ).values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -276,6 +308,7 @@ export async function getPublicCatalog(filters = {}) {
     pickupNote: settings.pickupNote,
     payments: paymentLabels(settings),
     categories,
+    manufacturers,
     stockedStores,
     stores: stores.map((store) => publicStore(store)),
     items,
@@ -289,20 +322,38 @@ export async function getPublicCatalogItem(key) {
   return { ...catalog, item };
 }
 
+function uploadPathFromFileUrl(fileUrl) {
+  const marker = "/api/files/";
+  const index = String(fileUrl || "").indexOf(marker);
+  if (index < 0) throw notFound("Imagem não encontrada.");
+  return resolveUploadPath(fileUrl.slice(index + marker.length));
+}
+
 export async function readCatalogImage(id) {
   const imageId = Number(id);
   if (!Number.isInteger(imageId) || imageId <= 0) throw notFound("Imagem não encontrada.");
   const image = await prisma.productImage.findFirst({
     where: {
       id: imageId,
-      isPrimary: true,
+      catalogPublic: true,
       product: AVAILABLE_WHERE,
     },
     select: { fileUrl: true },
   });
   if (!image) throw notFound("Imagem não encontrada.");
-  const marker = "/api/files/";
-  const index = image.fileUrl.indexOf(marker);
-  if (index < 0) throw notFound("Imagem não encontrada.");
-  return resolveUploadPath(image.fileUrl.slice(index + marker.length));
+  return uploadPathFromFileUrl(image.fileUrl);
+}
+
+export async function readCatalogCommercialImage(id) {
+  const imageId = Number(id);
+  if (!Number.isInteger(imageId) || imageId <= 0) throw notFound("Imagem não encontrada.");
+  const image = await prisma.catalogCommercialImage.findFirst({
+    where: {
+      id: imageId,
+      catalogModel: { products: { some: AVAILABLE_WHERE } },
+    },
+    select: { fileUrl: true },
+  });
+  if (!image) throw notFound("Imagem não encontrada.");
+  return uploadPathFromFileUrl(image.fileUrl);
 }

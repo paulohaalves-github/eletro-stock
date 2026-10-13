@@ -98,6 +98,15 @@ export function RemoteGallery({ product, canEdit, onChanged }) {
     onChanged?.();
   }
 
+  async function toggleCatalog(image) {
+    await fetch(`/api/products/${product.id}/images/${image.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ catalogPublic: !image.catalogPublic }),
+    });
+    onChanged?.();
+  }
+
   return (
     <div>
       {canEdit ? (
@@ -123,19 +132,34 @@ export function RemoteGallery({ product, canEdit, onChanged }) {
             <button type="button" className="block w-full" onClick={() => setLightbox(image)}>
               <img src={image.fileUrl} alt="" className="h-32 w-full object-cover" />
             </button>
-            <div className="flex items-center justify-between px-2 py-1.5 text-[11px] text-muted">
-              <span>{image.isPrimary ? "Principal" : new Date(image.createdAt).toLocaleString("pt-BR")}</span>
-              {canEdit ? (
-                <span className="flex gap-2">
-                  {!image.isPrimary ? (
-                    <button type="button" className="text-accent" onClick={() => makePrimary(image)}>
-                      Principal
+            <div className="space-y-1 px-2 py-1.5 text-[11px] text-muted">
+              <div className="flex items-center justify-between gap-2">
+                <span>{image.isPrimary ? "Principal" : new Date(image.createdAt).toLocaleString("pt-BR")}</span>
+                {canEdit ? (
+                  <span className="flex gap-2">
+                    {!image.isPrimary ? (
+                      <button type="button" className="text-accent" onClick={() => makePrimary(image)}>
+                        Principal
+                      </button>
+                    ) : null}
+                    <button type="button" className="text-danger" onClick={() => remove(image)}>
+                      Excluir
                     </button>
-                  ) : null}
-                  <button type="button" className="text-danger" onClick={() => remove(image)}>
-                    Excluir
-                  </button>
-                </span>
+                  </span>
+                ) : null}
+              </div>
+              {canEdit ? (
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-[var(--accent)]"
+                    checked={Boolean(image.catalogPublic)}
+                    onChange={() => toggleCatalog(image)}
+                  />
+                  Mostrar no catálogo
+                </label>
+              ) : image.catalogPublic ? (
+                <span>No catálogo</span>
               ) : null}
             </div>
           </div>
