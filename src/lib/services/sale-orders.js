@@ -19,6 +19,7 @@ import { formatDate, formatProductId } from "../format";
 import { can, canManageAllSaleOrders, canViewAllSaleOrders, PERMISSIONS } from "../permissions";
 import { isAdminRole, requireActiveUnit, unitSelect } from "../units";
 import { getProduct, movementUnitFields } from "./products";
+import { assertNoOpenInventory } from "../inventory-lock";
 import { getLatestSale } from "./sales";
 
 const productSelect = {
@@ -998,6 +999,10 @@ export async function deleteSaleOrder(id, user) {
   }
 
   const reverted = [];
+  const returningUnitIds = soldSales
+    .filter(({ item }) => item.product?.status === STATUSES.SOLD)
+    .map(({ item }) => item.product.unitId);
+  await assertNoOpenInventory(returningUnitIds);
   await prisma.$transaction(async (tx) => {
     for (const item of order.items) {
       const locked = item.status === SALE_ORDER_ITEM_STATUSES.RESERVED || item.status === SALE_ORDER_ITEM_STATUSES.ORDERED;

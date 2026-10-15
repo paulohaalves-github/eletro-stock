@@ -13,6 +13,7 @@ import { parseProductIds } from "../validations";
 import { paginationResult, parsePagination } from "../pagination";
 import { getProduct, movementUnitFields } from "./products";
 import { resolveProductLocation } from "./locations";
+import { assertNoOpenInventory } from "../inventory-lock";
 import {
   assertProductInActiveUnit,
   assertProductWritable,
@@ -50,6 +51,7 @@ export async function exitProduct({ productId, reason, observation, user, custom
   const product = await getProduct(productId);
   assertProductWritable(user, product);
   assertOpenForExit(product);
+  await assertNoOpenInventory(product.unitId);
 
   if (!Object.values(EXIT_REASONS).includes(reason)) {
     throw validationError("Informe um motivo de saída válido.");
@@ -256,6 +258,7 @@ export async function sendTransfer({ productId, toUnitId, observation, user }) {
   if (destination.id === product.unitId) {
     throw validationError("Selecione uma unidade de destino diferente da origem.");
   }
+  await assertNoOpenInventory([product.unitId, destination.id]);
 
   const updated = await prisma.product.update({
     where: { id: product.id },
@@ -297,6 +300,7 @@ export async function receiveTransfer({ productId, observation, user, locationId
   if (product.status !== STATUSES.IN_TRANSIT || product.transferToUnitId !== unitId) {
     throw forbidden("Não há transferência pendente para esta unidade.");
   }
+  await assertNoOpenInventory(unitId);
 
   const location = await resolveProductLocation(
     { locationId, locationTypeId },
@@ -354,6 +358,7 @@ async function returnFromTransit({ productId, user, type, action, defaultObserva
   if (type === MOVEMENT_TYPES.TRANSFER_REFUSE && !isDestination) {
     throw forbidden(errorMessage);
   }
+  await assertNoOpenInventory(product.unitId);
 
   const destinationName = product.transferToUnit?.name;
   const updated = await prisma.product.update({

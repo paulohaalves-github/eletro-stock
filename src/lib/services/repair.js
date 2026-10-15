@@ -28,6 +28,7 @@ import { movementUnitFields } from "./products";
 import { getLatestSale, serializeSale } from "./sales";
 import { formatLocationPath } from "../format";
 import { can, PERMISSIONS } from "../permissions";
+import { assertNoOpenInventory } from "../inventory-lock";
 
 const locationInclude = { locationType: true };
 
@@ -278,6 +279,7 @@ export async function createWorkOrder(payload, user) {
   }
 
   const lab = servicePlace === SERVICE_PLACES.LAB ? await getLabUnit() : null;
+  await assertNoOpenInventory([product.unitId, lab?.id]);
 
   const created = await prisma.$transaction(async (tx) => {
     const order = await tx.workOrder.create({
@@ -405,6 +407,10 @@ export async function updateWorkOrder(id, payload, user) {
     }
   }
 
+  if (payload.status === WORK_ORDER_STATUSES.UNREPAIRABLE || payload.status === WORK_ORDER_STATUSES.CANCELLED) {
+    await assertNoOpenInventory([restoreUnitIdForOrder(order), order.labUnitId, order.product?.unitId]);
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const saved = await tx.workOrder.update({
       where: { id: order.id },
@@ -458,6 +464,7 @@ export async function deliverWorkOrder(id, payload, user) {
   }
 
   const originUnitId = restoreUnitIdForOrder(order);
+  await assertNoOpenInventory([originUnitId, order.labUnitId, order.product?.unitId]);
   const nextProductStatus = restoreStatusForOrder(order);
   const observation = emptyToNull(payload?.observation);
   const nextTechnicianNotes =
@@ -543,6 +550,7 @@ export async function setWorkOrderLocation(id, payload, user) {
     throw validationError("Localização no lab só se aplica a reparo no laboratório.");
   }
   const unitId = requireActiveUnit(user);
+  await assertNoOpenInventory(unitId);
   if (order.labUnitId && unitId !== order.labUnitId) {
     throw forbidden("Troque para a unidade do laboratório para posicionar o aparelho.");
   }
@@ -825,6 +833,9 @@ export async function deleteWorkOrder(id, user) {
   if (!order) throw notFound("Ordem de serviço não encontrada.");
 
   const open = !WORK_ORDER_CLOSED_STATUSES.includes(order.status);
+  if (open && order.product?.status === STATUSES.IN_REPAIR) {
+    await assertNoOpenInventory([order.product.unitId, restoreUnitIdForOrder(order)]);
+  }
   await prisma.$transaction(async (tx) => {
     if (open && order.product?.status === STATUSES.IN_REPAIR) {
       const nextStatus = restoreStatusForOrder(order);

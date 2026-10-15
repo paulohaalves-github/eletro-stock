@@ -46,6 +46,11 @@ model User {
   saleOrdersAsSeller SaleOrder[]      @relation("SaleOrderSeller")
   saleOrderEvents   SaleOrderEvent[]
   saleOrderItemsSold SaleOrderItem[]  @relation("SaleOrderItemSoldBy")
+  inventoriesCreated   InventoryCount[] @relation("InventoryCreatedBy")
+  inventoriesAssigned  InventoryCount[] @relation("InventoryAssignedTo")
+  inventoriesCompleted InventoryCount[] @relation("InventoryCompletedBy")
+  inventoriesCancelled InventoryCount[] @relation("InventoryCancelledBy")
+  inventoryScans       InventoryScan[]
 
   @@map("users")
 }
@@ -87,6 +92,7 @@ model Unit {
   partMovementsTo  PartMovement[]   @relation("PartMovementToUnit")
   partTransfersFrom PartTransfer[]  @relation("PartTransferFromUnit")
   partTransfersTo   PartTransfer[]  @relation("PartTransferToUnit")
+  inventories       InventoryCount[]
 
   @@map("units")
 }
@@ -204,6 +210,7 @@ model Location {
   partMovementsTo   PartMovement[] @relation("PartMovementToLocation")
   partTransfersFrom PartTransfer[] @relation("PartTransferFromLocation")
   partTransfersTo   PartTransfer[] @relation("PartTransferToLocation")
+  inventories       InventoryCount[]
 
   @@unique([unitId, locationTypeId, name])
   @@index([locationTypeId])
@@ -254,6 +261,8 @@ model Product {
   sales          Sale[]
   saleOrderItems SaleOrderItem[]
   workOrders     WorkOrder[]
+  inventoryExpected InventoryExpectedItem[]
+  inventoryScans    InventoryScan[]
 
   @@index([ean])
   @@index([supplierModelCode])
@@ -339,6 +348,80 @@ model StockMovement {
   @@index([previousUnitId])
   @@index([newUnitId])
   @@map("stock_movements")
+}
+
+model InventoryCount {
+  id             Int       @id @default(autoincrement())
+  number         String    @unique @db.VarChar(20)
+  unitId         Int       @map("unit_id")
+  locationId     Int?      @map("location_id")
+  locationLabel  String?   @map("location_label") @db.VarChar(255)
+  status         String    @default("ABERTO") @db.VarChar(20)
+  notes          String?   @db.Text
+  expectedCount  Int       @default(0) @map("expected_count")
+  createdById    Int       @map("created_by")
+  assignedToId   Int       @map("assigned_to")
+  completedAt    DateTime? @map("completed_at")
+  completedById  Int?      @map("completed_by")
+  cancelledAt    DateTime? @map("cancelled_at")
+  cancelledById  Int?      @map("cancelled_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  unit          Unit                    @relation(fields: [unitId], references: [id])
+  location      Location?               @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  createdBy     User                    @relation("InventoryCreatedBy", fields: [createdById], references: [id])
+  assignedTo    User                    @relation("InventoryAssignedTo", fields: [assignedToId], references: [id])
+  completedBy   User?                   @relation("InventoryCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  cancelledBy   User?                   @relation("InventoryCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  expectedItems InventoryExpectedItem[]
+  scans         InventoryScan[]
+
+  @@index([unitId, status])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@map("inventory_counts")
+}
+
+model InventoryExpectedItem {
+  id             Int     @id @default(autoincrement())
+  inventoryId    Int     @map("inventory_id")
+  productId      Int     @map("product_id")
+  serialOnyx     String  @map("serial_onyx") @db.VarChar(120)
+  commercialName String? @map("commercial_name") @db.VarChar(190)
+  status         String  @db.VarChar(40)
+  locationLabel  String? @map("location_label") @db.VarChar(255)
+
+  inventory InventoryCount @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id])
+
+  @@unique([inventoryId, productId])
+  @@index([productId])
+  @@map("inventory_expected_items")
+}
+
+model InventoryScan {
+  id             Int      @id @default(autoincrement())
+  inventoryId    Int      @map("inventory_id")
+  productId      Int?     @map("product_id")
+  rawCode        String   @map("raw_code") @db.VarChar(190)
+  kind           String   @db.VarChar(20)
+  serialOnyx     String?  @map("serial_onyx") @db.VarChar(120)
+  commercialName String?  @map("commercial_name") @db.VarChar(190)
+  productStatus  String?  @map("product_status") @db.VarChar(40)
+  unitName       String?  @map("unit_name") @db.VarChar(120)
+  note           String?  @db.VarChar(255)
+  scannedById    Int      @map("scanned_by")
+  scannedAt      DateTime @default(now()) @map("scanned_at")
+
+  inventory InventoryCount @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  product   Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  scannedBy User           @relation(fields: [scannedById], references: [id])
+
+  @@unique([inventoryId, productId])
+  @@index([inventoryId, scannedAt])
+  @@index([productId])
+  @@map("inventory_scans")
 }
 
 model AuditLog {

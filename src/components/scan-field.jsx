@@ -1,12 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createScannerAdapter, parseQrPayload } from "@/lib/scanner";
 import { Input } from "./ui";
 
-export function ScanField({ value, onChange, onScan, placeholder = "Digite ou leia o código" }) {
+export function ScanField({ value, onChange, onScan, placeholder = "Digite ou leia o código", autoFocus = false, refocusKey = 0, disabled = false }) {
   const inputRef = useRef(null);
   const [hint, setHint] = useState("");
+
+  useEffect(() => {
+    if (autoFocus && !disabled) inputRef.current?.focus();
+  }, [autoFocus, refocusKey, disabled]);
 
   function submit(raw) {
     const parsed = parseQrPayload(raw);
@@ -21,6 +25,7 @@ export function ScanField({ value, onChange, onScan, placeholder = "Digite ou le
           ref={inputRef}
           value={value ?? ""}
           placeholder={placeholder}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -31,7 +36,8 @@ export function ScanField({ value, onChange, onScan, placeholder = "Digite ou le
         />
         <button
           type="button"
-          className="rounded-xl border border-border px-3 text-sm font-semibold text-accent hover:bg-surface-2"
+          disabled={disabled}
+          className="rounded-xl border border-border px-3 text-sm font-semibold text-accent hover:bg-surface-2 disabled:opacity-50"
           onClick={() => {
             const adapter = createScannerAdapter({
               onScan: (parsed) => {

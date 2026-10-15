@@ -11,6 +11,8 @@ import {
   SALE_ORDER_STATUS_LABELS,
   SALE_ORDER_ITEM_STATUS_LABELS,
   SALE_ORDER_EVENT_LABELS,
+  INVENTORY_STATUS_LABELS,
+  INVENTORY_SCAN_KIND_LABELS,
 } from "@/lib/constants";
 import { cn } from "@/lib/format";
 
@@ -207,6 +209,34 @@ export function SaleOrderEventBadge({ type }) {
   return (
     <Badge className={SALE_ORDER_EVENT_STYLES[type] || "bg-surface-2 text-muted ring-border"}>
       {SALE_ORDER_EVENT_LABELS[type] || type}
+    </Badge>
+  );
+}
+
+const INVENTORY_STATUS_STYLES = {
+  ABERTO: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  CONCLUIDO: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  CANCELADO: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+};
+
+const INVENTORY_SCAN_STYLES = {
+  CONFERIDO: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  SOBRANTE: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  DESCONHECIDO: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
+};
+
+export function InventoryStatusBadge({ status }) {
+  return (
+    <Badge className={INVENTORY_STATUS_STYLES[status] || "bg-surface-2 text-muted ring-border"}>
+      {INVENTORY_STATUS_LABELS[status] || status}
+    </Badge>
+  );
+}
+
+export function InventoryScanBadge({ kind }) {
+  return (
+    <Badge className={INVENTORY_SCAN_STYLES[kind] || "bg-surface-2 text-muted ring-border"}>
+      {INVENTORY_SCAN_KIND_LABELS[kind] || kind}
     </Badge>
   );
 }

@@ -104,6 +104,38 @@ export const STATUS_LABELS = {
   DESCARTADO: "Descartado",
 };
 
+export const INVENTORY_STATUSES = {
+  OPEN: "ABERTO",
+  COMPLETED: "CONCLUIDO",
+  CANCELLED: "CANCELADO",
+};
+
+export const INVENTORY_STATUS_LABELS = {
+  ABERTO: "Aberto",
+  CONCLUIDO: "Concluído",
+  CANCELADO: "Cancelado",
+};
+
+export const INVENTORY_SCAN_KINDS = {
+  MATCHED: "CONFERIDO",
+  SURPLUS: "SOBRANTE",
+  UNKNOWN: "DESCONHECIDO",
+};
+
+export const INVENTORY_SCAN_KIND_LABELS = {
+  CONFERIDO: "Conferido",
+  SOBRANTE: "Sobrante",
+  DESCONHECIDO: "Não cadastrado",
+};
+
+export const INVENTORY_ASSIGNABLE_ROLES = [ROLES.ADMIN, ROLES.GESTOR, ROLES.STOCK];
+
+export function inventoryExpectedStatuses(unitType) {
+  const statuses = [STATUSES.AVAILABLE, STATUSES.RESERVED, STATUSES.RETURNED];
+  if (unitType === UNIT_TYPES.LAB) statuses.push(STATUSES.IN_REPAIR);
+  return statuses;
+}
+
 export const MOVEMENT_TYPES = {
   ENTRY: "ENTRADA",
   EXIT: "SAIDA",

@@ -7,6 +7,7 @@ import { emptyToNull, MAX_TRANSFER_BATCH, parseProductIds, validateProductPayloa
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
 import { toExcelBuffer } from "./reports";
+import { assertNoOpenInventory } from "../inventory-lock";
 import {
   assertCanViewProduct,
   assertProductInActiveUnit,
@@ -422,6 +423,7 @@ export async function getProductsByIds(ids, session) {
 
 export async function createProduct(payload, user) {
   const unitId = requireActiveUnit(user);
+  await assertNoOpenInventory(unitId);
   const data = validateProductPayload(payload);
   const commercialName = data.commercialName;
   delete data.commercialName;
@@ -528,6 +530,7 @@ export async function updateProduct(id, payload, user) {
 
   const locationChanged =
     location !== undefined && (location?.id ?? null) !== (current.locationId ?? null);
+  if (locationChanged) await assertNoOpenInventory(current.unitId);
 
   const priceFields = ["cashPrice", "installmentPrice", "marketPrice"];
   const priceChanged = priceFields.some(
@@ -695,6 +698,7 @@ async function loadTrashProduct(id, session) {
 
 export async function moveProductsToTrash(payload, user) {
   const ids = parseProductIds(payload);
+  await assertNoOpenInventory(requireActiveUnit(user));
   const observation = emptyToNull(payload.observation);
   const now = new Date();
   const products = [];
@@ -744,6 +748,7 @@ export async function moveProductsToTrash(payload, user) {
 
 export async function restoreProductsFromTrash(payload, user) {
   const ids = parseProductIds(payload);
+  await assertNoOpenInventory(requireActiveUnit(user));
   const products = [];
 
   for (const id of ids) {
