@@ -223,6 +223,12 @@ export default function VendaDetailPage() {
           <Info label="Unidade" value={order.unit?.name} />
           <Info label="Vendedor" value={order.seller?.name} />
           <Info label="OV" value={order.ov || "—"} />
+          {order.paymentMethod || order.installmentCount ? (
+            <Info
+              label="Pagamento"
+              value={`${order.paymentMethod || "—"}${order.installmentCount ? ` · ${order.installmentCount}x` : ""}`}
+            />
+          ) : null}
           <Info label="Aberto por" value={order.createdBy?.name} />
           {order.conversation?.id ? (
             <Info
@@ -452,7 +458,7 @@ export default function VendaDetailPage() {
       <ConfirmDialog
         open={deleteOpen}
         title="Excluir esta venda?"
-        message="A venda sai da lista. Produtos que ainda estavam reservados voltam a ficar disponíveis. Vendas já baixadas no caixa permanecem no histórico do produto."
+        message="A venda sai da lista. Produtos reservados ou já baixados voltam a ficar disponíveis, e a baixa sai do histórico. Se houver uma ordem de serviço nesse produto, a exclusão é bloqueada."
         confirmLabel="Excluir venda"
         danger
         loading={saving}

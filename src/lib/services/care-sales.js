@@ -23,6 +23,16 @@ function errorMessage(error) {
   return "Não foi possível importar esta OV.";
 }
 
+function carePaymentError(payment) {
+  const methods = (payment?.methods || []).map((value) => String(value || "").trim());
+  const count = Number(payment?.installmentCount || 0);
+  if (!count) return "O Care não informou as parcelas do recebimento.";
+  if (methods.some((value) => !value)) return "A forma de pagamento está vazia.";
+  const unique = new Set(methods.map((value) => value.toLocaleLowerCase("pt-BR")));
+  if (unique.size > 1) return "As parcelas do Care têm formas de pagamento diferentes.";
+  return null;
+}
+
 function normalizeName(value) {
   return String(value || "")
     .normalize("NFD")
@@ -145,7 +155,11 @@ async function eligibleProducts(entry, unitId) {
       reasons.push(`${product.serialOnyx} está na unidade ${product.unit?.name || "outra"}`);
       continue;
     }
-    const soldPrice = row.soldPrice == null ? null : Number(row.soldPrice);
+    if (row.soldPrice == null) {
+      reasons.push(`${product.serialOnyx} não tem Valor Venda no Care`);
+      continue;
+    }
+    const soldPrice = Number(row.soldPrice);
     if (product.status === STATUSES.RESERVED) {
       ready.push({ product, release: true, soldPrice });
       continue;
@@ -205,6 +219,15 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         continue;
       }
 
+      const paymentError = carePaymentError(entry.payment);
+      if (paymentError) {
+        skipped.push({ ov, reason: paymentError });
+        onStep(`OV ${ov} ignorada: ${paymentError}`);
+        continue;
+      }
+      const paymentMethod = entry.payment.methods[0];
+      const installmentCount = entry.payment.installmentCount;
+
       const sellerMatch = matchSeller(entry.sellerName, users);
       if (!sellerMatch.seller) {
         skipped.push({ ov, reason: sellerMatch.error });
@@ -232,10 +255,13 @@ export async function importCareSales(entries, user, onStep = () => {}) {
       order = await createSaleOrder({
         customerId: customerMatch.customer.id,
         sellerId: sellerMatch.seller.id,
-        observation: `Importada do Care. OV ${ov}. NF ${invoiceNumber}.`,
+        observation: `Importada do Care. OV ${ov}. NF ${invoiceNumber}. ${paymentMethod}, ${installmentCount}x.`,
       }, user);
       try {
-        await prisma.saleOrder.update({ where: { id: order.id }, data: { ov } });
+        await prisma.saleOrder.update({
+          where: { id: order.id },
+          data: { ov, paymentMethod, installmentCount },
+        });
       } catch (error) {
         await deleteSaleOrder(order.id, user);
         order = null;
@@ -269,11 +295,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
           );
           if (!item) throw new AppError(`Não foi possível incluir ${row.product.serialOnyx}.`);
           await reserveSaleOrderItem(order.id, item.id, reservedUntil, user);
-          const onlyProduct = (entry.products || []).length === 1;
-          const soldPrice = row.soldPrice != null
-            ? row.soldPrice
-            : (onlyProduct && entry.orderTotal != null ? entry.orderTotal : null);
-          added.push({ itemId: item.id, serial: row.product.serialOnyx, soldPrice });
+          added.push({ itemId: item.id, serial: row.product.serialOnyx, soldPrice: row.soldPrice });
         } catch (error) {
           reasons.push(`${row.product.serialOnyx}: ${errorMessage(error)}`);
         }
@@ -307,7 +329,9 @@ export async function importCareSales(entries, user, onStep = () => {}) {
             itemId: item.id,
             warrantyMonths: WARRANTY_MONTHS,
             invoiceNumber,
-            ...(addedRow?.soldPrice != null ? { cashPrice: addedRow.soldPrice } : {}),
+            cashPrice: addedRow?.soldPrice,
+            paymentMethod,
+            installmentCount,
           };
         }),
       }, user);
@@ -320,10 +344,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         pending: reasons,
       });
       const pending = reasons.length ? ` Pendências: ${reasons.join("; ")}.` : "";
-      const priced = added.filter((row) => row.soldPrice != null);
-      const priceNote = priced.length
-        ? ` Valor vendido: ${priced.map((row) => `${row.serial} ${row.soldPrice.toFixed(2)}`).join(", ")}.`
-        : " Valor vendido não informado no Care; a baixa usou o preço à vista do estoque.";
+      const priceNote = ` Valor vendido: ${added.map((row) => `${row.serial} ${Number(row.soldPrice).toFixed(2)}`).join(", ")}. ${paymentMethod}, ${installmentCount}x.`;
       onStep(`OV ${ov} importada como ${order.number}, com NF ${invoiceNumber} e garantia de ${WARRANTY_MONTHS} meses.${priceNote}${pending}`);
     } catch (error) {
       const reason = errorMessage(error);

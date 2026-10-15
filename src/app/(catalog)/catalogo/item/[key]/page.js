@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CatalogFooter, CatalogShell, OfflineNotice, ProductDetail } from "@/components/catalog-public";
 import { getPublicCatalogItem } from "@/lib/services/public-catalog";
 
@@ -12,6 +12,7 @@ export default async function CatalogItemPage({ params }) {
       </CatalogShell>
     );
   }
+  if (catalog.redirectTo) redirect(catalog.redirectTo);
   if (!catalog.item) notFound();
 
   return (

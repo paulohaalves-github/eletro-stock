@@ -46,7 +46,7 @@ function assertOpenForExit(product) {
   }
 }
 
-export async function exitProduct({ productId, reason, observation, user, customerId, warrantyMonths, invoiceNumber, soldAt, cashPrice, fromSaleOrder = false }) {
+export async function exitProduct({ productId, reason, observation, user, customerId, warrantyMonths, invoiceNumber, soldAt, cashPrice, paymentMethod, installmentCount, fromSaleOrder = false }) {
   const product = await getProduct(productId);
   assertProductWritable(user, product);
   assertOpenForExit(product);
@@ -107,6 +107,8 @@ export async function exitProduct({ productId, reason, observation, user, custom
       soldAt,
       observation,
       cashPrice,
+      paymentMethod,
+      installmentCount,
       user,
       product: { ...product, status: STATUSES.SOLD },
       fromExit: true,

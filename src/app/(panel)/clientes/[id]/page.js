@@ -9,7 +9,7 @@ import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/u
 import { SaleOrderStatusBadge, WorkOrderStatusBadge, WorkOrderTypeBadge } from "@/components/badges";
 import { Modal } from "@/components/modal";
 import { SERVICE_PLACE_LABELS } from "@/lib/constants";
-import { formatDate, formatDateTime, formatProductId, formatWarrantyRemaining } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatProductId, formatWarrantyRemaining } from "@/lib/format";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { CustomerPhonesFields, phonesFromCustomer } from "@/components/customer-phones";
 
@@ -119,6 +119,18 @@ export default function ClienteDetailPage() {
         }
       />
 
+      <Card className="mb-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Perfil de compra</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-muted">Total gasto</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{formatCurrency(customer.purchase?.total)}</p>
+          </div>
+          <Info label="Produtos comprados" value={String(customer.purchase?.count || 0)} />
+          <Info label="Última compra" value={customer.purchase?.lastSoldAt ? formatDate(customer.purchase.lastSoldAt) : null} />
+        </div>
+      </Card>
+
       <Card className="mb-4 space-y-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">Dados de contato</p>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -210,6 +222,7 @@ export default function ClienteDetailPage() {
                 <tr>
                   <th className="px-5 py-3 font-semibold">Data</th>
                   <th className="px-5 py-3 font-semibold">Produto</th>
+                  <th className="px-5 py-3 font-semibold">Valor vendido</th>
                   <th className="px-5 py-3 font-semibold">NF</th>
                   <th className="px-5 py-3 font-semibold">Unidade</th>
                   <th className="px-5 py-3 font-semibold">Garantia</th>
@@ -226,6 +239,7 @@ export default function ClienteDetailPage() {
                         label={`${formatProductId(sale.productId)} · ${sale.commercialName || sale.product?.serialOnyx || "—"}`}
                       />
                     </td>
+                    <td className="px-5 py-4 font-medium tabular-nums">{formatCurrency(sale.cashPrice)}</td>
                     <td className="px-5 py-4 text-muted">{sale.invoiceNumber || "—"}</td>
                     <td className="px-5 py-4 text-muted">{sale.unit?.name || "—"}</td>
                     <td className="px-5 py-4">

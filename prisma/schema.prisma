@@ -408,10 +408,12 @@ model Sale {
   unitId         Int      @map("unit_id")
   soldAt         DateTime @map("sold_at")
   warrantyMonths Int      @map("warranty_months")
-  invoiceNumber  String?  @map("invoice_number") @db.VarChar(40)
-  observation    String?  @db.Text
-  cashPrice      Float    @default(0) @map("cash_price")
-  createdById    Int      @map("created_by")
+  invoiceNumber    String?  @map("invoice_number") @db.VarChar(40)
+  observation      String?  @db.Text
+  cashPrice        Float    @default(0) @map("cash_price")
+  paymentMethod    String?  @map("payment_method") @db.VarChar(80)
+  installmentCount Int?     @map("installment_count")
+  createdById      Int      @map("created_by")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -432,8 +434,10 @@ model Sale {
 model SaleOrder {
   id           Int       @id @default(autoincrement())
   number       String    @unique @db.VarChar(40)
-  ov           String?   @unique @db.VarChar(40)
-  customerId   Int       @map("customer_id")
+  ov               String?   @unique @db.VarChar(40)
+  paymentMethod    String?   @map("payment_method") @db.VarChar(80)
+  installmentCount Int?      @map("installment_count")
+  customerId       Int       @map("customer_id")
   unitId       Int       @map("unit_id")
   sellerId       Int       @map("seller_id")
   conversationId Int?      @map("conversation_id")

@@ -72,7 +72,7 @@ function ProductCard({ item }) {
         {item.categoryName ? <p className="text-xs font-semibold uppercase tracking-wide text-[#0482a4]">{item.categoryName}</p> : null}
         <h2 className="text-base font-semibold leading-snug">{item.name}</h2>
         <p className="text-sm text-muted">
-          {[item.voltageLabel, item.conditionLabel, countText(item.count)].filter(Boolean).join(" · ")}
+          {[item.voltageLabel, countText(item.count)].filter(Boolean).join(" · ")}
         </p>
         <p className="mt-auto pt-2 text-lg font-semibold">{priceText(item.cashFrom, item.cashTo)}</p>
         {item.installmentFrom > 0 ? (
@@ -162,7 +162,7 @@ function StoreContact({ store, interest, showName = true }) {
 }
 
 export function ProductDetail({ item }) {
-  const interest = `Olá, tenho interesse em ${item.name}${item.voltageLabel ? ` ${item.voltageLabel}` : ""}${item.conditionLabel ? `, ${item.conditionLabel}` : ""}.`;
+  const interest = `Olá, tenho interesse em ${item.name}${item.voltageLabel ? ` ${item.voltageLabel}` : ""}.`;
   return (
     <article className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <CatalogGallery imageIds={item.commercialImageIds} alt={item.name} />
@@ -172,7 +172,7 @@ export function ProductDetail({ item }) {
         <h1 className="catalog-display mt-1 text-4xl leading-none">{item.name}</h1>
         {item.manufacturer ? <p className="mt-2 text-sm text-muted">{item.manufacturer}</p> : null}
         <p className="mt-2 text-sm text-muted">
-          {[item.voltageLabel, item.conditionLabel, countText(item.count)].filter(Boolean).join(" · ")}
+          {[item.voltageLabel, countText(item.count)].filter(Boolean).join(" · ")}
         </p>
         <p className="mt-4 text-2xl font-semibold">{priceText(item.cashFrom, item.cashTo)}</p>
         {item.installmentFrom > 0 ? (

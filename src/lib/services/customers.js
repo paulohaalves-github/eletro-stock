@@ -258,8 +258,10 @@ export async function listCustomers({ q, page = 1, pageSize } = {}) {
 }
 
 export async function getCustomer(id, session) {
-  const customer = await prisma.customer.findUnique({
-    where: { id: Number(id) },
+  const customerId = Number(id);
+  const [customer, purchase] = await Promise.all([
+    prisma.customer.findUnique({
+    where: { id: customerId },
     select: {
       ...customerSelect,
       sales: {
@@ -322,11 +324,24 @@ export async function getCustomer(id, session) {
         },
       },
     },
-  });
+  }),
+    prisma.sale.aggregate({
+      where: { customerId },
+      _sum: { cashPrice: true },
+      _count: { _all: true },
+      _max: { soldAt: true },
+    }),
+  ]);
   if (!customer) throw notFound("Cliente não encontrado.");
+  const spent = Math.round(Number(purchase._sum.cashPrice || 0) * 100) / 100;
   const serialized = serializeCustomer(customer);
   return {
     ...serialized,
+    purchase: {
+      total: spent,
+      count: purchase._count._all,
+      lastSoldAt: purchase._max.soldAt,
+    },
     sales: customer.sales.map((sale) => serializeSale(sale)),
     workOrders: customer.workOrders.map((order) => ({
       ...order,

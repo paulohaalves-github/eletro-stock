@@ -9,6 +9,7 @@ import {
   SALE_ORDER_ITEM_STATUSES,
   SALE_ORDER_STATUSES,
   STATUSES,
+  WORK_ORDER_CLOSED_STATUSES,
   isSaleOrderClosed,
   ROLES,
 } from "../constants";
@@ -34,7 +35,7 @@ const productSelect = {
 
 const itemInclude = {
   product: { select: productSelect },
-  sale: { select: { id: true, invoiceNumber: true, warrantyMonths: true, soldAt: true } },
+  sale: { select: { id: true, cashPrice: true, invoiceNumber: true, warrantyMonths: true, soldAt: true } },
   soldBy: { select: { id: true, name: true } },
 };
 
@@ -174,6 +175,22 @@ function assertOpen(order) {
   }
 }
 
+function lineAmount(item) {
+  const candidates = [item.sale?.cashPrice, item.cashPrice, item.product?.cashPrice];
+  for (const value of candidates) {
+    if (value == null || value === "") continue;
+    const amount = Number(value);
+    if (Number.isFinite(amount)) return amount;
+  }
+  return 0;
+}
+
+function orderAmount(items) {
+  if (!items.length) return null;
+  const total = items.reduce((sum, item) => sum + lineAmount(item), 0);
+  return Math.round(total * 100) / 100;
+}
+
 function serializeItem(item) {
   if (!item) return null;
   return {
@@ -295,6 +312,7 @@ export function serializeSaleOrder(order, session) {
     items,
     closed: isSaleOrderClosed(order),
     canOperate: canOperateSaleOrder(session, order),
+    amount: orderAmount(active),
     itemCounts: {
       total: active.length,
       interest: active.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.INTEREST).length,
@@ -389,9 +407,11 @@ export async function listSaleOrders(filters, session) {
               select: {
                 id: true,
                 serialOnyx: true,
+                cashPrice: true,
                 catalogModel: { select: { commercialName: true } },
               },
             },
+            sale: { select: { cashPrice: true } },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -747,6 +767,8 @@ export async function checkoutSaleOrder(orderId, payload, user) {
       invoiceNumber,
       soldAt: payload.soldAt,
       cashPrice: soldPrice,
+      paymentMethod: entry.paymentMethod,
+      installmentCount: entry.installmentCount,
       user,
       fromSaleOrder: true,
     });
@@ -909,6 +931,28 @@ export async function releaseReservationForCareImport(productId, user) {
   );
 }
 
+async function saleLinkedToSoldItem(item) {
+  if (item.saleId) {
+    const sale = await prisma.sale.findUnique({
+      where: { id: item.saleId },
+      select: { id: true, productId: true },
+    });
+    if (sale && sale.productId !== item.productId) {
+      throw conflict(`A baixa do produto ${formatProductId(item.productId)} não confere com o registro da venda.`);
+    }
+    return sale;
+  }
+  const found = await prisma.sale.findMany({
+    where: { productId: item.productId },
+    select: { id: true, productId: true },
+    orderBy: { soldAt: "desc" },
+  });
+  if (found.length > 1) {
+    throw conflict(`O produto ${formatProductId(item.productId)} tem mais de uma venda registrada. A exclusão foi interrompida.`);
+  }
+  return found[0] || null;
+}
+
 export async function deleteSaleOrder(id, user) {
   if (!canManageAllSaleOrders(user.role)) throw forbidden("Só o gestor ou o administrador pode excluir uma venda.");
   const order = await prisma.saleOrder.findUnique({
@@ -919,13 +963,41 @@ export async function deleteSaleOrder(id, user) {
           id: true,
           status: true,
           productId: true,
-          product: { select: { id: true, status: true, unitId: true } },
+          saleId: true,
+          product: { select: { id: true, status: true, unitId: true, locationId: true } },
         },
       },
     },
   });
   if (!order) throw notFound("Venda não encontrada.");
 
+  const soldItems = order.items.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD);
+  const soldSales = [];
+  for (const item of soldItems) {
+    soldSales.push({ item, sale: await saleLinkedToSoldItem(item) });
+  }
+  const saleIds = soldSales.map((row) => row.sale?.id).filter(Boolean);
+  const productIds = soldItems.map((item) => item.productId);
+  if (saleIds.length || productIds.length) {
+    const blockers = await prisma.workOrder.findMany({
+      where: {
+        OR: [
+          ...(saleIds.length ? [{ saleId: { in: saleIds } }] : []),
+          ...(productIds.length ? [{
+            productId: { in: productIds },
+            status: { notIn: WORK_ORDER_CLOSED_STATUSES },
+          }] : []),
+        ],
+      },
+      select: { number: true },
+    });
+    if (blockers.length) {
+      const numbers = [...new Set(blockers.map((row) => row.number))].join(", ");
+      throw conflict(`Não é possível excluir esta venda. A ordem de serviço ${numbers} está ligada a um produto já baixado.`);
+    }
+  }
+
+  const reverted = [];
   await prisma.$transaction(async (tx) => {
     for (const item of order.items) {
       const locked = item.status === SALE_ORDER_ITEM_STATUSES.RESERVED || item.status === SALE_ORDER_ITEM_STATUSES.ORDERED;
@@ -944,6 +1016,27 @@ export async function deleteSaleOrder(id, user) {
         userId: user.id,
       }, tx);
     }
+    for (const { item, sale } of soldSales) {
+      if (item.product?.status === STATUSES.SOLD) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { status: STATUSES.AVAILABLE },
+        });
+        await writeMovement({
+          productId: item.productId,
+          type: MOVEMENT_TYPES.UPDATE,
+          previousStatus: STATUSES.SOLD,
+          newStatus: STATUSES.AVAILABLE,
+          observation: `Disponível ao excluir a venda ${order.number}.`,
+          previousLocationId: item.product.locationId,
+          newLocationId: item.product.locationId,
+          ...movementUnitFields(item.product),
+          userId: user.id,
+        }, tx);
+        reverted.push(item.productId);
+      }
+      if (sale) await tx.sale.delete({ where: { id: sale.id } });
+    }
     await tx.saleOrder.delete({ where: { id: order.id } });
   });
 
@@ -952,6 +1045,6 @@ export async function deleteSaleOrder(id, user) {
     action: "SALE_ORDER_DELETED",
     entity: "sale_order",
     entityId: order.id,
-    oldData: { number: order.number, status: order.status },
+    oldData: { number: order.number, status: order.status, revertedProducts: reverted, removedSales: saleIds },
   });
 }

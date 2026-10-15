@@ -1,12 +1,6 @@
 import { prisma } from "../db";
 import { notFound } from "../errors";
 import { STATUSES, VOLTAGE_LABELS } from "../constants";
-
-const PUBLIC_CONDITION_LABELS = {
-  NOVO: "Novo",
-  NOVO_COM_AVARIA: "Avaria estética leve",
-  REVISADO: "Revisado",
-};
 import { formatUnitAddress } from "../units";
 import { normalizeWhatsAppPhone } from "../phone";
 import { getCatalogSettings } from "./settings";
@@ -39,7 +33,17 @@ function productName(product) {
 
 function groupKey(product) {
   const model = product.catalogModel?.id ? `m${product.catalogModel.id}` : `n${slug(productName(product))}`;
-  return `${model}-${slug(product.voltage || "sem-voltagem")}-${slug(product.condition || "sem")}`.slice(0, 180);
+  return `${model}-${slug(product.voltage || "sem-voltagem")}`.slice(0, 180);
+}
+
+function withoutConditionSuffix(key) {
+  const value = String(key || "");
+  const suffixes = ["novo-com-avaria", "revisado", "novo", "sem"];
+  for (const suffix of suffixes) {
+    const tail = `-${suffix}`;
+    if (value.endsWith(tail) && value.length > tail.length) return value.slice(0, -tail.length);
+  }
+  return value;
 }
 
 function minPositive(values) {
@@ -101,7 +105,6 @@ async function loadAvailableProducts() {
     select: {
       id: true,
       voltage: true,
-      condition: true,
       cashPrice: true,
       installmentPrice: true,
       supplierModelCode: true,
@@ -154,8 +157,6 @@ function buildGroups(products) {
         name: productName(product),
         voltage: product.voltage || "",
         voltageLabel: VOLTAGE_LABELS[product.voltage] || product.voltage || "",
-        condition: product.condition || "",
-        conditionLabel: PUBLIC_CONDITION_LABELS[product.condition] || product.condition || "",
         categoryId: product.category?.id || null,
         categoryName: product.category?.name || "",
         manufacturerId: null,
@@ -200,8 +201,6 @@ function buildGroups(products) {
       name: group.name,
       voltage: group.voltage,
       voltageLabel: group.voltageLabel,
-      condition: group.condition,
-      conditionLabel: group.conditionLabel,
       categoryId: group.categoryId,
       categoryName: group.categoryName,
       manufacturerId: group.manufacturerId,
@@ -318,8 +317,11 @@ export async function getPublicCatalog(filters = {}) {
 
 export async function getPublicCatalogItem(key) {
   const catalog = await getPublicCatalog();
-  const item = catalog.items.find((group) => group.key === key) || null;
-  return { ...catalog, item };
+  const direct = catalog.items.find((group) => group.key === key) || null;
+  if (direct) return { ...catalog, item: direct, redirectTo: null };
+  const clean = withoutConditionSuffix(key);
+  const item = clean === key ? null : catalog.items.find((group) => group.key === clean) || null;
+  return { ...catalog, item, redirectTo: item ? `/catalogo/item/${item.key}` : null };
 }
 
 function uploadPathFromFileUrl(fileUrl) {

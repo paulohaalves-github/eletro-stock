@@ -22,6 +22,16 @@ function amountOf(item) {
   return fromItem != null ? fromItem : 0;
 }
 
+function paymentLabel(method, count) {
+  const name = String(method || "").trim();
+  const parcels = Number(count);
+  const hasParcels = Number.isInteger(parcels) && parcels > 0;
+  if (name && hasParcels) return `${name} · ${parcels}x`;
+  if (name) return name;
+  if (hasParcels) return `${parcels}x`;
+  return "Não informado";
+}
+
 function bump(map, key, name, amount) {
   const current = map.get(key) || { id: key, name, amount: 0, count: 0 };
   current.amount += amount;
@@ -66,11 +76,13 @@ export async function listSoldCommercialRows(session, range) {
         saleOrder: orderWhere,
       },
       include: {
-        sale: { select: { cashPrice: true, invoiceNumber: true } },
+        sale: { select: { cashPrice: true, invoiceNumber: true, paymentMethod: true, installmentCount: true } },
         saleOrder: {
           select: {
             id: true,
             number: true,
+            paymentMethod: true,
+            installmentCount: true,
             sellerId: true,
             seller: { select: { id: true, name: true } },
             customer: { select: { id: true, name: true } },
@@ -126,6 +138,9 @@ export async function listSoldCommercialRows(session, range) {
       attendantName: item.soldBy?.name || "Sem atendente",
       saleNumber: item.saleOrder?.number || null,
       invoiceNumber: item.invoiceNumber || item.sale?.invoiceNumber || null,
+      paymentMethod: item.sale?.paymentMethod || item.saleOrder?.paymentMethod || null,
+      installmentCount: item.sale?.installmentCount ?? item.saleOrder?.installmentCount ?? null,
+      paymentLabel: paymentLabel(item.sale?.paymentMethod || item.saleOrder?.paymentMethod, item.sale?.installmentCount ?? item.saleOrder?.installmentCount),
       customerName: item.saleOrder?.customer?.name || "—",
       origin: "Comercial",
       productId: item.product?.id,
@@ -145,6 +160,9 @@ export async function listSoldCommercialRows(session, range) {
       attendantName: sale.createdBy?.name || "Sem atendente",
       saleNumber: null,
       invoiceNumber: sale.invoiceNumber || null,
+      paymentMethod: sale.paymentMethod || null,
+      installmentCount: sale.installmentCount ?? null,
+      paymentLabel: paymentLabel(sale.paymentMethod, sale.installmentCount),
       customerName: sale.customer?.name || "—",
       origin: "Baixa avulsa",
       productId: sale.product?.id,
@@ -190,6 +208,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
   const byType = new Map();
   const bySeller = new Map();
   const byAttendant = new Map();
+  const byPayment = new Map();
   const days = emptyDays(range.start, range.end);
   const dayMap = Object.fromEntries(days.map((day) => [day.date, day]));
 
@@ -197,6 +216,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
     bump(byType, row.categoryId, row.categoryName, row.amount);
     bump(bySeller, row.sellerId, row.sellerName, row.amount);
     bump(byAttendant, row.attendantId, row.attendantName, row.amount);
+    bump(byPayment, row.paymentLabel, row.paymentLabel, row.amount);
     const key = row.soldAt ? dayKey(row.soldAt) : null;
     if (key && dayMap[key]) {
       dayMap[key].amount += row.amount;
@@ -231,6 +251,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
     byType: ranked(byType, totalAmount),
     bySeller: ranked(bySeller, totalAmount),
     byAttendant: ranked(byAttendant, totalAmount),
+    byPayment: ranked(byPayment, totalAmount),
     daily: days,
     recent: rows.slice(0, 8),
   };
@@ -251,6 +272,8 @@ export function commercialReportRows(rows) {
       "Vendedor",
       "Atendente",
       "NF",
+      "Forma de pagamento",
+      "Parcelas",
       "Valor vendido",
     ],
     rows: rows.map((row) => [
@@ -265,6 +288,8 @@ export function commercialReportRows(rows) {
       row.sellerName,
       row.attendantName,
       row.invoiceNumber || "—",
+      row.paymentMethod || "—",
+      row.installmentCount || "—",
       formatCurrency(row.amount),
     ]),
     summary: {

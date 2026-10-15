@@ -177,13 +177,16 @@ function parseCareMoney(value) {
 
 async function readCareProducts(page) {
   await page.waitForFunction(() => {
-    return [...document.querySelectorAll("th")].some((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toUpperCase() === "ON");
+    const root = document.querySelector("#peca_lista") || document;
+    return [...root.querySelectorAll("th")].some((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toUpperCase() === "ON");
   }, { timeout: 20000 });
   const rows = await page.evaluate(() => {
-    const header = [...document.querySelectorAll("th")].find((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toUpperCase() === "ON");
+    const label = (cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toUpperCase();
+    const root = document.querySelector("#peca_lista") || document;
+    const header = [...root.querySelectorAll("th")].find((cell) => label(cell) === "ON");
     const table = header?.closest("table");
     if (!table || header.cellIndex < 0) return [];
-    const totalHeader = [...table.querySelectorAll("th")].find((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toUpperCase() === "TOTAL");
+    const saleHeader = [...table.querySelectorAll("th")].find((cell) => label(cell) === "VALOR VENDA");
     const products = [];
     const seen = new Set();
     for (const row of table.querySelectorAll("tbody tr")) {
@@ -191,9 +194,9 @@ async function readCareProducts(page) {
       const serial = (row.cells[header.cellIndex]?.textContent || "").replace(/\s+/g, "").toUpperCase();
       if (!/^ON\d+$/.test(serial) || seen.has(serial)) continue;
       seen.add(serial);
-      const soldPriceText = totalHeader && totalHeader.cellIndex >= 0
-        ? (row.cells[totalHeader.cellIndex]?.textContent || "").replace(/\s+/g, " ").trim()
-        : "";
+      const priceCell = saleHeader && saleHeader.cellIndex >= 0 ? row.cells[saleHeader.cellIndex] : null;
+      const input = priceCell ? [...priceCell.querySelectorAll("input")].find((field) => /\d/.test(field.value || "")) : null;
+      const soldPriceText = input?.value || (priceCell?.textContent || "").replace(/\s+/g, " ").trim();
       products.push({ serialOnyx: serial, soldPriceText });
     }
     return products;
@@ -202,6 +205,37 @@ async function readCareProducts(page) {
     serialOnyx: row.serialOnyx,
     soldPrice: parseCareMoney(row.soldPriceText),
   }));
+}
+
+async function readCarePayment(page) {
+  await page.waitForFunction(() => {
+    const root = document.querySelector("#dados_recebimento") || document;
+    return [...root.querySelectorAll("th")].some((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "forma de pagamento");
+  }, { timeout: 15000 }).catch(() => null);
+  return page.evaluate(() => {
+    const label = (cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const root = document.querySelector("#dados_recebimento") || document;
+    const header = [...root.querySelectorAll("th")].find((cell) => label(cell) === "forma de pagamento");
+    const table = header?.closest("table");
+    if (!table || header.cellIndex < 0) return { methods: [], installmentCount: 0 };
+    const methods = [];
+    for (const row of table.querySelectorAll("tbody tr")) {
+      if (/totais/i.test(row.textContent || "")) continue;
+      const rowText = (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim();
+      if (!/\d/.test(rowText)) continue;
+      const cell = row.cells?.[header.cellIndex];
+      if (!cell) continue;
+      const select = cell.querySelector("select");
+      const selected = select?.selectedOptions?.[0];
+      const fromSelect = selected && String(selected.value || "").trim()
+        ? (selected.textContent || "").replace(/\s+/g, " ").trim()
+        : "";
+      const input = [...cell.querySelectorAll("input")].find((field) => String(field.value || "").trim());
+      const method = fromSelect || input?.value?.trim() || (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim();
+      methods.push(method);
+    }
+    return { methods, installmentCount: methods.length };
+  });
 }
 
 async function collectListOvs(page) {
@@ -508,7 +542,7 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
       skipped.push({ ov: "", reason: `${alreadyImported} OV(s) já estavam no sistema.` });
     }
     for (let index = 0; index < pendingRows.length; index += 1) {
-      const { ov, invoiceNumber, orderTotal } = pendingRows[index];
+      const { ov, invoiceNumber } = pendingRows[index];
       onStep(`Lendo a OV ${ov}.`, {
         phase: "read",
         current: index + 1,
@@ -536,15 +570,19 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
           break;
         }
         const products = await readCareProducts(page);
+        const payment = await readCarePayment(page);
         sales.push({
           ov,
           invoiceNumber,
-          orderTotal,
           customer: mapCareCustomer(raw),
           sellerName: raw.approvalUser || "",
           products,
+          payment,
         });
-        onStep(`OV ${ov}: ${raw.name || "cliente sem nome"}, ${products.length} produto(s).`);
+        const paymentLabel = payment.installmentCount
+          ? `${payment.methods[0] || "sem forma"}, ${payment.installmentCount}x`
+          : "sem recebimento";
+        onStep(`OV ${ov}: ${raw.name || "cliente sem nome"}, ${products.length} produto(s), ${paymentLabel}.`);
       } catch (error) {
         const reason = error instanceof Error && error.status
           ? error.message

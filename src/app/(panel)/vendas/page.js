@@ -9,7 +9,7 @@ import { LoadMore, SearchActions } from "@/components/paged-list";
 import { SaleOrderStatusBadge } from "@/components/badges";
 import { ConfirmDialog } from "@/components/modal";
 import { SALE_ORDER_STATUS_LABELS } from "@/lib/constants";
-import { formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { can, canManageAllSaleOrders, canViewAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
@@ -76,10 +76,10 @@ function SaleCard({ item, onOpen }) {
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <p className="font-semibold text-accent">{item.number}</p>
-        <span className="text-[11px] text-muted">{item.itemCounts?.total || 0} item(ns)</span>
+        <span className="text-sm font-semibold tabular-nums">{item.amount == null ? "—" : formatCurrency(item.amount)}</span>
       </div>
       <p className="line-clamp-2 text-sm font-medium">{item.customer?.name || "—"}</p>
-      <p className="mt-1 text-xs text-muted">Vendedor: {item.seller?.name || "—"}</p>
+      <p className="mt-1 text-xs text-muted">Vendedor: {item.seller?.name || "—"} · {item.itemCounts?.total || 0} item(ns)</p>
       {item.ov ? <p className="mt-1 text-xs text-muted">OV {item.ov}</p> : null}
       <p className="mt-1 line-clamp-2 text-xs text-muted">{productSummary(item)}</p>
       <p className="mt-2 text-[11px] text-muted">Abertura: {formatDateTime(item.createdAt)}</p>
@@ -320,6 +320,7 @@ export default function VendasPage() {
                   <th className="px-5 py-3 font-semibold">Cliente</th>
                   <th className="px-5 py-3 font-semibold">Vendedor</th>
                   <th className="px-5 py-3 font-semibold">Produtos</th>
+                  <th className="px-5 py-3 font-semibold">Valor</th>
                   <th className="px-5 py-3 font-semibold">Abertura</th>
                   <th className="px-5 py-3 font-semibold">Status</th>
                 </tr>
@@ -341,6 +342,7 @@ export default function VendasPage() {
                       <p className="font-medium">{productSummary(item)}</p>
                       <p className="text-xs text-muted">{item.itemCounts?.total || 0} item(ns)</p>
                     </td>
+                    <td className="px-5 py-4 font-medium tabular-nums">{item.amount == null ? "—" : formatCurrency(item.amount)}</td>
                     <td className="px-5 py-4 text-muted">{formatDateTime(item.createdAt)}</td>
                     <td className="px-5 py-4"><SaleOrderStatusBadge status={item.status} /></td>
                   </tr>

@@ -96,7 +96,7 @@ export function SalesDashboard({ embedded = false }) {
         title={embedded ? null : "Dashboard comercial"}
         subtitle={
           data.unit
-            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa.`
+            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa. Forma de pagamento e parcelas vêm do recebimento.`
             : "Faturamento pelo valor vendido na baixa."
         }
         actions={
@@ -170,10 +170,11 @@ export function SalesDashboard({ embedded = false }) {
 
       <Charts byType={data.byType} daily={data.daily} />
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-3">
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
         <BreakdownTable title="Por tipo de produto" empty="Nenhuma baixa por categoria no período." rows={data.byType} />
         <BreakdownTable title="Por vendedor" empty="Nenhuma baixa por vendedor no período." rows={data.bySeller} />
         <BreakdownTable title="Por atendente" empty="Nenhuma baixa por atendente no período." rows={data.byAttendant} />
+        <BreakdownTable title="Por forma de pagamento" empty="Nenhuma baixa com forma de pagamento no período." rows={data.byPayment} />
       </div>
 
       <Card className="mt-6">
@@ -195,6 +196,7 @@ export function SalesDashboard({ embedded = false }) {
                   {formatDateTime(item.soldAt)}
                   {item.saleNumber ? ` · ${item.saleNumber}` : ""}
                   {` · ${item.sellerName}`}
+                  {item.paymentLabel && item.paymentLabel !== "Não informado" ? ` · ${item.paymentLabel}` : ""}
                 </p>
               </div>
               <p className="text-sm font-semibold tabular-nums">{formatCurrency(item.amount)}</p>

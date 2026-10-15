@@ -74,6 +74,8 @@ export async function createSale({
   soldAt,
   observation,
   cashPrice,
+  paymentMethod,
+  installmentCount,
   user,
   product: currentProduct,
   fromExit = false,
@@ -102,6 +104,8 @@ export async function createSale({
   const recordedPrice = fromExit && cashPrice != null && cashPrice !== "" && Number.isFinite(quoted) && quoted >= 0
     ? Math.round(quoted * 100) / 100
     : Number(product.cashPrice || 0);
+  const parcels = Number(installmentCount);
+  const recordedParcels = fromExit && Number.isInteger(parcels) && parcels > 0 ? parcels : null;
 
   const sale = await prisma.sale.create({
     data: {
@@ -113,6 +117,8 @@ export async function createSale({
       invoiceNumber: invoice,
       observation: emptyToNull(observation),
       cashPrice: recordedPrice,
+      paymentMethod: fromExit ? emptyToNull(paymentMethod) : null,
+      installmentCount: recordedParcels,
       createdById: user.id,
     },
     include: saleInclude,
