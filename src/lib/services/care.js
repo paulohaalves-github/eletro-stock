@@ -157,13 +157,31 @@ async function readCareCustomerPage(page) {
   });
 }
 
-function parseCareFinalizedAt(value) {
-  const match = String(value || "").match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
-  if (!match) return null;
-  const [, day, month, year, hour, minute] = match;
-  const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00-03:00`);
+function parseCareDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  let year;
+  let month;
+  let day;
+  let hour;
+  let minute;
+  const br = text.match(/(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2}))?/);
+  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (br) {
+    [, day, month, year, hour, minute] = br;
+  } else if (iso) {
+    [, year, month, day, hour, minute] = iso;
+  } else {
+    return null;
+  }
+  const hasTime = hour != null && minute != null;
+  const date = new Date(`${year}-${month}-${day}T${hasTime ? hour : "00"}:${hasTime ? minute : "00"}:00-03:00`);
   if (Number.isNaN(date.getTime()) || date > new Date()) return null;
   return date.toISOString();
+}
+
+function parseCareFinalizedAt(value) {
+  return parseCareDate(value);
 }
 
 function parseCareMoney(value) {
@@ -295,6 +313,11 @@ async function collectListOvs(page) {
       const vendaHeader = findHeader(table, "venda", "os_id");
       const invoiceHeader = findHeader(table, "nota fiscal", "os_nf_numero");
       const totalHeader = findHeader(table, "valor total", "os_valor_total");
+      const dateHeader = ["data venda", "data da venda", "dt venda", "finalizado"].map((label) => findHeader(table, label, "os_data")).find(Boolean)
+        || [...table.querySelectorAll("th")].find((cell) => {
+          const label = labelOf(cell);
+          return label === "data venda" || label === "data da venda" || (label.includes("data") && label.includes("venda"));
+        });
       if (!vendaHeader || vendaHeader.cellIndex < 0) continue;
       const bodyRows = [...table.querySelectorAll("tbody tr")];
       const source = bodyRows.length ? bodyRows : [...table.querySelectorAll("tr")].slice(1);
@@ -308,8 +331,10 @@ async function collectListOvs(page) {
         const invoiceNumber = (invoiceCell?.innerText || "").replace(/\s+/g, " ").trim();
         const totalCell = totalHeader ? row.cells?.[totalHeader.cellIndex] : null;
         const orderTotalText = (totalCell?.innerText || "").replace(/\s+/g, " ").trim();
+        const dateCell = dateHeader ? row.cells?.[dateHeader.cellIndex] : null;
+        const soldAtText = (dateCell?.innerText || "").replace(/\s+/g, " ").trim();
         seen.add(ov);
-        rows.push({ ov, invoiceNumber, orderTotalText });
+        rows.push({ ov, invoiceNumber, orderTotalText, soldAtText });
       }
       if (rows.length) break;
     }
@@ -319,6 +344,7 @@ async function collectListOvs(page) {
     ov: row.ov,
     invoiceNumber: row.invoiceNumber,
     orderTotal: parseCareMoney(row.orderTotalText),
+    soldAt: parseCareDate(row.soldAtText),
   }));
 }
 
@@ -498,7 +524,7 @@ async function closeCareBrowser(browser) {
   }
 }
 
-export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [] } = {}) {
+export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [], refreshOvs = [] } = {}) {
   const config = await careConfig();
   const known = new Set(skipOvs.map((value) => String(value)));
   onStep("Abrindo o navegador.", { phase: "list", current: 0, total: 0, label: "Abrindo o navegador" });
@@ -560,6 +586,12 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
 
     const sales = [];
     const skipped = [];
+    const dateUpdates = [];
+    const refreshSet = new Set(refreshOvs.map((value) => String(value)));
+    for (const row of listed) {
+      if (refreshSet.has(String(row.ov)) && row.soldAt) dateUpdates.push({ ov: row.ov, soldAt: row.soldAt });
+    }
+    const refreshRows = listed.filter((row) => refreshSet.has(String(row.ov)) && !dateUpdates.some((item) => item.ov === row.ov));
     const pendingRows = listed.filter((row) => !known.has(row.ov));
     onStep(`Lista concluída com ${listed.length} OV(s). Lendo os detalhes.`, {
       phase: "read",
@@ -569,7 +601,8 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
     });
     const alreadyImported = listed.length - pendingRows.length;
     if (alreadyImported) {
-      onStep(`${alreadyImported} OV(s) já importadas foram puladas.`);
+      const dateNote = refreshRows.length ? ` ${refreshRows.length} terão a data da venda relida.` : "";
+      onStep(`${alreadyImported} OV(s) já importadas foram puladas.${dateNote}`);
       skipped.push({ ov: "", reason: `${alreadyImported} OV(s) já estavam no sistema.` });
     }
     for (let index = 0; index < pendingRows.length; index += 1) {
@@ -602,7 +635,7 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
         }
         const products = await readCareProducts(page);
         const payment = await readCarePayment(page);
-        const soldAt = await readCareFinalizedAt(page);
+        const soldAt = (await readCareFinalizedAt(page)) || parseCareDate(raw.deliveryForecast) || pendingRows[index].soldAt || null;
         sales.push({
           ov,
           invoiceNumber,
@@ -629,7 +662,50 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
       }
     }
 
-    return { sales, skipped };
+    if (refreshRows.length) {
+      onStep(`Relendo a data da venda de ${refreshRows.length} OV(s) já importadas.`, {
+        phase: "read",
+        current: 0,
+        total: refreshRows.length,
+        label: "Atualizando datas de venda",
+      });
+    }
+    for (let index = 0; index < refreshRows.length; index += 1) {
+      const row = refreshRows[index];
+      try {
+        await page.goto(careStepUrl(config, row.ov, 3), { waitUntil: "domcontentloaded" });
+        if (page.url().includes("login.php")) {
+          onStep("A sessão do Care expirou antes de atualizar as datas já importadas.");
+          break;
+        }
+        const raw = await readCareCustomerPage(page);
+        const soldAt = parseCareDate(raw.deliveryForecast);
+        if (!soldAt) {
+          onStep(`OV ${row.ov}: o Care não informou a data da venda.`);
+          continue;
+        }
+        dateUpdates.push({ ov: row.ov, soldAt });
+        const soldLabel = new Intl.DateTimeFormat("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date(soldAt));
+        onStep(`OV ${row.ov}: data da venda no Care é ${soldLabel}.`, {
+          phase: "read",
+          current: index + 1,
+          total: refreshRows.length,
+          label: `Data ${index + 1} de ${refreshRows.length}`,
+        });
+      } catch {
+        onStep(`OV ${row.ov}: não foi possível reler a data da venda.`);
+      }
+    }
+
+    return { sales, skipped, dateUpdates };
   } finally {
     onStep("Encerrando o navegador.");
     await closeCareBrowser(browser);

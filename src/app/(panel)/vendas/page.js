@@ -83,6 +83,7 @@ function SaleCard({ item, onOpen }) {
       {item.ov ? <p className="mt-1 text-xs text-muted">OV {item.ov}</p> : null}
       <p className="mt-1 line-clamp-2 text-xs text-muted">{productSummary(item)}</p>
       <p className="mt-2 text-[11px] text-muted">Abertura: {formatDateTime(item.createdAt)}</p>
+      <p className="text-[11px] text-muted">Venda: {item.soldAt ? formatDateTime(item.soldAt) : "—"}</p>
     </button>
   );
 }
@@ -313,7 +314,7 @@ export default function VendasPage() {
       ) : (
         <Card className="w-full overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[1100px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="px-5 py-3 font-semibold">Venda</th>
@@ -322,6 +323,7 @@ export default function VendasPage() {
                   <th className="px-5 py-3 font-semibold">Produtos</th>
                   <th className="px-5 py-3 font-semibold">Valor</th>
                   <th className="px-5 py-3 font-semibold">Abertura</th>
+                  <th className="px-5 py-3 font-semibold">Data da venda</th>
                   <th className="px-5 py-3 font-semibold">Status</th>
                 </tr>
               </thead>
@@ -344,6 +346,7 @@ export default function VendasPage() {
                     </td>
                     <td className="px-5 py-4 font-medium tabular-nums">{item.amount == null ? "—" : formatCurrency(item.amount)}</td>
                     <td className="px-5 py-4 text-muted">{formatDateTime(item.createdAt)}</td>
+                    <td className="px-5 py-4 text-muted">{item.soldAt ? formatDateTime(item.soldAt) : "—"}</td>
                     <td className="px-5 py-4"><SaleOrderStatusBadge status={item.status} /></td>
                   </tr>
                 ))}
@@ -363,7 +366,7 @@ export default function VendasPage() {
       <ConfirmDialog
         open={syncOpen}
         title="Sincronizar com o Care"
-        message="As OVs finalizadas serão importadas e os produtos disponíveis, ou só reservados, receberão baixa com garantia de 6 meses. A NF de cada baixa é o número da coluna Nota Fiscal."
+        message="As OVs finalizadas serão importadas e os produtos disponíveis, ou só reservados, receberão baixa com garantia de 6 meses. A NF de cada baixa é o número da coluna Nota Fiscal. Vendas já importadas cuja data coincidiu com o horário da sincronização terão a data relida no Care."
         confirmLabel="Sincronizar"
         loading={syncing}
         onConfirm={() => void syncCare()}

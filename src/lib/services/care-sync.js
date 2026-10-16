@@ -60,20 +60,23 @@ async function syncActor(unitId) {
 
 export async function executeCareSync(user) {
   const { collectCareFinalizedSales } = await import("./care");
-  const { importCareSales } = await import("./care-sales");
+  const { importCareSales, applyCareSaleDates, careOvsNeedingSaleDate } = await import("./care-sales");
   const existing = await prisma.saleOrder.findMany({
     where: { ov: { not: null } },
     select: { ov: true },
   });
   const collected = await collectCareFinalizedSales((message) => {
     console.log(`[care-sync] ${message}`);
-  }, { skipOvs: existing.map((item) => item.ov) });
+  }, { skipOvs: existing.map((item) => item.ov), refreshOvs: await careOvsNeedingSaleDate() });
   const imported = await importCareSales(collected.sales, user, (message) => {
+    console.log(`[care-sync] ${message}`);
+  });
+  const datesUpdated = await applyCareSaleDates(collected.dateUpdates, (message) => {
     console.log(`[care-sync] ${message}`);
   });
   const importedCount = imported.imported?.length || 0;
   const skippedCount = (collected.skipped?.length || 0) + (imported.skipped?.length || 0);
-  const message = `${importedCount} venda(s) importada(s). ${skippedCount} ignorada(s).`;
+  const message = `${importedCount} venda(s) importada(s). ${datesUpdated} data(s) de venda atualizada(s). ${skippedCount} ignorada(s).`;
   const lastRun = await recordCareSyncRun({ imported: importedCount, skipped: skippedCount, error: null, message });
   return { imported: importedCount, skipped: skippedCount, message, lastRun };
 }

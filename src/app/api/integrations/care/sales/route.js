@@ -4,7 +4,7 @@ import { conflict, forbidden } from "@/lib/errors";
 import { ndjsonStream } from "@/lib/ndjson-stream";
 import { can, canManageAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
 import { collectCareFinalizedSales } from "@/lib/services/care";
-import { importCareSales } from "@/lib/services/care-sales";
+import { importCareSales, applyCareSaleDates, careOvsNeedingSaleDate } from "@/lib/services/care-sales";
 import { acquireCareSyncLock, holdCareSyncLock, releaseCareSyncLock } from "@/lib/services/care-sync";
 import { recordCareSyncRun } from "@/lib/services/settings";
 
@@ -31,16 +31,19 @@ export const POST = apiHandler(async (_request, { session }) => {
         where: { ov: { not: null } },
         select: { ov: true },
       });
+      const refreshOvs = await careOvsNeedingSaleDate();
       const report = (message, progress) => {
         send({ type: "step", message, progress: progress || null });
       };
       const collected = await collectCareFinalizedSales(report, {
         skipOvs: existing.map((item) => item.ov),
+        refreshOvs,
       });
       const imported = await importCareSales(collected.sales, session, report);
+      const datesUpdated = await applyCareSaleDates(collected.dateUpdates, report);
       const importedCount = imported.imported?.length || 0;
       const skippedCount = collected.skipped.length + imported.skipped.length;
-      const message = `${importedCount} venda(s) importada(s). ${skippedCount} ignorada(s).`;
+      const message = `${importedCount} venda(s) importada(s). ${datesUpdated} data(s) de venda atualizada(s). ${skippedCount} ignorada(s).`;
       await recordCareSyncRun({ imported: importedCount, skipped: skippedCount, error: null, message });
       send({
         type: "done",

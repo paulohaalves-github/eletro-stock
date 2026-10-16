@@ -304,6 +304,16 @@ function deriveStatus(order, items = order.items || []) {
   return SALE_ORDER_STATUSES.INTEREST;
 }
 
+function orderSoldAt(items) {
+  const times = (items || [])
+    .filter((item) => item.status !== SALE_ORDER_ITEM_STATUSES.REMOVED)
+    .map((item) => item.soldAt || item.sale?.soldAt)
+    .map((value) => (value ? new Date(value).getTime() : NaN))
+    .filter((value) => !Number.isNaN(value));
+  if (!times.length) return null;
+  return new Date(Math.min(...times));
+}
+
 export function serializeSaleOrder(order, session) {
   if (!order) return null;
   const items = (order.items || []).map(serializeItem);
@@ -311,6 +321,7 @@ export function serializeSaleOrder(order, session) {
   return {
     ...order,
     items,
+    soldAt: orderSoldAt(items),
     closed: isSaleOrderClosed(order),
     canOperate: canOperateSaleOrder(session, order),
     amount: orderAmount(active),
@@ -412,7 +423,7 @@ export async function listSaleOrders(filters, session) {
                 catalogModel: { select: { commercialName: true } },
               },
             },
-            sale: { select: { cashPrice: true } },
+            sale: { select: { cashPrice: true, soldAt: true } },
           },
           orderBy: { createdAt: "asc" },
         },

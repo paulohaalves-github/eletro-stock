@@ -12,7 +12,7 @@ import { ScanField } from "@/components/scan-field";
 import { SaleOrderItemBadge, SaleOrderStatusBadge, StatusBadge } from "@/components/badges";
 import { SaleOrderTimeline } from "@/components/sale-order-timeline";
 import { SALE_ORDER_ITEM_STATUSES, SALE_ORDER_STATUSES, WARRANTY_MONTHS } from "@/lib/constants";
-import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
@@ -230,6 +230,7 @@ export default function VendaDetailPage() {
             />
           ) : null}
           <Info label="Aberto por" value={order.createdBy?.name} />
+          <Info label="Vendida em" value={order.soldAt ? formatDateTime(order.soldAt) : "—"} />
           {order.conversation?.id ? (
             <Info
               label="Conversa"

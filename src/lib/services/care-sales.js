@@ -365,3 +365,48 @@ export async function importCareSales(entries, user, onStep = () => {}) {
   onStep(`Importação concluída. ${imported.length} venda(s) gravada(s) nesta etapa.`);
   return { imported, skipped, warnings };
 }
+
+function saleDateLooksLikeImport(soldAt, createdAt) {
+  if (!soldAt || !createdAt) return true;
+  return Math.abs(new Date(soldAt).getTime() - new Date(createdAt).getTime()) < 2 * 60 * 1000;
+}
+
+export async function careOvsNeedingSaleDate() {
+  const orders = await prisma.saleOrder.findMany({
+    where: { ov: { not: null } },
+    select: {
+      ov: true,
+      items: {
+        where: { status: SALE_ORDER_ITEM_STATUSES.SOLD, saleId: { not: null } },
+        select: { soldAt: true, sale: { select: { soldAt: true, createdAt: true } } },
+      },
+    },
+  });
+  return orders
+    .filter((order) => order.items.some((item) => saleDateLooksLikeImport(item.sale?.soldAt || item.soldAt, item.sale?.createdAt)))
+    .map((order) => order.ov);
+}
+
+export async function applyCareSaleDates(updates, onStep = () => {}) {
+  let updated = 0;
+  for (const entry of updates || []) {
+    const soldAt = new Date(entry.soldAt);
+    if (!entry.ov || Number.isNaN(soldAt.getTime())) continue;
+    const order = await prisma.saleOrder.findUnique({
+      where: { ov: String(entry.ov) },
+      select: { id: true, number: true, items: { select: { saleId: true } } },
+    });
+    if (!order) continue;
+    const saleIds = [...new Set(order.items.map((item) => item.saleId).filter(Boolean))];
+    if (saleIds.length) {
+      await prisma.sale.updateMany({ where: { id: { in: saleIds } }, data: { soldAt } });
+    }
+    await prisma.saleOrderItem.updateMany({
+      where: { saleOrderId: order.id, status: SALE_ORDER_ITEM_STATUSES.SOLD },
+      data: { soldAt },
+    });
+    updated += 1;
+    onStep(`OV ${entry.ov}: data da venda gravada em ${order.number}.`);
+  }
+  return updated;
+}
