@@ -328,3 +328,75 @@ export async function saveIcecatSettings(payload, actor) {
     configured: Boolean(username && apiToken),
   });
 }
+
+const OPENAI_KEYS = {
+  apiKey: "openai.apiKey",
+  model: "openai.model",
+};
+
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+
+export async function getOpenAISettings() {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: Object.values(OPENAI_KEYS) } },
+  });
+  const apiKey = (stored(rows, OPENAI_KEYS.apiKey) ?? process.env.OPENAI_API_KEY ?? "").trim();
+  const model = (stored(rows, OPENAI_KEYS.model) ?? "").trim();
+  return {
+    apiKey,
+    model,
+    tokenSet: Boolean(apiKey),
+    configured: Boolean(apiKey),
+    resolvedModel: model || process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
+  };
+}
+
+export function publicOpenAISettings(settings) {
+  return {
+    model: settings.model || "",
+    tokenSet: settings.tokenSet,
+    configured: settings.configured,
+  };
+}
+
+export async function saveOpenAISettings(payload, actor) {
+  const current = await getOpenAISettings();
+  const typedKey = String(payload.apiKey || "").trim();
+  const apiKey = typedKey || current.apiKey;
+  const model = String(payload.model || "").trim();
+
+  if (typedKey && typedKey.length > 500) throw validationError("A chave da IA deve ter no máximo 500 caracteres.");
+  if (model && (model.length > 60 || !/^[a-zA-Z0-9._:-]+$/.test(model))) {
+    throw validationError("Informe o nome do modelo, por exemplo gpt-4.1-mini.");
+  }
+  if (!apiKey && model) throw validationError("Informe a chave da IA.");
+
+  const values = {
+    [OPENAI_KEYS.apiKey]: apiKey,
+    [OPENAI_KEYS.model]: model,
+  };
+
+  await prisma.$transaction(
+    Object.entries(values).map(([key, value]) =>
+      prisma.appSetting.upsert({
+        where: { key },
+        create: { key, value },
+        update: { value },
+      }),
+    ),
+  );
+
+  await writeAudit({
+    userId: actor.id,
+    action: "OPENAI_SETTINGS_UPDATED",
+    entity: "settings",
+    entityId: 0,
+    newData: { tokenChanged: Boolean(typedKey), model: model || DEFAULT_OPENAI_MODEL, configured: Boolean(apiKey) },
+  });
+
+  return publicOpenAISettings({
+    model,
+    tokenSet: Boolean(apiKey),
+    configured: Boolean(apiKey),
+  });
+}

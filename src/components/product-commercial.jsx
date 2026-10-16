@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, uploadWithProgress } from "@/lib/api-client";
+import { CommercialLookup } from "./commercial-lookup";
 import { Button, Card, Field, Input, Select, Textarea } from "./ui";
 
 const NEW_MANUFACTURER = "__new__";
@@ -14,7 +15,6 @@ export function ProductCommercial({ product, canEdit, canPhoto, canDelete, onCha
   const [newName, setNewName] = useState("");
   const [specifications, setSpecifications] = useState(model?.specifications || "");
   const [saving, setSaving] = useState(false);
-  const [looking, setLooking] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [progress, setProgress] = useState(null);
   const inputRef = useRef(null);
@@ -84,22 +84,6 @@ export function ProductCommercial({ product, canEdit, canPhoto, canDelete, onCha
     }
   }
 
-  async function lookup() {
-    setLooking(true);
-    try {
-      const data = await api(`/api/products/${product.id}/commercial`, {
-        method: "POST",
-        json: { manufacturer: brandName() },
-      });
-      toast.success(data.message);
-      onChanged?.();
-    } catch (error) {
-      toast.error(error.message);
-    } finally {
-      setLooking(false);
-    }
-  }
-
   async function upload(list) {
     const form = new FormData();
     Array.from(list || []).forEach((file) => form.append("files", file));
@@ -141,7 +125,7 @@ export function ProductCommercial({ product, canEdit, canPhoto, canDelete, onCha
           <Field label="Fabricante">
             <Select
               value={manufacturerId}
-              disabled={!canEdit || saving || looking || registering}
+              disabled={!canEdit || saving || registering}
               onChange={(event) => {
                 setManufacturerId(event.target.value);
                 if (event.target.value !== NEW_MANUFACTURER) setNewName("");
@@ -161,7 +145,7 @@ export function ProductCommercial({ product, canEdit, canPhoto, canDelete, onCha
                   disabled={saving || registering}
                   onChange={(event) => setNewName(event.target.value)}
                 />
-                <Button type="button" variant="secondary" disabled={saving || registering || looking} onClick={registerManufacturer}>
+                <Button type="button" variant="secondary" disabled={saving || registering} onClick={registerManufacturer}>
                   {registering ? "Cadastrando..." : "Cadastrar"}
                 </Button>
               </div>
@@ -177,20 +161,18 @@ export function ProductCommercial({ product, canEdit, canPhoto, canDelete, onCha
           </Field>
           {canEdit ? (
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={saving || looking}>{saving ? "Salvando..." : "Salvar ficha"}</Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={saving || looking || (!product.ean && !product.supplierModelCode)}
-                onClick={lookup}
-              >
-                {looking ? "Consultando..." : "Buscar no Icecat"}
-              </Button>
+              <Button type="submit" disabled={saving}>{saving ? "Salvando..." : "Salvar ficha"}</Button>
+              <CommercialLookup
+                product={product}
+                brandName={brandName()}
+                disabled={saving || (!product.ean && !product.supplierModelCode)}
+                onChanged={onChanged}
+              />
             </div>
           ) : null}
           {canEdit ? (
             <p className="text-sm text-muted">
-              A busca usa o EAN. Se ele não estiver no Icecat, continua pelo fabricante e pelo Model Code. A marca precisa ser a mesma do Icecat, por exemplo Samsung.
+              A busca pergunta se é pelo Icecat ou por IA. Nada é gravado até você marcar o que pode mudar. Fabricante, descrição e fotos valem para este Model Code. O preço de mercado muda só neste aparelho.
             </p>
           ) : null}
         </form>

@@ -290,6 +290,76 @@ function IcecatSettings() {
   );
 }
 
+const emptyOpenAI = {
+  model: "",
+  apiKey: "",
+  tokenSet: false,
+  configured: false,
+};
+
+function OpenAISettings() {
+  const [form, setForm] = useState(emptyOpenAI);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api("/api/settings/openai")
+      .then((data) => setForm({ ...emptyOpenAI, ...data.settings, apiKey: "" }))
+      .catch((error) => toast.error(error.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const data = await api("/api/settings/openai", { method: "PUT", json: form });
+      setForm({ ...emptyOpenAI, ...data.settings, apiKey: "" });
+      toast.success(data.message);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section>
+      <SectionHeading
+        title="Consulta por IA"
+        description="Pesquisa a ficha na web. Sem a chave, essa opção não consulta. O resultado só entra no produto depois que alguém marca o que pode mudar."
+      />
+      <Card>
+        <form onSubmit={save} className="grid gap-4">
+          <Field
+            label="Chave de acesso"
+            hint={form.tokenSet ? "Deixe em branco para manter a chave já salva. Ela não volta para a tela." : "A chave fica só no servidor. Use uma chave da OpenAI com pesquisa na web."}
+          >
+            <Input
+              type="password"
+              value={form.apiKey}
+              disabled={loading}
+              autoComplete="new-password"
+              placeholder={form.tokenSet ? "••••••••" : ""}
+              onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
+            />
+          </Field>
+          <Field label="Modelo" hint={form.configured ? "A consulta por IA está ativa." : "Em branco, o sistema usa gpt-4.1-mini."}>
+            <Input
+              value={form.model}
+              disabled={loading}
+              placeholder="gpt-4.1-mini"
+              autoComplete="off"
+              onChange={(event) => setForm({ ...form, model: event.target.value })}
+            />
+          </Field>
+          <Button type="submit" disabled={loading || saving}>{saving ? "Salvando..." : "Salvar consulta por IA"}</Button>
+        </form>
+      </Card>
+    </section>
+  );
+}
+
 function CatalogSettings() {
   const [form, setForm] = useState(emptyCatalog);
   const [loading, setLoading] = useState(true);
@@ -369,11 +439,12 @@ export default function ConfiguracoesPage() {
     <div className="w-full max-w-3xl space-y-10">
       <PageHeader
         title="Configurações"
-        subtitle="Sistema é o acesso interno. Catálogo é a vitrine que o cliente vê. Icecat completa a ficha pelo EAN."
+        subtitle="Sistema é o acesso interno. Catálogo é a vitrine que o cliente vê. Icecat e a consulta por IA completam a ficha."
       />
       <SystemSettings />
       <CatalogSettings />
       <IcecatSettings />
+      <OpenAISettings />
     </div>
   );
 }

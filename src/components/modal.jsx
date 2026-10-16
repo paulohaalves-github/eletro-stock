@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/format";
 import { Button } from "./ui";
 
-export function Modal({ open, title, children, onClose, footer, className }) {
+export function Modal({ open, title, children, onClose, footer, className, wide = false }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
@@ -18,10 +18,11 @@ export function Modal({ open, title, children, onClose, footer, className }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-6">
-      <button className="absolute inset-0" onClick={onClose} aria-label="Fechar" />
+      <button type="button" className="absolute inset-0" onClick={onClose} aria-label="Fechar" />
       <div
         className={cn(
-          "relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl border border-border bg-surface p-5 shadow-2xl sm:rounded-2xl",
+          "relative z-10 flex max-h-[90vh] w-full flex-col rounded-t-2xl border border-border bg-surface p-5 shadow-2xl sm:rounded-2xl",
+          wide ? "max-w-4xl" : "max-w-lg",
           className,
         )}
       >
