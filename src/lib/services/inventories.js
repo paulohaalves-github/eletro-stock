@@ -1,10 +1,8 @@
 import { prisma } from "../db";
 import { writeAudit } from "../audit";
 import {
-  INVENTORY_ASSIGNABLE_ROLES,
   INVENTORY_SCAN_KINDS,
   INVENTORY_STATUSES,
-  ROLES,
   STATUS_LABELS,
   inventoryExpectedStatuses,
 } from "../constants";
@@ -90,10 +88,6 @@ function canManage(session) {
   return can(session.role, PERMISSIONS.INVENTORY_MANAGE);
 }
 
-function canExecute(session) {
-  return can(session.role, PERMISSIONS.INVENTORY_EXECUTE);
-}
-
 function assertCanRead(session, inventory) {
   if (canManage(session) && hasUnitAccess(session, inventory.unitId)) return;
   if (inventory.assignedToId === session.id) return;
@@ -171,8 +165,6 @@ async function findProductByCode(raw) {
 }
 
 export async function listInventories(session) {
-  if (!canManage(session) && !canExecute(session)) throw forbidden();
-
   const where = canManage(session)
     ? { OR: [{ unitId: requireActiveUnit(session) }, { assignedToId: session.id }] }
     : { assignedToId: session.id };
@@ -218,13 +210,8 @@ async function loadCountsByInventory(items) {
 
 export async function listInventoryAssignees(session) {
   if (!canManage(session)) throw forbidden();
-  const unitId = requireActiveUnit(session);
   const items = await prisma.user.findMany({
-    where: {
-      active: true,
-      role: { in: INVENTORY_ASSIGNABLE_ROLES },
-      OR: [{ role: ROLES.ADMIN }, { units: { some: { unitId } } }],
-    },
+    where: { active: true },
     select: { id: true, name: true, role: true },
     orderBy: { name: "asc" },
   });
@@ -240,15 +227,9 @@ export async function createInventory(payload, session) {
   const assignedToId = parseId(payload.assignedToId);
   const assignee = await prisma.user.findUnique({
     where: { id: assignedToId },
-    include: { units: { select: { unitId: true } } },
+    select: { id: true, active: true },
   });
   if (!assignee || !assignee.active) throw validationError("Usuário designado inválido.");
-  if (!INVENTORY_ASSIGNABLE_ROLES.includes(assignee.role)) {
-    throw validationError("Designe um usuário administrador, gestor ou de estoque.");
-  }
-  if (assignee.role !== ROLES.ADMIN && !assignee.units.some((item) => item.unitId === unitId)) {
-    throw validationError("Este usuário não tem acesso à unidade do inventário.");
-  }
 
   let location = null;
   if (payload.locationId) {

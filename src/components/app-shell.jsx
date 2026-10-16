@@ -53,7 +53,7 @@ const NAV_GROUPS = [
     icon: Boxes,
     items: [
       { href: "/estoque", label: "Produtos", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
-      { href: "/inventarios", label: "Inventários", icon: ClipboardCheck, anyOf: [PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.INVENTORY_EXECUTE] },
+      { href: "/inventarios", label: "Inventários", icon: ClipboardCheck, anyAuthenticated: true },
       { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
       { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
       { href: "/transferencias", label: "Transferências", icon: ArrowRightLeft, permission: PERMISSIONS.STOCK_TRANSFER },
@@ -118,7 +118,7 @@ const NAV_GROUPS = [
 const MOBILE_SHORTCUTS = [
   { href: "/dashboards", label: "Home", icon: LayoutDashboard, anyDashboard: true },
   { href: "/estoque", label: "Produtos", icon: Boxes, permission: PERMISSIONS.PRODUCT_VIEW },
-  { href: "/inventarios", label: "Inventário", icon: ClipboardCheck, anyOf: [PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.INVENTORY_EXECUTE] },
+  { href: "/inventarios", label: "Inventário", icon: ClipboardCheck, anyAuthenticated: true },
   { href: "/entrada", label: "Entrada", icon: ArrowDownToLine, permission: PERMISSIONS.STOCK_ENTRY },
   { href: "/saida", label: "Saída", icon: ArrowUpFromLine, permission: PERMISSIONS.STOCK_EXIT },
   { href: "/transferencias", label: "Troca", icon: ArrowRightLeft, permission: PERMISSIONS.STOCK_TRANSFER },
@@ -140,6 +140,7 @@ function visibleGroups(user) {
     items: group.items.filter((item) => {
       if (group.id === "gestao" && !canAccessGestao(user.role)) return false;
       if (item.anyDashboard) return canAccessAnyDashboard(user);
+      if (item.anyAuthenticated) return true;
       if (item.anyOf) return item.anyOf.some((permission) => can(user.role, permission));
       if (!can(user.role, item.permission)) return false;
       if (item.supervisor && !user.inboxSupervisor) return false;
@@ -252,6 +253,7 @@ export function AppShell({ user, children }) {
 
   const mobileShortcuts = MOBILE_SHORTCUTS.filter((item) => {
     if (item.anyDashboard) return canAccessGestao(user.role) && canAccessAnyDashboard(user);
+    if (item.anyAuthenticated) return true;
     if (item.anyOf) return item.anyOf.some((permission) => can(user.role, permission));
     return can(user.role, item.permission);
   });

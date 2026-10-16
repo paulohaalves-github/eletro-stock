@@ -128,8 +128,6 @@ export const INVENTORY_SCAN_KIND_LABELS = {
   DESCONHECIDO: "Não cadastrado",
 };
 
-export const INVENTORY_ASSIGNABLE_ROLES = [ROLES.ADMIN, ROLES.GESTOR, ROLES.STOCK];
-
 export function inventoryExpectedStatuses(unitType) {
   const statuses = [STATUSES.AVAILABLE, STATUSES.RESERVED, STATUSES.RETURNED];
   if (unitType === UNIT_TYPES.LAB) statuses.push(STATUSES.IN_REPAIR);
