@@ -114,6 +114,18 @@ export function cn(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+export function calendarDayKey(value) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(value));
+}
+
+function shiftCalendarDay(key, days) {
+  const [year, month, day] = key.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  const nextMonth = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${nextMonth}-${nextDay}`;
+}
+
 export function saoPauloDayRange(isoDate) {
   const text = String(isoDate || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
@@ -123,24 +135,27 @@ export function saoPauloDayRange(isoDate) {
   };
 }
 
-export function periodRange(period, from, to) {
-  const now = new Date();
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
+export function eachSaoPauloDay(start, end) {
+  const days = [];
+  let key = calendarDayKey(start);
+  const lastKey = calendarDayKey(end);
+  while (key <= lastKey && days.length < 400) {
+    days.push({ date: key, label: formatDate(new Date(`${key}T12:00:00.000-03:00`)) });
+    key = shiftCalendarDay(key, 1);
+  }
+  return days;
+}
 
+export function periodRange(period, from, to) {
   if (period === "custom" && from && to) {
-    const start = new Date(from);
-    start.setHours(0, 0, 0, 0);
-    const customEnd = new Date(to);
-    customEnd.setHours(23, 59, 59, 999);
-    return { start, end: customEnd };
+    const start = saoPauloDayRange(from);
+    const end = saoPauloDayRange(to);
+    if (start && end) return { start: start.start, end: end.end };
   }
 
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-
-  if (period === "today") return { start, end };
-  const days = period === "7d" ? 7 : period === "90d" ? 90 : 30;
-  start.setDate(start.getDate() - (days - 1));
-  return { start, end };
+  const today = calendarDayKey(new Date());
+  const end = saoPauloDayRange(today).end;
+  if (period === "today") return { start: saoPauloDayRange(today).start, end };
+  const span = period === "7d" ? 7 : period === "90d" ? 90 : 30;
+  return { start: saoPauloDayRange(shiftCalendarDay(today, -(span - 1))).start, end };
 }

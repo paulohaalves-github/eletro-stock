@@ -1,12 +1,12 @@
 import { prisma } from "../db";
 import { SALE_ORDER_CLOSED_STATUSES, SALE_ORDER_ITEM_STATUSES, SALE_ORDER_STATUS_LABELS } from "../constants";
-import { formatCurrency, formatDate, formatDateTime, periodRange } from "../format";
+import { calendarDayKey, eachSaoPauloDay, formatCurrency, formatDateTime, periodRange } from "../format";
 import { canViewAllSaleOrders } from "../permissions";
 import { requireActiveUnit, serializeUnit } from "../units";
 import { saleOrderAccessWhere } from "./sale-orders";
 
 function dayKey(value) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(value));
+  return calendarDayKey(value);
 }
 
 function soldAmount(value) {
@@ -49,17 +49,7 @@ function ranked(map, total) {
 }
 
 function emptyDays(start, end) {
-  const days = [];
-  const cursor = new Date(start);
-  cursor.setHours(0, 0, 0, 0);
-  const last = new Date(end);
-  last.setHours(0, 0, 0, 0);
-  while (cursor <= last) {
-    const key = dayKey(cursor);
-    days.push({ date: key, label: formatDate(cursor), amount: 0, count: 0 });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return days;
+  return eachSaoPauloDay(start, end).map((day) => ({ ...day, amount: 0, count: 0 }));
 }
 
 export async function listSoldCommercialRows(session, range) {
