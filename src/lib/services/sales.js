@@ -58,9 +58,13 @@ function parseWarrantyMonths(value) {
   return months;
 }
 
-function parseSoldAt(value) {
+export function parseSoldAt(value) {
   if (!value) return new Date();
-  const date = new Date(value);
+  const text = String(value).trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  const date = dateOnly
+    ? new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00-03:00`)
+    : new Date(text);
   if (Number.isNaN(date.getTime())) throw validationError("Data da venda inválida.");
   if (date > new Date()) throw validationError("A data da venda não pode ser futura.");
   return date;
@@ -97,8 +101,8 @@ export async function createSale({
     if (existing) throw conflict("Este produto já possui uma venda registrada.");
   }
 
-  const invoice = String(invoiceNumber || "").trim();
-  if (!invoice) throw validationError("Informe o número da NF.");
+  const invoice = emptyToNull(invoiceNumber);
+  if (!fromExit && !invoice) throw validationError("Informe o número da NF.");
 
   const quoted = Number(cashPrice);
   const recordedPrice = fromExit && cashPrice != null && cashPrice !== "" && Number.isFinite(quoted) && quoted >= 0

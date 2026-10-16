@@ -20,7 +20,7 @@ import { can, canManageAllSaleOrders, canViewAllSaleOrders, PERMISSIONS } from "
 import { isAdminRole, requireActiveUnit, unitSelect } from "../units";
 import { getProduct, movementUnitFields } from "./products";
 import { assertNoOpenInventory } from "../inventory-lock";
-import { getLatestSale } from "./sales";
+import { getLatestSale, parseSoldAt } from "./sales";
 
 const productSelect = {
   id: true,
@@ -750,16 +750,33 @@ export async function checkoutSaleOrder(orderId, payload, user) {
 
   const requested = Array.isArray(payload.items) ? payload.items : [];
   if (!requested.length) throw validationError("Informe os produtos para baixa.");
-
-  const invoiceFallback = String(payload.invoiceNumber || "").trim();
-  const { exitProduct } = await import("./stock");
-
-  for (const entry of requested) {
+  const soldAt = parseSoldAt(payload.soldAt);
+  const entries = requested.map((entry) => {
     const item = order.items.find((row) => row.id === Number(entry.itemId || entry.id));
     if (!item) throw notFound("Produto do pedido não encontrado.");
     if (item.status !== SALE_ORDER_ITEM_STATUSES.ORDERED && item.status !== SALE_ORDER_ITEM_STATUSES.RESERVED) {
       throw conflict(`O produto ${formatProductId(item.productId)} não está pronto para baixa.`);
     }
+    return { entry, item };
+  });
+
+  if (payload.ov !== undefined) {
+    const ov = emptyToNull(payload.ov);
+    if (ov && ov.length > 40) throw validationError("A OV do Care deve ter no máximo 40 caracteres.");
+    if (ov) {
+      const taken = await prisma.saleOrder.findFirst({
+        where: { ov, NOT: { id: order.id } },
+        select: { number: true },
+      });
+      if (taken) throw conflict(`A OV ${ov} já está na venda ${taken.number}.`);
+    }
+    await prisma.saleOrder.update({ where: { id: order.id }, data: { ov } });
+  }
+
+  const invoiceFallback = String(payload.invoiceNumber || "").trim();
+  const { exitProduct } = await import("./stock");
+
+  for (const { entry, item } of entries) {
     const invoiceNumber = String(entry.invoiceNumber || invoiceFallback || "").trim();
     const liveProduct = await getProduct(item.productId);
     const quoted = Number(entry.cashPrice);
@@ -777,7 +794,7 @@ export async function checkoutSaleOrder(orderId, payload, user) {
       customerId: order.customerId,
       warrantyMonths: entry.warrantyMonths,
       invoiceNumber,
-      soldAt: payload.soldAt,
+      soldAt,
       cashPrice: soldPrice,
       paymentMethod: entry.paymentMethod,
       installmentCount: entry.installmentCount,

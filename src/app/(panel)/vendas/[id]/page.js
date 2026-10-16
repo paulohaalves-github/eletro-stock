@@ -29,6 +29,8 @@ export default function VendaDetailPage() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [soldAt, setSoldAt] = useState("");
+  const [ov, setOv] = useState("");
   const [warranties, setWarranties] = useState({});
   const [reserveItem, setReserveItem] = useState(null);
   const [reservedUntil, setReservedUntil] = useState("");
@@ -155,16 +157,20 @@ export default function VendaDetailPage() {
     });
     setWarranties(next);
     setInvoiceNumber(checkoutItems.find((item) => item.invoiceNumber)?.invoiceNumber || "");
+    setSoldAt(todayDate());
+    setOv(order?.ov || "");
     setCheckoutOpen(true);
   }
 
   async function confirmCheckout() {
-    if (!invoiceNumber.trim()) {
-      toast.error("Informe o número da NF.");
+    if (!soldAt) {
+      toast.error("Informe a data da venda.");
       return;
     }
     const payload = {
       invoiceNumber,
+      soldAt,
+      ov,
       items: checkoutItems.map((item) => ({
         itemId: item.id,
         warrantyMonths: Number(warranties[item.id] || 3),
@@ -406,9 +412,15 @@ export default function VendaDetailPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Confirme a NF e a garantia de cada aparelho. O status do produto só muda para Vendido nesta etapa.
+            Informe a data da venda e, se houver, a OV do Care e a NF. O status do produto só muda para Vendido nesta etapa.
           </p>
-          <Field label="Número da NF" required>
+          <Field label="Data da venda" required>
+            <Input type="date" max={todayDate()} value={soldAt} onChange={(e) => setSoldAt(e.target.value)} />
+          </Field>
+          <Field label="OV do Care">
+            <Input value={ov} maxLength={40} onChange={(e) => setOv(e.target.value)} placeholder="Ex.: 667501" />
+          </Field>
+          <Field label="Número da NF">
             <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
           </Field>
           {checkoutItems.map((item) => (

@@ -72,7 +72,6 @@ export async function exitProduct({ productId, reason, observation, user, custom
   if (reason === EXIT_REASONS.SALE) {
     if (!customerId) throw validationError("Informe o cliente da venda.");
     if (!warrantyMonths) throw validationError("Informe os meses de garantia.");
-    if (!String(invoiceNumber || "").trim()) throw validationError("Informe o número da NF.");
   }
 
   const newStatus = EXIT_REASON_TO_STATUS[reason];
