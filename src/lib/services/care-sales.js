@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { AppError, forbidden } from "../errors";
 import { SALE_ORDER_CLOSED_STATUSES, SALE_ORDER_ITEM_STATUSES, STATUSES, STATUS_LABELS } from "../constants";
 import { digitsOnly } from "../phone";
+import { formatDateTime } from "../format";
 import { can, canManageAllSaleOrders, PERMISSIONS } from "../permissions";
 import { requireActiveUnit } from "../units";
 import { createCustomer } from "./customers";
@@ -23,14 +24,15 @@ function errorMessage(error) {
   return "Não foi possível importar esta OV.";
 }
 
-function carePaymentError(payment) {
+function carePayment(payment) {
   const methods = (payment?.methods || []).map((value) => String(value || "").trim());
   const count = Number(payment?.installmentCount || 0);
-  if (!count) return "O Care não informou as parcelas do recebimento.";
-  if (methods.some((value) => !value)) return "A forma de pagamento está vazia.";
-  const unique = new Set(methods.map((value) => value.toLocaleLowerCase("pt-BR")));
-  if (unique.size > 1) return "As parcelas do Care têm formas de pagamento diferentes.";
-  return null;
+  const filled = methods.filter(Boolean);
+  const unique = new Set(filled.map((value) => value.toLocaleLowerCase("pt-BR")));
+  if (!count || filled.length !== count || unique.size !== 1) {
+    return { paymentMethod: null, installmentCount: null };
+  }
+  return { paymentMethod: filled[0], installmentCount: count };
 }
 
 function normalizeName(value) {
@@ -219,14 +221,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         continue;
       }
 
-      const paymentError = carePaymentError(entry.payment);
-      if (paymentError) {
-        skipped.push({ ov, reason: paymentError });
-        onStep(`OV ${ov} ignorada: ${paymentError}`);
-        continue;
-      }
-      const paymentMethod = entry.payment.methods[0];
-      const installmentCount = entry.payment.installmentCount;
+      const { paymentMethod, installmentCount } = carePayment(entry.payment);
 
       const sellerMatch = matchSeller(entry.sellerName, users);
       if (!sellerMatch.seller) {
@@ -255,7 +250,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
       order = await createSaleOrder({
         customerId: customerMatch.customer.id,
         sellerId: sellerMatch.seller.id,
-        observation: `Importada do Care. OV ${ov}. NF ${invoiceNumber}. ${paymentMethod}, ${installmentCount}x.`,
+        observation: `Importada do Care. OV ${ov}. NF ${invoiceNumber}.${paymentMethod && installmentCount ? ` ${paymentMethod}, ${installmentCount}x.` : ""}`,
       }, user);
       try {
         await prisma.saleOrder.update({
@@ -322,7 +317,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
       if (!checkoutItems.length) throw new AppError("Nenhum produto ficou pronto para baixa.");
       await checkoutSaleOrder(order.id, {
         invoiceNumber,
-        soldAt: new Date().toISOString(),
+        soldAt: entry.soldAt || new Date().toISOString(),
         items: checkoutItems.map((item) => {
           const addedRow = added.find((row) => row.itemId === item.id);
           return {
@@ -344,8 +339,10 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         pending: reasons,
       });
       const pending = reasons.length ? ` Pendências: ${reasons.join("; ")}.` : "";
-      const priceNote = ` Valor vendido: ${added.map((row) => `${row.serial} ${Number(row.soldPrice).toFixed(2)}`).join(", ")}. ${paymentMethod}, ${installmentCount}x.`;
-      onStep(`OV ${ov} importada como ${order.number}, com NF ${invoiceNumber} e garantia de ${WARRANTY_MONTHS} meses.${priceNote}${pending}`);
+      const paymentNote = paymentMethod && installmentCount ? ` ${paymentMethod}, ${installmentCount}x.` : "";
+      const priceNote = ` Valor vendido: ${added.map((row) => `${row.serial} ${Number(row.soldPrice).toFixed(2)}`).join(", ")}.${paymentNote}`;
+      const soldNote = ` Data da venda: ${formatDateTime(entry.soldAt || new Date())}.`;
+      onStep(`OV ${ov} importada como ${order.number}, com NF ${invoiceNumber} e garantia de ${WARRANTY_MONTHS} meses.${soldNote}${priceNote}${pending}`);
     } catch (error) {
       const reason = errorMessage(error);
       if (order?.id && generated) {

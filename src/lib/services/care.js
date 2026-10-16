@@ -157,6 +157,15 @@ async function readCareCustomerPage(page) {
   });
 }
 
+function parseCareFinalizedAt(value) {
+  const match = String(value || "").match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
+  if (!match) return null;
+  const [, day, month, year, hour, minute] = match;
+  const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00-03:00`);
+  if (Number.isNaN(date.getTime()) || date > new Date()) return null;
+  return date.toISOString();
+}
+
 function parseCareMoney(value) {
   const cleaned = String(value || "").replace(/[^\d,.-]/g, "").trim();
   if (!cleaned || !/\d/.test(cleaned)) return null;
@@ -173,6 +182,25 @@ function parseCareMoney(value) {
   const number = Number(normalized);
   if (!Number.isFinite(number) || number < 0) return null;
   return Math.round(number * 100) / 100;
+}
+
+async function readCareFinalizedAt(page) {
+  const text = await page.evaluate(() => {
+    const label = (cell) => (cell?.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    for (const table of document.querySelectorAll("table")) {
+      const rows = [...table.querySelectorAll("tr")];
+      const statusRow = rows.find((row) => [...row.cells].some((cell) => label(cell) === "finalizado"));
+      const dateRow = rows.find((row) => label(row.cells?.[0]) === "data");
+      if (!statusRow || !dateRow) continue;
+      const statusCell = [...statusRow.cells].find((cell) => label(cell) === "finalizado");
+      if (!statusCell || statusCell.cellIndex < 0) continue;
+      const dateCell = dateRow.cells[statusCell.cellIndex];
+      const value = (dateCell?.innerText || dateCell?.textContent || "").replace(/\s+/g, " ").trim();
+      if (value) return value;
+    }
+    return "";
+  }).catch(() => "");
+  return parseCareFinalizedAt(text);
 }
 
 async function readCareProducts(page) {
@@ -209,33 +237,36 @@ async function readCareProducts(page) {
 
 async function readCarePayment(page) {
   await page.waitForFunction(() => {
-    const root = document.querySelector("#dados_recebimento") || document;
-    return [...root.querySelectorAll("th")].some((cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "forma de pagamento");
-  }, { timeout: 15000 }).catch(() => null);
+    const label = (cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const fieldset = [...document.querySelectorAll("fieldset")].find((node) => /dados do recebimento/i.test(node.querySelector("legend")?.textContent || ""));
+    const root = fieldset || document.querySelector("#dados_recebimento") || document;
+    return [...root.querySelectorAll("td, th")].some((cell) => label(cell) === "forma de pagamento");
+  }, { timeout: 8000 }).catch(() => null);
   return page.evaluate(() => {
     const label = (cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-    const root = document.querySelector("#dados_recebimento") || document;
-    const header = [...root.querySelectorAll("th")].find((cell) => label(cell) === "forma de pagamento");
-    const table = header?.closest("table");
-    if (!table || header.cellIndex < 0) return { methods: [], installmentCount: 0 };
+    const fieldset = [...document.querySelectorAll("fieldset")].find((node) => /dados do recebimento/i.test(node.querySelector("legend")?.textContent || ""));
+    const root = fieldset || document.querySelector("#dados_recebimento") || document;
+    const table = [...root.querySelectorAll("table")].find((candidate) => {
+      const headers = [...candidate.querySelectorAll("thead td, thead th")];
+      const hasMethod = headers.some((cell) => label(cell) === "forma de pagamento");
+      const hasParcel = headers.some((cell) => label(cell) === "parcela");
+      const rows = [...candidate.querySelectorAll("tbody tr")].filter((row) => (row.innerText || row.textContent || "").trim());
+      return hasMethod && hasParcel && rows.length;
+    });
+    if (!table) return { methods: [], installmentCount: 0 };
+    const headers = [...table.querySelectorAll("thead td, thead th")];
+    const methodHeader = headers.find((cell) => label(cell) === "forma de pagamento");
+    if (!methodHeader || methodHeader.cellIndex < 0) return { methods: [], installmentCount: 0 };
     const methods = [];
     for (const row of table.querySelectorAll("tbody tr")) {
-      if (/totais/i.test(row.textContent || "")) continue;
       const rowText = (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim();
-      if (!/\d/.test(rowText)) continue;
-      const cell = row.cells?.[header.cellIndex];
-      if (!cell) continue;
-      const select = cell.querySelector("select");
-      const selected = select?.selectedOptions?.[0];
-      const fromSelect = selected && String(selected.value || "").trim()
-        ? (selected.textContent || "").replace(/\s+/g, " ").trim()
-        : "";
-      const input = [...cell.querySelectorAll("input")].find((field) => String(field.value || "").trim());
-      const method = fromSelect || input?.value?.trim() || (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim();
+      if (!rowText || !/\d/.test(rowText)) continue;
+      const cell = row.cells?.[methodHeader.cellIndex];
+      const method = (cell?.innerText || cell?.textContent || "").replace(/\s+/g, " ").trim();
       methods.push(method);
     }
     return { methods, installmentCount: methods.length };
-  });
+  }).catch(() => ({ methods: [], installmentCount: 0 }));
 }
 
 async function collectListOvs(page) {
@@ -571,6 +602,7 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
         }
         const products = await readCareProducts(page);
         const payment = await readCarePayment(page);
+        const soldAt = await readCareFinalizedAt(page);
         sales.push({
           ov,
           invoiceNumber,
@@ -578,11 +610,15 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
           sellerName: raw.approvalUser || "",
           products,
           payment,
+          soldAt,
         });
         const paymentLabel = payment.installmentCount
           ? `${payment.methods[0] || "sem forma"}, ${payment.installmentCount}x`
           : "sem recebimento";
-        onStep(`OV ${ov}: ${raw.name || "cliente sem nome"}, ${products.length} produto(s), ${paymentLabel}.`);
+        const soldLabel = soldAt
+          ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(soldAt))
+          : "sem data de finalização";
+        onStep(`OV ${ov}: ${raw.name || "cliente sem nome"}, ${products.length} produto(s), ${paymentLabel}, finalizada em ${soldLabel}.`);
       } catch (error) {
         const reason = error instanceof Error && error.status
           ? error.message

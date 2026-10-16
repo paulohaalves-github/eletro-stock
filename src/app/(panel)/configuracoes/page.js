@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { UNIT_TYPE_LABELS } from "@/lib/constants";
+import { formatDateTime } from "@/lib/format";
+
+const SYNC_INTERVALS = [
+  [15, "15 minutos"],
+  [30, "30 minutos"],
+  [60, "1 hora"],
+  [120, "2 horas"],
+];
 
 const emptyCare = {
   user: "",
@@ -11,6 +20,10 @@ const emptyCare = {
   clienteId: "116",
   clienteConfigId: "249",
   passwordSet: false,
+  syncEnabled: false,
+  syncIntervalMinutes: 60,
+  syncUnitId: "",
+  lastRun: null,
 };
 
 const emptyCatalog = {
@@ -51,12 +64,21 @@ function CheckOption({ checked, disabled, onChange, title, hint }) {
 
 function SystemSettings() {
   const [form, setForm] = useState(emptyCare);
+  const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api("/api/settings/care")
-      .then((data) => setForm({ ...emptyCare, ...data.settings, password: "" }))
+      .then((data) => {
+        setUnits(data.units || []);
+        setForm({
+          ...emptyCare,
+          ...data.settings,
+          password: "",
+          syncUnitId: data.settings?.syncUnitId ? String(data.settings.syncUnitId) : "",
+        });
+      })
       .catch((error) => toast.error(error.message))
       .finally(() => setLoading(false));
   }, []);
@@ -72,9 +94,17 @@ function SystemSettings() {
           password: form.password,
           clienteId: form.clienteId,
           clienteConfigId: form.clienteConfigId,
+          syncEnabled: form.syncEnabled,
+          syncIntervalMinutes: Number(form.syncIntervalMinutes),
+          syncUnitId: form.syncUnitId ? Number(form.syncUnitId) : null,
         },
       });
-      setForm({ ...emptyCare, ...data.settings, password: "" });
+      setForm({
+        ...emptyCare,
+        ...data.settings,
+        password: "",
+        syncUnitId: data.settings?.syncUnitId ? String(data.settings.syncUnitId) : "",
+      });
       toast.success(data.message);
     } catch (error) {
       toast.error(error.message);
@@ -134,6 +164,47 @@ function SystemSettings() {
               onChange={(event) => setForm({ ...form, clienteConfigId: event.target.value })}
             />
           </Field>
+          <div className="sm:col-span-2 space-y-4 border-t border-border pt-4">
+            <CheckOption
+              checked={form.syncEnabled}
+              disabled={loading}
+              onChange={(syncEnabled) => setForm({ ...form, syncEnabled })}
+              title="Sincronizar automaticamente"
+              hint="No intervalo escolhido, as OVs finalizadas do Care entram na unidade selecionada. O botão em Vendas continua disponível."
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Intervalo">
+                <Select
+                  value={String(form.syncIntervalMinutes)}
+                  disabled={loading || !form.syncEnabled}
+                  onChange={(event) => setForm({ ...form, syncIntervalMinutes: Number(event.target.value) })}
+                >
+                  {SYNC_INTERVALS.map(([minutes, label]) => (
+                    <option key={minutes} value={minutes}>{label}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Unidade da baixa" required={form.syncEnabled}>
+                <Select
+                  value={form.syncUnitId}
+                  disabled={loading || !form.syncEnabled}
+                  onChange={(event) => setForm({ ...form, syncUnitId: event.target.value })}
+                >
+                  <option value="">Selecione a unidade</option>
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}{UNIT_TYPE_LABELS[unit.type] ? ` (${UNIT_TYPE_LABELS[unit.type]})` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <p className="text-sm text-muted">
+              {form.lastRun?.at
+                ? `Última sincronização: ${formatDateTime(form.lastRun.at)}. ${form.lastRun.error || form.lastRun.message || ""}`
+                : "Ainda não houve sincronização."}
+            </p>
+          </div>
           <div className="sm:col-span-2">
             <Button type="submit" disabled={loading || saving}>{saving ? "Salvando..." : "Salvar sistema"}</Button>
           </div>

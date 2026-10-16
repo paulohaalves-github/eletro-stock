@@ -1,11 +1,14 @@
 import { apiHandler, readJson } from "@/lib/api";
 import { PERMISSIONS } from "@/lib/permissions";
-import { getCareSettings, publicCareSettings, saveCareSettings } from "@/lib/services/settings";
+import { getCareSettings, listCareSyncUnits, publicCareSettings, saveCareSettings } from "@/lib/services/settings";
 
 export const GET = apiHandler(
   async () => {
-    const settings = await getCareSettings();
-    return { settings: publicCareSettings(settings) };
+    const [settings, units] = await Promise.all([
+      getCareSettings(),
+      listCareSyncUnits(),
+    ]);
+    return { settings: publicCareSettings(settings), units };
   },
   { permission: PERMISSIONS.USER_MANAGE },
 );

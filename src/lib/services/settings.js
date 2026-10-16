@@ -2,11 +2,17 @@ import { prisma } from "../db";
 import { validationError } from "../errors";
 import { writeAudit } from "../audit";
 
+const CARE_SYNC_INTERVALS = [15, 30, 60, 120];
+
 const CARE_KEYS = {
   user: "care.user",
   password: "care.password",
   clienteId: "care.clienteId",
   clienteConfigId: "care.clienteConfigId",
+  syncEnabled: "care.syncEnabled",
+  syncIntervalMinutes: "care.syncIntervalMinutes",
+  syncUnitId: "care.syncUnitId",
+  syncLastRun: "care.syncLastRun",
 };
 
 const CATALOG_KEYS = {
@@ -42,7 +48,38 @@ export async function getCareSettings() {
     clienteId: stored(rows, CARE_KEYS.clienteId) ?? process.env.CARE_CLIENTE_ID ?? "116",
     clienteConfigId: stored(rows, CARE_KEYS.clienteConfigId) ?? process.env.CARE_CLIENTECONFIG_ID ?? "249",
     passwordSet: Boolean(String(password).trim()),
+    syncEnabled: readFlag(stored(rows, CARE_KEYS.syncEnabled), false),
+    syncIntervalMinutes: readSyncInterval(stored(rows, CARE_KEYS.syncIntervalMinutes)),
+    syncUnitId: readSyncUnitId(stored(rows, CARE_KEYS.syncUnitId)),
+    lastRun: readLastRun(stored(rows, CARE_KEYS.syncLastRun)),
   };
+}
+
+function readSyncInterval(value) {
+  const minutes = Number(value);
+  return CARE_SYNC_INTERVALS.includes(minutes) ? minutes : 60;
+}
+
+function readSyncUnitId(value) {
+  const unitId = Number(value);
+  return Number.isInteger(unitId) && unitId > 0 ? unitId : null;
+}
+
+function readLastRun(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      at: parsed.at || null,
+      imported: Number(parsed.imported || 0),
+      skipped: Number(parsed.skipped || 0),
+      error: parsed.error || null,
+      message: String(parsed.message || ""),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function publicCareSettings(settings) {
@@ -51,6 +88,10 @@ export function publicCareSettings(settings) {
     clienteId: settings.clienteId,
     clienteConfigId: settings.clienteConfigId,
     passwordSet: settings.passwordSet,
+    syncEnabled: Boolean(settings.syncEnabled),
+    syncIntervalMinutes: readSyncInterval(settings.syncIntervalMinutes),
+    syncUnitId: readSyncUnitId(settings.syncUnitId),
+    lastRun: settings.lastRun || null,
   };
 }
 
@@ -67,11 +108,23 @@ export async function saveCareSettings(payload, actor) {
   if (!/^\d+$/.test(clienteId)) throw validationError("Informe o cliente ID do Care, somente números.");
   if (!/^\d+$/.test(clienteConfigId)) throw validationError("Informe o cliente config ID do Care, somente números.");
 
+  const syncEnabled = Boolean(payload.syncEnabled);
+  const syncIntervalMinutes = readSyncInterval(payload.syncIntervalMinutes);
+  const syncUnitId = readSyncUnitId(payload.syncUnitId);
+  if (syncEnabled && !syncUnitId) throw validationError("Escolha a unidade da sincronização automática.");
+  if (syncEnabled) {
+    const unit = await prisma.unit.findFirst({ where: { id: syncUnitId, active: true }, select: { id: true } });
+    if (!unit) throw validationError("A unidade escolhida não está ativa.");
+  }
+
   const values = {
     [CARE_KEYS.user]: user,
     [CARE_KEYS.password]: password,
     [CARE_KEYS.clienteId]: clienteId,
     [CARE_KEYS.clienteConfigId]: clienteConfigId,
+    [CARE_KEYS.syncEnabled]: syncEnabled ? "true" : "false",
+    [CARE_KEYS.syncIntervalMinutes]: String(syncIntervalMinutes),
+    [CARE_KEYS.syncUnitId]: syncUnitId ? String(syncUnitId) : "",
   };
 
   await prisma.$transaction(
@@ -89,10 +142,43 @@ export async function saveCareSettings(payload, actor) {
     action: "CARE_SETTINGS_UPDATED",
     entity: "settings",
     entityId: 0,
-    newData: { user, clienteId, clienteConfigId, passwordChanged: Boolean(typedPassword) },
+    newData: { user, clienteId, clienteConfigId, passwordChanged: Boolean(typedPassword), syncEnabled, syncIntervalMinutes, syncUnitId },
   });
 
-  return publicCareSettings({ user, clienteId, clienteConfigId, passwordSet: true });
+  return publicCareSettings({
+    user,
+    clienteId,
+    clienteConfigId,
+    passwordSet: true,
+    syncEnabled,
+    syncIntervalMinutes,
+    syncUnitId,
+    lastRun: current.lastRun,
+  });
+}
+
+export async function recordCareSyncRun(result) {
+  const payload = {
+    at: new Date().toISOString(),
+    imported: Number(result.imported || 0),
+    skipped: Number(result.skipped || 0),
+    error: result.error || null,
+    message: String(result.message || ""),
+  };
+  await prisma.appSetting.upsert({
+    where: { key: CARE_KEYS.syncLastRun },
+    create: { key: CARE_KEYS.syncLastRun, value: JSON.stringify(payload) },
+    update: { value: JSON.stringify(payload) },
+  });
+  return payload;
+}
+
+export async function listCareSyncUnits() {
+  return prisma.unit.findMany({
+    where: { active: true },
+    select: { id: true, name: true, type: true },
+    orderBy: { name: "asc" },
+  });
 }
 
 function readFlag(value, fallback) {
