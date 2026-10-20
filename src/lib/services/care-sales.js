@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { AppError, forbidden } from "../errors";
-import { SALE_ORDER_CLOSED_STATUSES, SALE_ORDER_ITEM_STATUSES, STATUSES, STATUS_LABELS } from "../constants";
+import { SALE_ORDER_CLOSED_STATUSES, SALE_ORDER_EVENT_TYPES, SALE_ORDER_ITEM_STATUSES, STATUSES, STATUS_LABELS } from "../constants";
 import { digitsOnly } from "../phone";
 import { formatDateTime } from "../format";
 import { can, canManageAllSaleOrders, PERMISSIONS } from "../permissions";
@@ -8,6 +8,7 @@ import { requireActiveUnit } from "../units";
 import { createCustomer } from "./customers";
 import {
   addSaleOrderItem,
+  addSaleOrderNote,
   checkoutSaleOrder,
   createSaleOrder,
   deleteSaleOrder,
@@ -52,6 +53,18 @@ function cleanEmail(value) {
 
 function todayKey() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+function holdUntilKey() {
+  const [year, month, day] = todayKey().split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + 365));
+  const nextMonth = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${nextMonth}-${nextDay}`;
+}
+
+function missingStockNote(serial) {
+  return `${serial} não encontrado no estoque.`;
 }
 
 async function findCustomerByDocument(document) {
@@ -118,6 +131,7 @@ async function resolveCustomer(entry, user, warnings) {
 async function eligibleProducts(entry, unitId) {
   const ready = [];
   const reasons = [];
+  const missing = [];
   const seen = new Set();
 
   for (const row of entry.products || []) {
@@ -150,7 +164,9 @@ async function eligibleProducts(entry, unitId) {
       });
     }
     if (!product || product.deletedAt) {
-      reasons.push(`${serial} não encontrado no estoque`);
+      const label = serial.toUpperCase();
+      missing.push(label);
+      reasons.push(`${label} não encontrado no estoque`);
       continue;
     }
     if (product.unitId !== unitId) {
@@ -173,7 +189,51 @@ async function eligibleProducts(entry, unitId) {
     reasons.push(`${product.serialOnyx} está ${STATUS_LABELS[product.status] || product.status}`);
   }
 
-  return { ready, reasons };
+  return { ready, reasons, missing };
+}
+
+async function orderItems(orderId) {
+  return prisma.saleOrderItem.findMany({
+    where: { saleOrderId: orderId, status: { not: SALE_ORDER_ITEM_STATUSES.REMOVED } },
+    select: {
+      id: true,
+      status: true,
+      productId: true,
+      product: { select: { serialOnyx: true } },
+    },
+  });
+}
+
+async function noteMissingSerial(orderId, serial, user) {
+  const message = missingStockNote(serial);
+  const existing = await prisma.saleOrderEvent.findFirst({
+    where: { saleOrderId: orderId, type: SALE_ORDER_EVENT_TYPES.NOTE, message },
+    select: { id: true },
+  });
+  if (existing) return;
+  await addSaleOrderNote(orderId, message, user);
+}
+
+async function keepReservationOpen(orderId) {
+  await prisma.saleOrderItem.updateMany({
+    where: {
+      saleOrderId: orderId,
+      status: { in: [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED] },
+    },
+    data: { reservedUntil: new Date(`${holdUntilKey()}T23:59:59.999-03:00`) },
+  });
+}
+
+export async function careOvsAwaitingProducts() {
+  const orders = await prisma.saleOrder.findMany({
+    where: {
+      ov: { not: null },
+      closedAt: null,
+      status: { notIn: SALE_ORDER_CLOSED_STATUSES },
+    },
+    select: { ov: true },
+  });
+  return orders.map((order) => order.ov).filter(Boolean);
 }
 
 export async function importCareSales(entries, user, onStep = () => {}) {
@@ -185,7 +245,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
     where: { active: true },
     select: { id: true, name: true, role: true },
   });
-  const reservedUntil = todayKey();
+  const reservedUntil = holdUntilKey();
   const imported = [];
   const skipped = [];
   const warnings = [];
@@ -201,79 +261,107 @@ export async function importCareSales(entries, user, onStep = () => {}) {
       label: `Importando OV ${index + 1} de ${entries.length}`,
     });
     let order = null;
+    let createdNow = false;
     let generated = false;
     let added = [];
     let reasons = [];
     try {
       const already = await prisma.saleOrder.findUnique({
         where: { ov },
-        select: { id: true, number: true },
+        select: { id: true, number: true, status: true, closedAt: true },
       });
-      if (already) {
+      const closed = already && (already.closedAt || SALE_ORDER_CLOSED_STATUSES.includes(already.status));
+      if (closed) {
         skipped.push({ ov, reason: "Já importada." });
         onStep(`OV ${ov} já está no sistema. Pulando.`);
         continue;
       }
+      if (already) {
+        order = already;
+        onStep(`OV ${ov} já está reservada em ${already.number}. Conferindo os produtos.`);
+      }
 
-      if (!invoiceNumber) {
+      if (!order && !invoiceNumber) {
         skipped.push({ ov, reason: "A coluna Nota Fiscal está vazia." });
         onStep(`OV ${ov} ignorada: a coluna Nota Fiscal está vazia.`);
         continue;
       }
 
       const { paymentMethod, installmentCount } = carePayment(entry.payment);
-
-      const sellerMatch = matchSeller(entry.sellerName, users);
-      if (!sellerMatch.seller) {
-        skipped.push({ ov, reason: sellerMatch.error });
-        onStep(`OV ${ov} ignorada: ${sellerMatch.error}`);
-        continue;
-      }
-
-      const customerMatch = await resolveCustomer(entry, user, warnings);
-      if (!customerMatch.customer) {
-        skipped.push({ ov, reason: customerMatch.error });
-        onStep(`OV ${ov} ignorada: ${customerMatch.error}`);
-        continue;
-      }
-
       const eligible = await eligibleProducts(entry, unitId);
       reasons = eligible.reasons;
       const ready = eligible.ready;
-      if (!ready.length) {
-        const reason = reasons.join("; ") || "Nenhum produto com serial ON.";
-        skipped.push({ ov, reason });
-        onStep(`OV ${ov} ignorada: ${reason}`);
-        continue;
-      }
 
-      order = await createSaleOrder({
-        customerId: customerMatch.customer.id,
-        sellerId: sellerMatch.seller.id,
-        observation: `Importada do Care. OV ${ov}. NF ${invoiceNumber}.${paymentMethod && installmentCount ? ` ${paymentMethod}, ${installmentCount}x.` : ""}`,
-      }, user);
-      try {
-        await prisma.saleOrder.update({
-          where: { id: order.id },
-          data: { ov, paymentMethod, installmentCount },
-        });
-      } catch (error) {
-        await deleteSaleOrder(order.id, user);
-        order = null;
-        if (error?.code === "P2002") {
-          skipped.push({ ov, reason: "Já importada." });
+      if (!order) {
+        const sellerMatch = matchSeller(entry.sellerName, users);
+        if (!sellerMatch.seller) {
+          skipped.push({ ov, reason: sellerMatch.error });
+          onStep(`OV ${ov} ignorada: ${sellerMatch.error}`);
           continue;
         }
-        throw error;
+
+        const customerMatch = await resolveCustomer(entry, user, warnings);
+        if (!customerMatch.customer) {
+          skipped.push({ ov, reason: customerMatch.error });
+          onStep(`OV ${ov} ignorada: ${customerMatch.error}`);
+          continue;
+        }
+
+        if (!ready.length) {
+          const reason = reasons.join("; ") || "Nenhum produto com serial ON.";
+          skipped.push({ ov, reason });
+          onStep(`OV ${ov} ignorada: ${reason}`);
+          continue;
+        }
+
+        order = await createSaleOrder({
+          customerId: customerMatch.customer.id,
+          sellerId: sellerMatch.seller.id,
+          observation: `Importada do Care. OV ${ov}. NF ${invoiceNumber}.${paymentMethod && installmentCount ? ` ${paymentMethod}, ${installmentCount}x.` : ""}`,
+        }, user);
+        createdNow = true;
+        try {
+          await prisma.saleOrder.update({
+            where: { id: order.id },
+            data: { ov, paymentMethod, installmentCount },
+          });
+        } catch (error) {
+          await deleteSaleOrder(order.id, user);
+          order = null;
+          createdNow = false;
+          if (error?.code === "P2002") {
+            skipped.push({ ov, reason: "Já importada." });
+            continue;
+          }
+          throw error;
+        }
       }
 
       for (const row of ready) {
         try {
+          const current = (await orderItems(order.id)).find((item) => item.productId === row.product.id);
+          if (current?.status === SALE_ORDER_ITEM_STATUSES.SOLD) {
+            added.push({ itemId: current.id, serial: row.product.serialOnyx, soldPrice: row.soldPrice, fresh: false });
+            continue;
+          }
+          if (current && [SALE_ORDER_ITEM_STATUSES.INTEREST, SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(current.status)) {
+            if (current.status === SALE_ORDER_ITEM_STATUSES.INTEREST) {
+              await reserveSaleOrderItem(order.id, current.id, reservedUntil, user);
+            }
+            added.push({
+              itemId: current.id,
+              serial: row.product.serialOnyx,
+              soldPrice: row.soldPrice,
+              fresh: current.status === SALE_ORDER_ITEM_STATUSES.INTEREST,
+            });
+            continue;
+          }
           if (row.release) {
             const interest = await prisma.saleOrderItem.findFirst({
               where: {
                 productId: row.product.id,
                 status: SALE_ORDER_ITEM_STATUSES.INTEREST,
+                saleOrderId: { not: order.id },
                 saleOrder: { closedAt: null, status: { notIn: SALE_ORDER_CLOSED_STATUSES } },
               },
               select: { saleOrder: { select: { number: true } } },
@@ -285,50 +373,89 @@ export async function importCareSales(entries, user, onStep = () => {}) {
             await releaseReservationForCareImport(row.product.id, user);
           }
           const withItem = await addSaleOrderItem(order.id, row.product.id, user);
-          const item = withItem.items.find((current) =>
-            current.productId === row.product.id && current.status !== SALE_ORDER_ITEM_STATUSES.REMOVED,
+          const item = withItem.items.find((currentItem) =>
+            currentItem.productId === row.product.id && currentItem.status !== SALE_ORDER_ITEM_STATUSES.REMOVED,
           );
           if (!item) throw new AppError(`Não foi possível incluir ${row.product.serialOnyx}.`);
           await reserveSaleOrderItem(order.id, item.id, reservedUntil, user);
-          added.push({ itemId: item.id, serial: row.product.serialOnyx, soldPrice: row.soldPrice });
+          added.push({ itemId: item.id, serial: row.product.serialOnyx, soldPrice: row.soldPrice, fresh: true });
         } catch (error) {
           reasons.push(`${row.product.serialOnyx}: ${errorMessage(error)}`);
         }
       }
 
-      if (!added.length) {
+      const itemsNow = await orderItems(order.id);
+      const present = new Set(itemsNow.map((item) => String(item.product?.serialOnyx || "").toUpperCase()));
+      const careSerials = [...new Set((entry.products || [])
+        .map((row) => String(row.serialOnyx || "").trim().toUpperCase())
+        .filter(Boolean))];
+      const absent = careSerials.filter((serial) => !present.has(serial));
+
+      if (!added.length && createdNow) {
         await deleteSaleOrder(order.id, user);
         order = null;
+        createdNow = false;
         const reason = reasons.join("; ") || "Nenhum produto pôde ser incluído.";
         skipped.push({ ov, reason });
         onStep(`OV ${ov} ignorada: ${reason}`);
         continue;
       }
 
+      if (absent.length) {
+        for (const serial of eligible.missing) {
+          if (absent.includes(serial)) await noteMissingSerial(order.id, serial, user);
+        }
+        await keepReservationOpen(order.id);
+        const fresh = added.filter((row) => row.fresh);
+        const missingNow = eligible.missing.filter((serial) => absent.includes(serial));
+        const waiting = missingNow.length ? `${missingNow.join(", ")} não encontrado no estoque.` : `${absent.join(", ")} ainda não entrou nesta venda.`;
+        if (createdNow || fresh.length) {
+          imported.push({
+            ov,
+            id: order.id,
+            number: order.number,
+            products: added.map((row) => row.serial),
+            pending: reasons,
+          });
+          const included = fresh.length ? ` ${fresh.map((row) => row.serial).join(", ")} reservado.` : "";
+          onStep(`OV ${ov} ficou reservada em ${order.number}.${included} ${waiting}`);
+        } else {
+          onStep(`OV ${ov} continua reservada em ${order.number}. ${waiting}`);
+        }
+        continue;
+      }
+
+      if (!invoiceNumber) {
+        skipped.push({ ov, reason: "A coluna Nota Fiscal está vazia." });
+        onStep(`OV ${ov} continua em ${order.number}: a coluna Nota Fiscal está vazia.`);
+        continue;
+      }
+
       await generateSaleOrder(order.id, user);
       generated = true;
-      const fresh = await prisma.saleOrder.findUnique({
-        where: { id: order.id },
-        select: { items: { select: { id: true, status: true } } },
-      });
-      const checkoutItems = added
-        .map((row) => fresh?.items?.find((item) => item.id === row.itemId))
-        .filter((item) => item && [SALE_ORDER_ITEM_STATUSES.ORDERED, SALE_ORDER_ITEM_STATUSES.RESERVED].includes(item.status));
-      if (!checkoutItems.length) throw new AppError("Nenhum produto ficou pronto para baixa.");
+      const priced = await orderItems(order.id);
+      const priceBySerial = new Map((entry.products || []).map((row) => [
+        String(row.serialOnyx || "").trim().toUpperCase(),
+        row.soldPrice,
+      ]));
+      const checkoutItems = priced.filter((item) =>
+        [SALE_ORDER_ITEM_STATUSES.ORDERED, SALE_ORDER_ITEM_STATUSES.RESERVED].includes(item.status),
+      );
+      if (!checkoutItems.length) {
+        onStep(`OV ${ov} já está completa em ${order.number}.`);
+        continue;
+      }
       await checkoutSaleOrder(order.id, {
         invoiceNumber,
         soldAt: entry.soldAt || new Date().toISOString(),
-        items: checkoutItems.map((item) => {
-          const addedRow = added.find((row) => row.itemId === item.id);
-          return {
-            itemId: item.id,
-            warrantyMonths: WARRANTY_MONTHS,
-            invoiceNumber,
-            cashPrice: addedRow?.soldPrice,
-            paymentMethod,
-            installmentCount,
-          };
-        }),
+        items: checkoutItems.map((item) => ({
+          itemId: item.id,
+          warrantyMonths: WARRANTY_MONTHS,
+          invoiceNumber,
+          cashPrice: priceBySerial.get(String(item.product?.serialOnyx || "").toUpperCase()),
+          paymentMethod,
+          installmentCount,
+        })),
       }, user);
 
       imported.push({
@@ -356,7 +483,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         onStep(`OV ${ov} ficou como ${order.number}, mas a baixa não foi concluída: ${reason}`);
         continue;
       }
-      if (order?.id) await deleteSaleOrder(order.id, user).catch(() => {});
+      if (order?.id && createdNow) await deleteSaleOrder(order.id, user).catch(() => {});
       skipped.push({ ov, reason });
       onStep(`OV ${ov} ignorada: ${reason}`);
     }

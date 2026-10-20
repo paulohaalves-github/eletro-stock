@@ -524,7 +524,7 @@ async function closeCareBrowser(browser) {
   }
 }
 
-export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [], refreshOvs = [] } = {}) {
+export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [], refreshOvs = [], reopenOvs = [] } = {}) {
   const config = await careConfig();
   const known = new Set(skipOvs.map((value) => String(value)));
   onStep("Abrindo o navegador.", { phase: "list", current: 0, total: 0, label: "Abrindo o navegador" });
@@ -588,23 +588,26 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
     const skipped = [];
     const dateUpdates = [];
     const refreshSet = new Set(refreshOvs.map((value) => String(value)));
+    const reopenSet = new Set(reopenOvs.map((value) => String(value)));
     for (const row of listed) {
       if (refreshSet.has(String(row.ov)) && row.soldAt) dateUpdates.push({ ov: row.ov, soldAt: row.soldAt });
     }
     const refreshRows = listed.filter((row) => refreshSet.has(String(row.ov)) && !dateUpdates.some((item) => item.ov === row.ov));
-    const pendingRows = listed.filter((row) => !known.has(row.ov));
+    const pendingRows = listed.filter((row) => !known.has(row.ov) || reopenSet.has(String(row.ov)));
+    const reopened = pendingRows.filter((row) => reopenSet.has(String(row.ov))).length;
     onStep(`Lista concluída com ${listed.length} OV(s). Lendo os detalhes.`, {
       phase: "read",
       current: 0,
       total: pendingRows.length,
       label: pendingRows.length ? `Lendo OV 0 de ${pendingRows.length}` : "Lista concluída",
     });
-    const alreadyImported = listed.length - pendingRows.length;
+    const alreadyImported = listed.filter((row) => known.has(row.ov) && !reopenSet.has(String(row.ov))).length;
     if (alreadyImported) {
       const dateNote = refreshRows.length ? ` ${refreshRows.length} terão a data da venda relida.` : "";
       onStep(`${alreadyImported} OV(s) já importadas foram puladas.${dateNote}`);
       skipped.push({ ov: "", reason: `${alreadyImported} OV(s) já estavam no sistema.` });
     }
+    if (reopened) onStep(`${reopened} OV(s) reservadas serão conferidas de novo.`);
     for (let index = 0; index < pendingRows.length; index += 1) {
       const { ov, invoiceNumber } = pendingRows[index];
       onStep(`Lendo a OV ${ov}.`, {

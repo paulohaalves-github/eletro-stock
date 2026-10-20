@@ -4,7 +4,7 @@ import { conflict, forbidden } from "@/lib/errors";
 import { ndjsonStream } from "@/lib/ndjson-stream";
 import { can, canManageAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
 import { collectCareFinalizedSales } from "@/lib/services/care";
-import { importCareSales, applyCareSaleDates, careOvsNeedingSaleDate } from "@/lib/services/care-sales";
+import { importCareSales, applyCareSaleDates, careOvsAwaitingProducts, careOvsNeedingSaleDate } from "@/lib/services/care-sales";
 import { acquireCareSyncLock, holdCareSyncLock, releaseCareSyncLock } from "@/lib/services/care-sync";
 import { recordCareSyncRun } from "@/lib/services/settings";
 
@@ -38,6 +38,7 @@ export const POST = apiHandler(async (_request, { session }) => {
       const collected = await collectCareFinalizedSales(report, {
         skipOvs: existing.map((item) => item.ov),
         refreshOvs,
+        reopenOvs: await careOvsAwaitingProducts(),
       });
       const imported = await importCareSales(collected.sales, session, report);
       const datesUpdated = await applyCareSaleDates(collected.dateUpdates, report);

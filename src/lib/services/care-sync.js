@@ -60,14 +60,14 @@ async function syncActor(unitId) {
 
 export async function executeCareSync(user) {
   const { collectCareFinalizedSales } = await import("./care");
-  const { importCareSales, applyCareSaleDates, careOvsNeedingSaleDate } = await import("./care-sales");
+  const { importCareSales, applyCareSaleDates, careOvsAwaitingProducts, careOvsNeedingSaleDate } = await import("./care-sales");
   const existing = await prisma.saleOrder.findMany({
     where: { ov: { not: null } },
     select: { ov: true },
   });
   const collected = await collectCareFinalizedSales((message) => {
     console.log(`[care-sync] ${message}`);
-  }, { skipOvs: existing.map((item) => item.ov), refreshOvs: await careOvsNeedingSaleDate() });
+  }, { skipOvs: existing.map((item) => item.ov), refreshOvs: await careOvsNeedingSaleDate(), reopenOvs: await careOvsAwaitingProducts() });
   const imported = await importCareSales(collected.sales, user, (message) => {
     console.log(`[care-sync] ${message}`);
   });
