@@ -67,6 +67,44 @@ function missingStockNote(serial) {
   return `${serial} não encontrado no estoque.`;
 }
 
+function careSerialsOf(entry) {
+  return [...new Set((entry.products || [])
+    .map((row) => String(row.serialOnyx || "").trim().toUpperCase())
+    .filter(Boolean))];
+}
+
+async function findOpenReservedSale(customerId, unitId, serials) {
+  const wanted = new Set(serials);
+  if (!customerId || !wanted.size) return { order: null, ambiguous: [] };
+  const orders = await prisma.saleOrder.findMany({
+    where: {
+      customerId,
+      unitId,
+      ov: null,
+      closedAt: null,
+      status: { notIn: SALE_ORDER_CLOSED_STATUSES },
+    },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      closedAt: true,
+      items: {
+        where: {
+          status: { in: [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED] },
+        },
+        select: { product: { select: { serialOnyx: true } } },
+      },
+    },
+  });
+  const matches = orders.filter((order) => order.items.some((item) =>
+    wanted.has(String(item.product?.serialOnyx || "").toUpperCase()),
+  ));
+  if (matches.length === 1) return { order: matches[0], ambiguous: [] };
+  if (matches.length > 1) return { order: null, ambiguous: matches };
+  return { order: null, ambiguous: [] };
+}
+
 async function findCustomerByDocument(document) {
   const doc = digitsOnly(document);
   if (doc.length < 11) return null;
@@ -262,6 +300,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
     });
     let order = null;
     let createdNow = false;
+    let linked = false;
     let generated = false;
     let added = [];
     let reasons = [];
@@ -281,16 +320,55 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         onStep(`OV ${ov} já está reservada em ${already.number}. Conferindo os produtos.`);
       }
 
+      const { paymentMethod, installmentCount } = carePayment(entry.payment);
+      const eligible = await eligibleProducts(entry, unitId);
+      reasons = eligible.reasons;
+      const ready = eligible.ready;
+      const careSerials = careSerialsOf(entry);
+
+      if (!order) {
+        const knownCustomer = await findCustomerByDocument(entry.customer?.document);
+        if (knownCustomer) {
+          const reservedMatch = await findOpenReservedSale(knownCustomer.id, unitId, careSerials);
+          if (reservedMatch.ambiguous.length > 1) {
+            const numbers = reservedMatch.ambiguous.map((item) => item.number).join(", ");
+            const reason = `Há mais de uma venda reservada deste cliente com produtos desta OV: ${numbers}.`;
+            skipped.push({ ov, reason });
+            onStep(`OV ${ov} ignorada: ${reason}`);
+            continue;
+          }
+          if (reservedMatch.order) {
+            order = reservedMatch.order;
+            linked = true;
+            try {
+              await prisma.saleOrder.update({
+                where: { id: order.id },
+                data: {
+                  ov,
+                  ...(paymentMethod && installmentCount ? { paymentMethod, installmentCount } : {}),
+                },
+              });
+            } catch (error) {
+              order = null;
+              linked = false;
+              if (error?.code === "P2002") {
+                skipped.push({ ov, reason: "Já importada." });
+                onStep(`OV ${ov} já está no sistema. Pulando.`);
+                continue;
+              }
+              throw error;
+            }
+            await addSaleOrderNote(order.id, `OV ${ov} do Care vinculada a esta venda.`, user);
+            onStep(`OV ${ov} corresponde à venda reservada ${order.number}.`);
+          }
+        }
+      }
+
       if (!order && !invoiceNumber) {
         skipped.push({ ov, reason: "A coluna Nota Fiscal está vazia." });
         onStep(`OV ${ov} ignorada: a coluna Nota Fiscal está vazia.`);
         continue;
       }
-
-      const { paymentMethod, installmentCount } = carePayment(entry.payment);
-      const eligible = await eligibleProducts(entry, unitId);
-      reasons = eligible.reasons;
-      const ready = eligible.ready;
 
       if (!order) {
         const sellerMatch = matchSeller(entry.sellerName, users);
@@ -386,9 +464,6 @@ export async function importCareSales(entries, user, onStep = () => {}) {
 
       const itemsNow = await orderItems(order.id);
       const present = new Set(itemsNow.map((item) => String(item.product?.serialOnyx || "").toUpperCase()));
-      const careSerials = [...new Set((entry.products || [])
-        .map((row) => String(row.serialOnyx || "").trim().toUpperCase())
-        .filter(Boolean))];
       const absent = careSerials.filter((serial) => !present.has(serial));
 
       if (!added.length && createdNow) {
@@ -431,15 +506,44 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         continue;
       }
 
+      const careOnSale = itemsNow.filter((item) => careSerials.includes(String(item.product?.serialOnyx || "").toUpperCase()));
+      const careStillOpen = careOnSale.some((item) => [
+        SALE_ORDER_ITEM_STATUSES.INTEREST,
+        SALE_ORDER_ITEM_STATUSES.RESERVED,
+        SALE_ORDER_ITEM_STATUSES.ORDERED,
+      ].includes(item.status));
+      if (!careStillOpen && careOnSale.some((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD)) {
+        const extras = itemsNow.some((item) =>
+          !careSerials.includes(String(item.product?.serialOnyx || "").toUpperCase())
+          && [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
+        );
+        onStep(extras
+          ? `OV ${ov} já foi concretizada em ${order.number}. Os demais produtos reservados permanecem nesta venda.`
+          : `OV ${ov} já foi concretizada em ${order.number}.`);
+        continue;
+      }
+
+      const outsideCare = itemsNow
+        .filter((item) => !careSerials.includes(String(item.product?.serialOnyx || "").toUpperCase()))
+        .filter((item) => [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status))
+        .map((item) => item.id);
+
       await generateSaleOrder(order.id, user);
       generated = true;
+      if (outsideCare.length) {
+        await prisma.saleOrderItem.updateMany({
+          where: { id: { in: outsideCare }, status: SALE_ORDER_ITEM_STATUSES.ORDERED },
+          data: { status: SALE_ORDER_ITEM_STATUSES.RESERVED },
+        });
+      }
       const priced = await orderItems(order.id);
       const priceBySerial = new Map((entry.products || []).map((row) => [
         String(row.serialOnyx || "").trim().toUpperCase(),
         row.soldPrice,
       ]));
       const checkoutItems = priced.filter((item) =>
-        [SALE_ORDER_ITEM_STATUSES.ORDERED, SALE_ORDER_ITEM_STATUSES.RESERVED].includes(item.status),
+        careSerials.includes(String(item.product?.serialOnyx || "").toUpperCase())
+        && [SALE_ORDER_ITEM_STATUSES.ORDERED, SALE_ORDER_ITEM_STATUSES.RESERVED].includes(item.status),
       );
       if (!checkoutItems.length) {
         onStep(`OV ${ov} já está completa em ${order.number}.`);
@@ -469,7 +573,10 @@ export async function importCareSales(entries, user, onStep = () => {}) {
       const paymentNote = paymentMethod && installmentCount ? ` ${paymentMethod}, ${installmentCount}x.` : "";
       const priceNote = ` Valor vendido: ${added.map((row) => `${row.serial} ${Number(row.soldPrice).toFixed(2)}`).join(", ")}.${paymentNote}`;
       const soldNote = ` Data da venda: ${formatDateTime(entry.soldAt || new Date())}.`;
-      onStep(`OV ${ov} importada como ${order.number}, com NF ${invoiceNumber} e garantia de ${WARRANTY_MONTHS} meses.${soldNote}${priceNote}${pending}`);
+      const origin = linked
+        ? `concretizada na venda ${order.number}, que já estava reservada`
+        : `importada como ${order.number}`;
+      onStep(`OV ${ov} ${origin}, com NF ${invoiceNumber} e garantia de ${WARRANTY_MONTHS} meses.${soldNote}${priceNote}${pending}`);
     } catch (error) {
       const reason = errorMessage(error);
       if (order?.id && generated) {
