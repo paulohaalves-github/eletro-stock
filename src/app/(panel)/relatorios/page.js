@@ -7,10 +7,19 @@ import { Button, Card, PageHeader, Select } from "@/components/ui";
 import { SearchActions } from "@/components/paged-list";
 import { formatCurrency } from "@/lib/format";
 
+const CONDITIONS = [
+  { id: "", label: "Todas as condições" },
+  { id: "NOVO", label: "Novo" },
+  { id: "NOVO_COM_AVARIA", label: "Novo com avaria" },
+  { id: "REVISADO", label: "Revisado" },
+];
+
 const TYPES = [
   { id: "stock", label: "Estoque atual" },
   { id: "entries", label: "Entradas por período" },
   { id: "exits", label: "Saídas por período" },
+  { id: "sales-detail", label: "Relatório de vendas" },
+  { id: "model-turnover", label: "Giro dos modelos" },
   { id: "sales", label: "Faturamento comercial" },
   { id: "sold", label: "Produtos vendidos" },
   { id: "condition", label: "Produtos por condição" },
@@ -23,6 +32,7 @@ export default function RelatoriosPage() {
   const [type, setType] = useState("stock");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [condition, setCondition] = useState("");
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,16 +40,14 @@ export default function RelatoriosPage() {
     const params = new URLSearchParams({ type, format });
     if (from) params.set("from", from);
     if (to) params.set("to", to);
+    if (type === "model-turnover" && condition) params.set("condition", condition);
     return params.toString();
   }
 
   async function loadReport() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ type, format: "json" });
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      setReport(await api(`/api/reports?${params}`));
+      setReport(await api(`/api/reports?${query("json")}`));
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -67,7 +75,7 @@ export default function RelatoriosPage() {
     <div>
       <PageHeader
         title="Relatórios"
-        subtitle="Exporte estoque, movimentações e o faturamento comercial (vendedor, pedido e período)."
+        subtitle="Exporte estoque, movimentações, o relatório de vendas e o giro dos modelos."
         actions={
           <>
             <Button variant="secondary" onClick={() => download("csv")}>CSV</Button>
@@ -77,12 +85,17 @@ export default function RelatoriosPage() {
         }
       />
       <Card className="mb-4 space-y-3">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <Select value={type} onChange={(e) => setType(e.target.value)}>
             {TYPES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </Select>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+          {type === "model-turnover" ? (
+            <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
+              {CONDITIONS.map((item) => <option key={item.id || "all"} value={item.id}>{item.label}</option>)}
+            </Select>
+          ) : null}
         </div>
         <SearchActions
           loading={loading}
@@ -91,6 +104,7 @@ export default function RelatoriosPage() {
             setType("stock");
             setFrom("");
             setTo("");
+            setCondition("");
             setLoading(true);
             api("/api/reports?type=stock&format=json")
               .then(setReport)
@@ -104,12 +118,13 @@ export default function RelatoriosPage() {
           <h2 className="mb-3 text-lg font-semibold">{report.title}</h2>
           {report.summary ? (
             <p className="mb-3 text-sm text-muted">
-              {report.summary.count} itens · {report.summary.priceLabel || "à vista"} {formatCurrency(report.summary.cash)}
+              {report.summary.count} {report.summary.countLabel || "itens"} · {report.summary.priceLabel || "à vista"} {formatCurrency(report.summary.cash)}
+              {report.summary.note ? ` · ${report.summary.note}` : ""}
               {report.summary.installment ? ` · parcelado ${formatCurrency(report.summary.installment)}` : ""}
               {report.summary.market ? ` · mercado ${formatCurrency(report.summary.market)}` : ""}
             </p>
           ) : null}
-          <table className="w-full min-w-[800px] text-left text-sm">
+          <table className="w-full min-w-[1100px] text-left text-sm">
             <thead>
               <tr className="text-xs uppercase text-muted">
                 {report.columns.map((col) => <th key={col} className="px-2 py-2">{col}</th>)}

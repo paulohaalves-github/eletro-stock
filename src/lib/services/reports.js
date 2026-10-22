@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { CONDITION_LABELS, MOVEMENT_TYPE_LABELS, STATUS_LABELS, VOLTAGE_LABELS } from "../constants";
 import { formatCurrency, formatDateTime, periodRange } from "../format";
 import { movementUnitWhere, requireActiveUnit } from "../units";
+import { buildModelTurnoverReport, buildSalesDetailReport } from "./sale-reports";
 
 function productWhere(filters = {}, unitId) {
   const where = { unitId, deletedAt: null };
@@ -45,6 +46,8 @@ export async function buildReport(type, filters = {}, session) {
     const rows = await listSoldCommercialRows(session, range);
     return commercialReportRows(rows);
   }
+  if (type === "sales-detail") return buildSalesDetailReport(session, filters);
+  if (type === "model-turnover") return buildModelTurnoverReport(session, filters);
   if (type === "movements") {
     const where = {
       AND: [movementUnitWhere(unitId), dateRangeWhere(filters)],
