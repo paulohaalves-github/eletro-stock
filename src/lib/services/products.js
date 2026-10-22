@@ -48,6 +48,11 @@ const catalogModelSummary = {
     supplierModelCode: true,
     commercialName: true,
     manufacturer: { select: { id: true, name: true } },
+    commercialImages: {
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      take: 1,
+      select: { id: true, fileUrl: true },
+    },
   },
 };
 
@@ -180,6 +185,7 @@ function buildProductListWhere(filters = {}, session) {
     stalePriceDays,
     priceUpdatedOn,
     manufacturerId,
+    commercialPhoto,
   } = filters;
 
   const where = {
@@ -191,6 +197,16 @@ function buildProductListWhere(filters = {}, session) {
   const manufacturer = Number(manufacturerId);
   if (Number.isInteger(manufacturer) && manufacturer > 0) {
     where.catalogModel = { manufacturerId: manufacturer };
+  }
+  const photo = String(commercialPhoto || "");
+  if (photo === "with" || photo === "without") {
+    const images = photo === "with" ? { some: {} } : { none: {} };
+    const modelFilter = { ...(where.catalogModel || {}), commercialImages: images };
+    if (photo === "without" && !where.catalogModel) {
+      where.AND = [{ OR: [{ catalogModelId: null }, { catalogModel: modelFilter }] }];
+    } else {
+      where.catalogModel = modelFilter;
+    }
   }
   if (categoryId) where.categoryId = Number(categoryId);
   if (lineId) where.lineId = Number(lineId);
@@ -301,6 +317,7 @@ function productExportRows(items) {
     formatDate(item.lastPriceUpdateAt),
     STATUS_LABELS[item.status] || item.status,
     formatDate(item.entryDate),
+    item.catalogModel?.commercialImages?.length ? "Sim" : "Não",
   ]);
 }
 
@@ -345,6 +362,7 @@ export async function exportProductsWorkbook(payload = {}, session) {
       "Preço atualizado",
       "Status",
       "Entrada",
+      "Foto comercial",
     ],
     rows: productExportRows(items),
   });

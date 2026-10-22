@@ -11,6 +11,8 @@ export const GET = apiHandler(
         status: searchParams.get("status"),
         customerId: searchParams.get("customerId"),
         sellerId: searchParams.get("sellerId"),
+        soldFrom: searchParams.get("soldFrom"),
+        soldTo: searchParams.get("soldTo"),
         page: searchParams.get("page"),
         pageSize: searchParams.get("pageSize"),
       },

@@ -96,6 +96,8 @@ export default function VendasPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [sellerId, setSellerId] = useState("");
+  const [soldFrom, setSoldFrom] = useState("");
+  const [soldTo, setSoldTo] = useState("");
   const [sellers, setSellers] = useState([]);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -105,7 +107,7 @@ export default function VendasPage() {
   const stepsRef = useRef(null);
 
   function currentFilters() {
-    return { q, status, sellerId };
+    return { q, status, sellerId, soldFrom, soldTo };
   }
 
   function loader(page, pageSize, filters = currentFilters()) {
@@ -116,7 +118,9 @@ export default function VendasPage() {
     setQ("");
     setStatus("");
     setSellerId("");
-    void list.search((page, pageSize) => loader(page, pageSize, { q: "", status: "", sellerId: "" }));
+    setSoldFrom("");
+    setSoldTo("");
+    void list.search((page, pageSize) => loader(page, pageSize, { q: "", status: "", sellerId: "", soldFrom: "", soldTo: "" }));
   }
 
   useEffect(() => {
@@ -246,6 +250,12 @@ export default function VendasPage() {
                 <option key={seller.id} value={seller.id}>{seller.name}</option>
               ))}
             </Select>
+          </Field>
+          <Field label="Venda de">
+            <Input type="date" value={soldFrom} onChange={(e) => setSoldFrom(e.target.value)} />
+          </Field>
+          <Field label="Venda até">
+            <Input type="date" value={soldTo} onChange={(e) => setSoldTo(e.target.value)} />
           </Field>
         </div>
         <SearchActions loading={list.loading} onSearch={() => void list.search(loader)} onClear={clearFilters} />

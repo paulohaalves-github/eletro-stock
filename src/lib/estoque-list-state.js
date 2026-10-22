@@ -12,6 +12,7 @@ export const EMPTY_ESTOQUE_FILTERS = {
   locationId: "",
   stalePriceDays: "",
   priceUpdatedOn: "",
+  commercialPhoto: "",
 };
 
 const STORAGE_KEY = "eletro-stock.estoque-list";

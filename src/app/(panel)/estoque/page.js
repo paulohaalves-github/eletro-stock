@@ -318,6 +318,11 @@ function EstoqueContent() {
               <option key={value} value={value}>{label}</option>
             ))}
           </Select>
+          <Select value={filters.commercialPhoto || ""} onChange={(e) => setFilters({ ...filters, commercialPhoto: e.target.value })}>
+            <option value="">Foto comercial</option>
+            <option value="with">Com foto comercial</option>
+            <option value="without">Sem foto comercial</option>
+          </Select>
           <Select value={filters.voltage} onChange={(e) => setFilters({ ...filters, voltage: e.target.value })}>
             <option value="">Tensão</option>
             {Object.entries(VOLTAGE_LABELS).map(([value, label]) => (
@@ -420,6 +425,7 @@ function EstoqueContent() {
                     <StatusBadge status={item.status} />
                   </div>
                   <p className="font-medium">{item.commercialName || item.supplierModelCode || item.category?.name}</p>
+                  <p className="text-xs text-muted">{item.catalogModel?.commercialImages?.length ? "Com foto comercial" : "Sem foto comercial"}</p>
                   <p className="text-xs text-muted">
                     {item.serialOnyx} · {item.category?.name}
                     {item.voltage ? ` · ${item.voltage}` : ""}
@@ -443,7 +449,7 @@ function EstoqueContent() {
 
       {data.items.length && view === "table" ? (
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[1160px] text-left text-sm">
+          <table className="w-full min-w-[1280px] text-left text-sm">
             <thead className="text-xs uppercase text-muted">
               <tr>
                 <th className="px-3 py-3">
@@ -454,7 +460,7 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Valor vendido", "Parcelado", "Preço atualizado", "Status", "Venda", "Entrada"].map((col) => (
+                {["Foto", "Foto comercial", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Valor vendido", "Parcelado", "Preço atualizado", "Status", "Venda", "Entrada"].map((col) => (
                   <th key={col} className="px-3 py-3 font-semibold">{col}</th>
                 ))}
               </tr>
@@ -471,6 +477,13 @@ function EstoqueContent() {
                   </td>
                   <td className="px-3 py-2">
                     <img src={item.primaryImage?.fileUrl || "/logo.svg"} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                  </td>
+                  <td className="px-3 py-2">
+                    {item.catalogModel?.commercialImages?.[0]?.fileUrl ? (
+                      <img src={item.catalogModel.commercialImages[0].fileUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                    ) : (
+                      <span className="text-xs text-muted">Sem foto</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 font-mono text-accent">{formatProductId(item.id)}</td>
                   <td className="px-3 py-2">{item.serialOnyx || "—"}</td>

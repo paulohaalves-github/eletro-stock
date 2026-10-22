@@ -15,7 +15,7 @@ import {
 } from "../constants";
 import { emptyToNull, parseId } from "../validations";
 import { paginationResult, parsePagination } from "../pagination";
-import { formatDate, formatProductId } from "../format";
+import { formatDate, formatProductId, saoPauloDayRange } from "../format";
 import { can, canManageAllSaleOrders, canViewAllSaleOrders, PERMISSIONS } from "../permissions";
 import { isAdminRole, requireActiveUnit, unitSelect } from "../units";
 import { getProduct, movementUnitFields } from "./products";
@@ -400,6 +400,19 @@ export async function listSaleOrders(filters, session) {
   if (filters.customerId) where.customerId = parseId(filters.customerId);
   if (filters.sellerId && canViewAllSaleOrders(session.role)) {
     where.sellerId = parseId(filters.sellerId);
+  }
+  const soldRange = {};
+  const soldStart = saoPauloDayRange(filters.soldFrom);
+  const soldEnd = saoPauloDayRange(filters.soldTo);
+  if (soldStart) soldRange.gte = soldStart.start;
+  if (soldEnd) soldRange.lte = soldEnd.end;
+  if (soldStart || soldEnd) {
+    where.items = {
+      some: {
+        status: { not: SALE_ORDER_ITEM_STATUSES.REMOVED },
+        OR: [{ soldAt: soldRange }, { sale: { soldAt: soldRange } }],
+      },
+    };
   }
 
   const pagination = parsePagination(filters);

@@ -107,9 +107,9 @@ export async function buildSalesDetailReport(session, filters = {}) {
   const [items, standaloneSales] = await Promise.all([
     prisma.saleOrderItem.findMany({
       where: {
-        status: { not: SALE_ORDER_ITEM_STATUSES.REMOVED },
+        status: SALE_ORDER_ITEM_STATUSES.SOLD,
         saleOrder: orderWhere,
-        OR: [{ reservedAt: inRange }, { soldAt: inRange }],
+        OR: [{ soldAt: inRange }, { sale: { soldAt: inRange } }],
         ...(condition ? { product: { condition } } : {}),
       },
       include: {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
-import { Button, Card, PageHeader, Select } from "@/components/ui";
+import { Button, Card, Field, PageHeader, Select } from "@/components/ui";
 import { SearchActions } from "@/components/paged-list";
 import { formatCurrency } from "@/lib/format";
 
@@ -89,8 +89,12 @@ export default function RelatoriosPage() {
           <Select value={type} onChange={(e) => setType(e.target.value)}>
             {TYPES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </Select>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+          <Field label={type === "sales-detail" ? "Venda de" : "De"}>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+          </Field>
+          <Field label={type === "sales-detail" ? "Venda até" : "Até"}>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-sm" />
+          </Field>
           {type === "model-turnover" ? (
             <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
               {CONDITIONS.map((item) => <option key={item.id || "all"} value={item.id}>{item.label}</option>)}
