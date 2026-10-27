@@ -66,7 +66,7 @@ export default function ProductDetailPage() {
 
   useEffect(() => {
     const stored = readEstoqueListState();
-    setListHref(estoqueListPath(stored.q, stored.filters));
+    setListHref(estoqueListPath(stored.q, stored.filters, stored.sort));
   }, []);
 
   if (!product || !me) return <p className="text-muted">Carregando produto...</p>;

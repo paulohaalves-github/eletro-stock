@@ -13,6 +13,7 @@ import {
   createSaleOrder,
   deleteSaleOrder,
   generateSaleOrder,
+  releaseInterestForCareImport,
   releaseReservationForCareImport,
   reserveSaleOrderItem,
 } from "./sale-orders";
@@ -434,22 +435,13 @@ export async function importCareSales(entries, user, onStep = () => {}) {
             });
             continue;
           }
-          if (row.release) {
-            const interest = await prisma.saleOrderItem.findFirst({
-              where: {
-                productId: row.product.id,
-                status: SALE_ORDER_ITEM_STATUSES.INTEREST,
-                saleOrderId: { not: order.id },
-                saleOrder: { closedAt: null, status: { notIn: SALE_ORDER_CLOSED_STATUSES } },
-              },
-              select: { saleOrder: { select: { number: true } } },
-            });
-            if (interest) {
-              reasons.push(`${row.product.serialOnyx} também está como interesse na venda ${interest.saleOrder?.number || "aberta"}`);
-              continue;
-            }
-            await releaseReservationForCareImport(row.product.id, user);
+          const releasedInterest = await releaseInterestForCareImport(row.product.id, user, order.id);
+          if (releasedInterest.length) {
+            const message = `${row.product.serialOnyx} saiu do interesse da venda ${releasedInterest.join(", ")}.`;
+            warnings.push(`OV ${ov}: ${message}`);
+            onStep(`OV ${ov}: ${message}`);
           }
+          if (row.release) await releaseReservationForCareImport(row.product.id, user);
           const withItem = await addSaleOrderItem(order.id, row.product.id, user);
           const item = withItem.items.find((currentItem) =>
             currentItem.productId === row.product.id && currentItem.status !== SALE_ORDER_ITEM_STATUSES.REMOVED,

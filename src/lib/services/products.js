@@ -3,6 +3,7 @@ import { conflict, notFound, validationError } from "../errors";
 import { writeAudit, writeMovement } from "../audit";
 import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, SALE_ORDER_CLOSED_STATUSES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { formatCurrency, formatDate, formatProductId, saoPauloDayRange } from "../format";
+import { parseEstoqueSort } from "../estoque-list-state";
 import { emptyToNull, MAX_TRANSFER_BATCH, parseProductIds, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
@@ -55,6 +56,38 @@ const catalogModelSummary = {
     },
   },
 };
+
+function applySortDir(order, dir) {
+  if (order === "asc" || order === "desc") return dir;
+  return Object.fromEntries(Object.entries(order).map(([key, value]) => [key, applySortDir(value, dir)]));
+}
+
+function productListOrderBy(sort, dir) {
+  const parsed = parseEstoqueSort(sort, dir);
+  const specs = {
+    id: { id: "asc" },
+    serialOnyx: { serialOnyx: "asc" },
+    commercialName: { catalogModel: { commercialName: "asc" } },
+    category: { category: { name: "asc" } },
+    locationType: { location: { locationType: { name: "asc" } } },
+    location: { location: { name: "asc" } },
+    supplierModelCode: { supplierModelCode: "asc" },
+    ean: { ean: "asc" },
+    capacitySizeType: { capacitySizeType: "asc" },
+    voltage: { voltage: "asc" },
+    condition: { condition: "asc" },
+    cashPrice: { cashPrice: "asc" },
+    installmentPrice: { installmentPrice: "asc" },
+    lastPriceUpdateAt: { lastPriceUpdateAt: "asc" },
+    status: { status: "asc" },
+    entryDate: { entryDate: "asc" },
+  };
+  const spec = parsed.sort ? specs[parsed.sort] : null;
+  if (!spec) return [{ createdAt: "desc" }, { id: "desc" }];
+  const primary = applySortDir(spec, parsed.dir);
+  if (parsed.sort === "id") return [primary];
+  return [primary, { id: parsed.dir }];
+}
 
 const productListInclude = {
   category: true,
@@ -255,7 +288,7 @@ function buildProductListWhere(filters = {}, session) {
 export async function listProducts(filters = {}, session) {
   const { expireExpiredReservations } = await import("./sale-orders");
   await expireExpiredReservations();
-  const { ids, page = 1, pageSize = ESTOQUE_PAGE_SIZE, view = "table" } = filters;
+  const { ids, page = 1, pageSize = ESTOQUE_PAGE_SIZE, view = "table", sort, dir } = filters;
   const idList = parseIdList(ids);
   const where = buildProductListWhere(filters, session);
   if (idList.length) where.id = { in: idList };
@@ -270,7 +303,7 @@ export async function listProducts(filters = {}, session) {
     prisma.product.findMany({
       where,
       include: productListInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: productListOrderBy(sort, dir),
       skip,
       take,
     }),

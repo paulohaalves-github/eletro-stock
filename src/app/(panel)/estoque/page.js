@@ -16,7 +16,8 @@ import {
   STATUSES,
   VOLTAGE_LABELS,
 } from "@/lib/constants";
-import { formatCurrency, formatDate, formatProductId } from "@/lib/format";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { cn, formatCurrency, formatDate, formatProductId } from "@/lib/format";
 import { ScanField } from "@/components/scan-field";
 import { LabelModelPicker, openLabelPrint } from "@/components/label-model-picker";
 import { ProductTrashDialog } from "@/components/product-trash-dialog";
@@ -24,18 +25,20 @@ import { PriceImportButton } from "@/components/price-import";
 import { can, canAccessSaleOrderRecord, PERMISSIONS } from "@/lib/permissions";
 import {
   EMPTY_ESTOQUE_FILTERS,
+  EMPTY_ESTOQUE_SORT,
   clearEstoqueListState,
   estoqueListPath,
   filtersFromParams,
   hasEstoqueListQuery,
   readEstoqueListState,
+  sortFromParams,
   writeEstoqueListState,
 } from "@/lib/estoque-list-state";
 import { MAX_TRANSFER_BATCH } from "@/lib/validations";
 
 const EMPTY_FILTERS = EMPTY_ESTOQUE_FILTERS;
 
-function buildQuery(pageNumber, q, filters) {
+function buildQuery(pageNumber, q, filters, sortState) {
   const search = new URLSearchParams({
     page: String(pageNumber),
     pageSize: String(ESTOQUE_PAGE_SIZE),
@@ -44,7 +47,62 @@ function buildQuery(pageNumber, q, filters) {
   for (const [key, value] of Object.entries(filters)) {
     if (value) search.set(key, value);
   }
+  if (sortState?.sort) {
+    search.set("sort", sortState.sort);
+    search.set("dir", sortState.dir === "desc" ? "desc" : "asc");
+  }
   return search.toString();
+}
+
+const TABLE_COLUMNS = [
+  { key: "photo", label: "Foto" },
+  { key: "commercialPhoto", label: "Foto comercial" },
+  { key: "id", label: "ID", sort: "id" },
+  { key: "serialOnyx", label: "Serial Onyx", sort: "serialOnyx" },
+  { key: "commercialName", label: "Nome comercial", sort: "commercialName" },
+  { key: "category", label: "Categoria", sort: "category" },
+  { key: "locationType", label: "Tipo de localização", sort: "locationType" },
+  { key: "location", label: "Localização", sort: "location" },
+  { key: "supplierModelCode", label: "Model Code", sort: "supplierModelCode" },
+  { key: "ean", label: "EAN", sort: "ean" },
+  { key: "capacitySizeType", label: "Capacidade", sort: "capacitySizeType" },
+  { key: "voltage", label: "Tensão", sort: "voltage" },
+  { key: "condition", label: "Condição", sort: "condition" },
+  { key: "cashPrice", label: "À vista", sort: "cashPrice" },
+  { key: "soldPrice", label: "Valor vendido" },
+  { key: "installmentPrice", label: "Parcelado", sort: "installmentPrice" },
+  { key: "lastPriceUpdateAt", label: "Preço atualizado", sort: "lastPriceUpdateAt" },
+  { key: "status", label: "Status", sort: "status" },
+  { key: "sale", label: "Venda" },
+  { key: "entryDate", label: "Entrada", sort: "entryDate" },
+];
+
+function SortHeader({ column, sortState, onSort }) {
+  if (!column.sort) {
+    return <span className="font-semibold">{column.label}</span>;
+  }
+  const active = sortState.sort === column.sort;
+  const ariaSort = !active ? "none" : sortState.dir === "desc" ? "descending" : "ascending";
+  return (
+    <button
+      type="button"
+      className={cn(
+        "-mx-1 inline-flex items-center gap-1 rounded px-1 font-semibold uppercase tracking-wide hover:text-text",
+        active ? "text-text" : "text-muted",
+      )}
+      aria-sort={ariaSort}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSort(column.sort);
+      }}
+    >
+      {column.label}
+      <span className="flex flex-col leading-none">
+        <ChevronUp className={cn("h-3 w-3", active && sortState.dir === "asc" ? "text-accent" : "opacity-40")} />
+        <ChevronDown className={cn("-mt-1 h-3 w-3", active && sortState.dir === "desc" ? "text-accent" : "opacity-40")} />
+      </span>
+    </button>
+  );
 }
 
 function EstoqueContent() {
@@ -63,9 +121,11 @@ function EstoqueContent() {
   const [labelIds, setLabelIds] = useState([]);
   const [q, setQ] = useState(params.get("q") || "");
   const [filters, setFilters] = useState(() => filtersFromParams(params));
+  const [sort, setSort] = useState(() => sortFromParams(params));
   const [applied, setApplied] = useState(() => ({
     q: params.get("q") || "",
     filters: filtersFromParams(params),
+    sort: sortFromParams(params),
   }));
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -73,21 +133,22 @@ function EstoqueContent() {
   const [trashing, setTrashing] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
 
-  const fetchPage = useCallback(async (pageNumber, { append = false, qValue, filterValue } = {}) => {
+  const fetchPage = useCallback(async (pageNumber, { append = false, qValue, filterValue, sortValue } = {}) => {
     const searchQ = qValue !== undefined ? qValue : q;
     const searchFilters = filterValue || filters;
+    const searchSort = sortValue !== undefined ? sortValue : sort;
     if (append) setLoadingMore(true);
     else setLoading(true);
     try {
-      const result = await api(`/api/products?${buildQuery(pageNumber, searchQ, searchFilters)}`);
+      const result = await api(`/api/products?${buildQuery(pageNumber, searchQ, searchFilters, searchSort)}`);
       setData((current) =>
         append ? { ...result, items: [...current.items, ...result.items] } : result,
       );
       setPage(pageNumber);
       if (!append) {
         setSelected(new Set());
-        setApplied({ q: searchQ, filters: searchFilters });
-        writeEstoqueListState(searchQ, searchFilters);
+        setApplied({ q: searchQ, filters: searchFilters, sort: searchSort });
+        writeEstoqueListState(searchQ, searchFilters, searchSort);
       }
     } catch (error) {
       toast.error(error.message);
@@ -95,7 +156,7 @@ function EstoqueContent() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [q, filters]);
+  }, [q, filters, sort]);
 
   useEffect(() => {
     Promise.all([api("/api/auth/me"), api("/api/categories"), api("/api/manufacturers"), api("/api/location-types"), api("/api/locations")]).then(([auth, c, brands, types, locs]) => {
@@ -110,17 +171,20 @@ function EstoqueContent() {
   useEffect(() => {
     let qValue = params.get("q") || "";
     let filterValue = filtersFromParams(params);
-    if (!hasEstoqueListQuery(qValue, filterValue)) {
+    let sortValue = sortFromParams(params);
+    if (!hasEstoqueListQuery(qValue, filterValue, sortValue)) {
       const stored = readEstoqueListState();
-      if (hasEstoqueListQuery(stored.q, stored.filters)) {
+      if (hasEstoqueListQuery(stored.q, stored.filters, stored.sort)) {
         qValue = stored.q;
         filterValue = stored.filters;
+        sortValue = stored.sort;
         setQ(qValue);
         setFilters(filterValue);
-        router.replace(estoqueListPath(qValue, filterValue));
+        setSort(sortValue);
+        router.replace(estoqueListPath(qValue, filterValue, sortValue));
       }
     }
-    void fetchPage(1, { qValue, filterValue });
+    void fetchPage(1, { qValue, filterValue, sortValue });
     // Carga inicial: URL, ou últimos filtros da sessão se a listagem vier limpa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -134,8 +198,18 @@ function EstoqueContent() {
   function searchNow(qValue) {
     const nextQ = qValue !== undefined ? qValue : q;
     if (qValue !== undefined) setQ(qValue);
-    router.replace(estoqueListPath(nextQ, filters));
-    void fetchPage(1, { qValue: nextQ, filterValue: filters });
+    router.replace(estoqueListPath(nextQ, filters, sort));
+    void fetchPage(1, { qValue: nextQ, filterValue: filters, sortValue: sort });
+  }
+
+  function sortBy(key) {
+    const next = {
+      sort: key,
+      dir: sort.sort === key && sort.dir === "asc" ? "desc" : "asc",
+    };
+    setSort(next);
+    router.replace(estoqueListPath(applied.q, applied.filters, next));
+    void fetchPage(1, { qValue: applied.q, filterValue: applied.filters, sortValue: next });
   }
 
   function toggleSelected(id, checked) {
@@ -197,7 +271,7 @@ function EstoqueContent() {
       toast.success(data.message);
       setTrashOpen(false);
       setSelected(new Set());
-      await fetchPage(1, { qValue: applied.q, filterValue: applied.filters });
+      await fetchPage(1, { qValue: applied.q, filterValue: applied.filters, sortValue: applied.sort });
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -274,7 +348,7 @@ function EstoqueContent() {
               ]}
             />
             {canImportPrices ? (
-              <PriceImportButton onApplied={() => void fetchPage(1, { qValue: applied.q, filterValue: applied.filters })} />
+              <PriceImportButton onApplied={() => void fetchPage(1, { qValue: applied.q, filterValue: applied.filters, sortValue: applied.sort })} />
             ) : null}
             <Link href="/entrada">
               <Button>Nova entrada</Button>
@@ -383,9 +457,10 @@ function EstoqueContent() {
               onClick={() => {
                 setQ("");
                 setFilters(EMPTY_FILTERS);
+                setSort(EMPTY_ESTOQUE_SORT);
                 clearEstoqueListState();
                 router.replace("/estoque");
-                void fetchPage(1, { qValue: "", filterValue: EMPTY_FILTERS });
+                void fetchPage(1, { qValue: "", filterValue: EMPTY_FILTERS, sortValue: EMPTY_ESTOQUE_SORT });
               }}
               disabled={loading}
             >
@@ -460,8 +535,10 @@ function EstoqueContent() {
                     aria-label="Selecionar visíveis"
                   />
                 </th>
-                {["Foto", "Foto comercial", "ID", "Serial Onyx", "Nome comercial", "Categoria", "Tipo de localização", "Localização", "Model Code", "EAN", "Capacidade", "Tensão", "Condição", "À vista", "Valor vendido", "Parcelado", "Preço atualizado", "Status", "Venda", "Entrada"].map((col) => (
-                  <th key={col} className="px-3 py-3 font-semibold">{col}</th>
+                {TABLE_COLUMNS.map((column) => (
+                  <th key={column.key} className="whitespace-nowrap px-3 py-3">
+                    <SortHeader column={column} sortState={sort} onSort={sortBy} />
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -520,7 +597,7 @@ function EstoqueContent() {
               type="button"
               variant="secondary"
               disabled={loadingMore}
-              onClick={() => void fetchPage(page + 1, { append: true, qValue: applied.q, filterValue: applied.filters })}
+              onClick={() => void fetchPage(page + 1, { append: true, qValue: applied.q, filterValue: applied.filters, sortValue: applied.sort })}
             >
               {loadingMore ? "Carregando..." : "Carregar mais"}
             </Button>

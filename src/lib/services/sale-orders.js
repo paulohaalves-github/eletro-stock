@@ -933,6 +933,34 @@ export async function syncSaleOrderAfterSale(productId, user) {
   await persistDerivedStatus(prisma, item.saleOrderId);
 }
 
+export async function releaseInterestForCareImport(productId, user, excludeOrderId) {
+  const items = await prisma.saleOrderItem.findMany({
+    where: {
+      productId: Number(productId),
+      status: SALE_ORDER_ITEM_STATUSES.INTEREST,
+      ...(excludeOrderId ? { saleOrderId: { not: Number(excludeOrderId) } } : {}),
+      saleOrder: { closedAt: null, status: { notIn: SALE_ORDER_CLOSED_STATUSES } },
+    },
+    select: { id: true, saleOrderId: true, saleOrder: { select: { number: true } } },
+  });
+  const numbers = [];
+  for (const item of items) {
+    await prisma.saleOrderItem.update({
+      where: { id: item.id },
+      data: { status: SALE_ORDER_ITEM_STATUSES.REMOVED },
+    });
+    await addEvent(prisma, {
+      saleOrderId: item.saleOrderId,
+      type: SALE_ORDER_EVENT_TYPES.PRODUCT,
+      message: `Produto ${formatProductId(productId)} saiu do interesse para a sincronização com o Care.`,
+      userId: user.id,
+    });
+    await persistDerivedStatus(prisma, item.saleOrderId);
+    if (item.saleOrder?.number) numbers.push(item.saleOrder.number);
+  }
+  return [...new Set(numbers)];
+}
+
 export async function releaseReservationForCareImport(productId, user) {
   const product = await getProduct(productId);
   if (product.status !== STATUSES.RESERVED) return;
