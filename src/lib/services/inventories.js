@@ -1,13 +1,16 @@
+import ExcelJS from "exceljs";
 import { prisma } from "../db";
 import { writeAudit } from "../audit";
 import {
+  INVENTORY_SCAN_KIND_LABELS,
   INVENTORY_SCAN_KINDS,
+  INVENTORY_STATUS_LABELS,
   INVENTORY_STATUSES,
   STATUS_LABELS,
   inventoryExpectedStatuses,
 } from "../constants";
 import { conflict, forbidden, notFound, validationError } from "../errors";
-import { formatLocationPath } from "../format";
+import { formatDateTime, formatLocationPath, formatProductId } from "../format";
 import { CODE_TYPES, normalizeCode, parseQrPayload } from "../scanner";
 import { can, PERMISSIONS } from "../permissions";
 import { assertUnitAccess, getUnitOrThrow, hasUnitAccess, requireActiveUnit, unitSelect } from "../units";
@@ -318,68 +321,138 @@ export async function createInventory(payload, session) {
   return getInventory(inventoryId, session);
 }
 
+function serializeExpected(item) {
+  return {
+    productId: item.productId,
+    serialOnyx: item.serialOnyx,
+    commercialName: item.commercialName,
+    status: item.status,
+    locationLabel: item.locationLabel,
+  };
+}
+
+async function loadInventoryLists(inventoryId) {
+  const [expected, scans] = await Promise.all([
+    prisma.inventoryExpectedItem.findMany({
+      where: { inventoryId },
+      orderBy: { serialOnyx: "asc" },
+    }),
+    prisma.inventoryScan.findMany({
+      where: { inventoryId },
+      orderBy: { scannedAt: "desc" },
+      include: { scannedBy: { select: userBrief } },
+    }),
+  ]);
+  const matchedIds = new Set(
+    scans.filter((scan) => scan.kind === INVENTORY_SCAN_KINDS.MATCHED && scan.productId).map((scan) => scan.productId),
+  );
+  return {
+    expected,
+    scans,
+    matched: scans.filter((scan) => scan.kind === INVENTORY_SCAN_KINDS.MATCHED),
+    missing: expected.filter((item) => !matchedIds.has(item.productId)),
+    surplus: scans.filter((scan) => scan.kind !== INVENTORY_SCAN_KINDS.MATCHED),
+  };
+}
+
 export async function getInventory(id, session) {
   const inventory = await loadInventory(parseId(id));
   assertCanRead(session, inventory);
-
-  const [scans, countRows] = await Promise.all([
-    prisma.inventoryScan.findMany({
-      where: { inventoryId: inventory.id },
-      orderBy: { scannedAt: "desc" },
-      include: { scannedBy: { select: userBrief } },
-      take: 200,
-    }),
-    prisma.inventoryScan.groupBy({
-      by: ["kind"],
-      where: { inventoryId: inventory.id },
-      _count: { _all: true },
-    }),
-  ]);
-  const matched = countRows.find((row) => row.kind === INVENTORY_SCAN_KINDS.MATCHED)?._count._all || 0;
-  const scanned = countRows.reduce((sum, row) => sum + row._count._all, 0);
-  const counts = {
-    expected: inventory.expectedCount,
-    scanned,
-    matched,
-    surplus: scanned - matched,
-    missing: Math.max(0, inventory.expectedCount - matched),
-  };
-
-  let missing = [];
-  let surplus = [];
-  if (inventory.status === INVENTORY_STATUSES.COMPLETED) {
-    const matchedRows = await prisma.inventoryScan.findMany({
-      where: { inventoryId: inventory.id, kind: INVENTORY_SCAN_KINDS.MATCHED, productId: { not: null } },
-      select: { productId: true },
-    });
-    const matchedIds = matchedRows.map((scan) => scan.productId);
-    missing = await prisma.inventoryExpectedItem.findMany({
-      where: {
-        inventoryId: inventory.id,
-        ...(matchedIds.length ? { productId: { notIn: matchedIds } } : {}),
-      },
-      orderBy: { serialOnyx: "asc" },
-    });
-    surplus = await prisma.inventoryScan.findMany({
-      where: { inventoryId: inventory.id, kind: { not: INVENTORY_SCAN_KINDS.MATCHED } },
-      orderBy: { scannedAt: "asc" },
-      include: { scannedBy: { select: userBrief } },
-    });
-  }
+  const lists = await loadInventoryLists(inventory.id);
+  const counts = countsFrom(inventory.expectedCount, lists.scans);
 
   return {
     ...serializeSummary(inventory, counts),
     access: accessFlags(session, inventory),
-    scans: scans.map(serializeScan),
-    missing: missing.map((item) => ({
-      productId: item.productId,
-      serialOnyx: item.serialOnyx,
-      commercialName: item.commercialName,
-      status: item.status,
-      locationLabel: item.locationLabel,
-    })),
-    surplus: surplus.map(serializeScan),
+    scans: lists.scans.slice(0, 200).map(serializeScan),
+    expected: lists.expected.map(serializeExpected),
+    matched: lists.matched.map(serializeScan),
+    missing: lists.missing.map(serializeExpected),
+    surplus: lists.surplus.map(serializeScan),
   };
+}
+
+export async function exportInventoryWorkbook(id, session) {
+  const inventory = await getInventory(id, session);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Eletro-Stock";
+
+  const summary = workbook.addWorksheet("Resumo");
+  summary.addRow(["Campo", "Valor"]);
+  summary.getRow(1).font = { bold: true };
+  const summaryRows = [
+    ["Número", inventory.number],
+    ["Unidade", inventory.unit?.name || ""],
+    ["Escopo", inventory.scopeLabel],
+    ["Status", INVENTORY_STATUS_LABELS[inventory.status] || inventory.status],
+    ["Aberto em", formatDateTime(inventory.createdAt)],
+    ["Aberto por", inventory.createdBy?.name || ""],
+    ["Designado", inventory.assignedTo?.name || ""],
+    ["Concluído em", inventory.completedAt ? formatDateTime(inventory.completedAt) : ""],
+    ["Concluído por", inventory.completedBy?.name || ""],
+    ["Esperados", inventory.counts.expected],
+    ["Conferidos", inventory.counts.matched],
+    ["Faltantes", inventory.counts.missing],
+    ["Sobrantes", inventory.counts.surplus],
+    ["Observação", inventory.notes || ""],
+  ];
+  for (const row of summaryRows) summary.addRow(row);
+  summary.columns.forEach((column) => {
+    column.width = 28;
+  });
+
+  addSheet(workbook, "Esperados", ["Código", "Serial", "Nome comercial", "Status", "Localização"], inventory.expected.map(expectedRow));
+  addSheet(workbook, "Conferidos", ["Código", "Serial", "Nome comercial", "Status", "Bipado em", "Bipado por"], inventory.matched.map(matchedRow));
+  addSheet(workbook, "Faltantes", ["Código", "Serial", "Nome comercial", "Status", "Localização"], inventory.missing.map(expectedRow));
+  addSheet(workbook, "Sobrantes", ["Código lido", "Código", "Serial", "Nome comercial", "Classificação", "Status", "Unidade", "Observação", "Bipado em", "Bipado por"], inventory.surplus.map(surplusRow));
+
+  return { filename: `${inventory.number}.xlsx`, buffer: await workbook.xlsx.writeBuffer() };
+}
+
+function expectedRow(item) {
+  return [
+    formatProductId(item.productId),
+    item.serialOnyx || "",
+    item.commercialName || "",
+    STATUS_LABELS[item.status] || item.status || "",
+    item.locationLabel || "",
+  ];
+}
+
+function matchedRow(scan) {
+  return [
+    scan.productId ? formatProductId(scan.productId) : "",
+    scan.serialOnyx || "",
+    scan.commercialName || "",
+    STATUS_LABELS[scan.productStatus] || scan.productStatus || "",
+    formatDateTime(scan.scannedAt),
+    scan.scannedBy?.name || "",
+  ];
+}
+
+function surplusRow(scan) {
+  return [
+    scan.rawCode || "",
+    scan.productId ? formatProductId(scan.productId) : "",
+    scan.serialOnyx || "",
+    scan.commercialName || "",
+    INVENTORY_SCAN_KIND_LABELS[scan.kind] || scan.kind,
+    STATUS_LABELS[scan.productStatus] || scan.productStatus || "",
+    scan.unitName || "",
+    scan.note || "",
+    formatDateTime(scan.scannedAt),
+    scan.scannedBy?.name || "",
+  ];
+}
+
+function addSheet(workbook, title, columns, rows) {
+  const sheet = workbook.addWorksheet(title);
+  sheet.addRow(columns);
+  sheet.getRow(1).font = { bold: true };
+  for (const row of rows) sheet.addRow(row);
+  sheet.columns.forEach((column) => {
+    column.width = 22;
+  });
 }
 
 export async function scanInventory(id, payload, session) {

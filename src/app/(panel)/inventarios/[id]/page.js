@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/modal";
 import { ScanField } from "@/components/scan-field";
 import { InventoryScanBadge, InventoryStatusBadge, StatusBadge } from "@/components/badges";
 import { INVENTORY_SCAN_KINDS } from "@/lib/constants";
-import { formatDateTime, formatProductId } from "@/lib/format";
+import { cn, formatDateTime, formatProductId } from "@/lib/format";
 
 export default function InventarioDetailPage() {
   const { id } = useParams();
@@ -21,6 +21,8 @@ export default function InventarioDetailPage() {
   const [confirm, setConfirm] = useState(null);
   const [acting, setActing] = useState(false);
   const [showMatched, setShowMatched] = useState(false);
+  const [filter, setFilter] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   const [missingRecord, setMissingRecord] = useState(false);
 
@@ -47,11 +49,7 @@ export default function InventarioDetailPage() {
       else toast.warning(data.message);
       setCode("");
       setRefocusKey((current) => current + 1);
-      setInventory((current) => current && ({
-        ...current,
-        counts: data.counts,
-        scans: [data.scan, ...current.scans.filter((item) => item.id !== data.scan.id)].slice(0, 200),
-      }));
+      await load();
     } catch (error) {
       toast.error(error.message);
       setRefocusKey((current) => current + 1);
@@ -64,14 +62,31 @@ export default function InventarioDetailPage() {
     try {
       const data = await api(`/api/inventories/${id}/scans/${scanId}`, { method: "DELETE" });
       toast.success(data.message);
-      setInventory((current) => current && ({
-        ...current,
-        counts: data.counts,
-        scans: current.scans.filter((item) => item.id !== scanId),
-      }));
+      await load();
     } catch (error) {
       toast.error(error.message);
     }
+  }
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const blob = await api(`/api/inventories/${id}/export`, { blob: true });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${inventory?.number || "inventario"}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function selectFilter(next) {
+    setFilter((current) => (current === next ? null : next));
   }
 
   async function runConfirm() {
@@ -102,7 +117,47 @@ export default function InventarioDetailPage() {
 
   const open = inventory.status === "ABERTO";
   const done = inventory.status === "CONCLUIDO";
-  const matchedScans = inventory.scans.filter((scan) => scan.kind === INVENTORY_SCAN_KINDS.MATCHED);
+  const matchedScans = inventory.matched || inventory.scans.filter((scan) => scan.kind === INVENTORY_SCAN_KINDS.MATCHED);
+  const filterMeta = {
+    expected: {
+      title: "Esperados",
+      empty: "Nenhum produto entrou na foto deste inventário.",
+      items: inventory.expected || [],
+      renderItem: (item) => <ProductRow item={item} />,
+    },
+    matched: {
+      title: "Conferidos",
+      empty: "Nenhum produto foi conferido.",
+      items: inventory.matched || [],
+      renderItem: (item) => (
+        <div className="flex items-start justify-between gap-3">
+          <ScanRow scan={item} />
+          {open && inventory.access?.canScan ? (
+            <Button variant="ghost" onClick={() => removeScan(item.id)}>Desfazer</Button>
+          ) : null}
+        </div>
+      ),
+    },
+    missing: {
+      title: "Faltantes",
+      empty: "Nenhum produto esperado ficou sem bipagem.",
+      items: inventory.missing || [],
+      renderItem: (item) => <ProductRow item={item} />,
+    },
+    surplus: {
+      title: "Sobrantes",
+      empty: "Nenhum produto bipado ficou fora do estoque esperado.",
+      items: inventory.surplus || [],
+      renderItem: (item) => (
+        <div className="flex items-start justify-between gap-3">
+          <ScanRow scan={item} />
+          {open && inventory.access?.canScan ? (
+            <Button variant="ghost" onClick={() => removeScan(item.id)}>Desfazer</Button>
+          ) : null}
+        </div>
+      ),
+    },
+  };
 
   return (
     <div>
@@ -113,6 +168,9 @@ export default function InventarioDetailPage() {
         actions={
           <>
             <Link href="/inventarios"><Button variant="secondary">Voltar</Button></Link>
+            <Button variant="secondary" onClick={() => void exportExcel()} disabled={exporting}>
+              {exporting ? "Exportando..." : "Exportar Excel"}
+            </Button>
             {inventory.access?.canCancel ? (
               <Button variant="danger" onClick={() => setConfirm("cancel")}>Cancelar</Button>
             ) : null}
@@ -147,11 +205,12 @@ export default function InventarioDetailPage() {
       </Card>
 
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Count label="Esperados" value={inventory.counts.expected} />
-        <Count label="Conferidos" value={inventory.counts.matched} />
-        <Count label="Faltantes" value={inventory.counts.missing} />
-        <Count label="Sobrantes" value={inventory.counts.surplus} />
+        <Count label="Esperados" value={inventory.counts.expected} active={filter === "expected"} onClick={() => selectFilter("expected")} />
+        <Count label="Conferidos" value={inventory.counts.matched} active={filter === "matched"} onClick={() => selectFilter("matched")} />
+        <Count label="Faltantes" value={inventory.counts.missing} active={filter === "missing"} onClick={() => selectFilter("missing")} />
+        <Count label="Sobrantes" value={inventory.counts.surplus} active={filter === "surplus"} onClick={() => selectFilter("surplus")} />
       </div>
+      <p className="mb-4 text-sm text-muted">Clique em um total para filtrar a lista. Clique de novo para ver tudo.</p>
 
       {open && inventory.access?.canScan ? (
         <Card className="mb-4">
@@ -173,31 +232,32 @@ export default function InventarioDetailPage() {
 
       {open && !inventory.access?.canScan ? (
         <Card className="mb-4">
-          <p className="text-sm text-muted">A bipagem está com {inventory.assignedTo?.name}. A lista de faltantes aparece quando o inventário for concluído.</p>
+          <p className="text-sm text-muted">A bipagem está com {inventory.assignedTo?.name}. Clique em um total para filtrar a lista.</p>
         </Card>
       ) : null}
 
-      {done ? (
+      {filter ? (
+        <FilteredList
+          title={filterMeta[filter].title}
+          empty={filterMeta[filter].empty}
+          items={filterMeta[filter].items}
+          renderItem={filterMeta[filter].renderItem}
+          onClear={() => setFilter(null)}
+        />
+      ) : null}
+
+      {!filter && done ? (
         <div className="grid gap-4">
           <Divergence
             title="Faltantes"
             empty="Nenhum produto esperado ficou sem bipagem."
-            items={inventory.missing}
-            renderItem={(item) => (
-              <div>
-                <Link href={`/estoque/${item.productId}`} className="font-medium text-accent">{item.serialOnyx}</Link>
-                <p className="text-sm text-muted">
-                  {formatProductId(item.productId)} · {item.commercialName || "Sem nome comercial"}
-                  {item.locationLabel ? ` · ${item.locationLabel}` : ""}
-                </p>
-                <div className="mt-1"><StatusBadge status={item.status} /></div>
-              </div>
-            )}
+            items={inventory.missing || []}
+            renderItem={(item) => <ProductRow item={item} />}
           />
           <Divergence
             title="Sobrantes"
             empty="Nenhum produto bipado ficou fora do estoque esperado."
-            items={inventory.surplus}
+            items={inventory.surplus || []}
             renderItem={(item) => <ScanRow scan={item} />}
           />
           <Card>
@@ -206,7 +266,7 @@ export default function InventarioDetailPage() {
             </button>
             {showMatched ? (
               <div className="mt-3 grid gap-3">
-                {matchedScans.length === 0 ? <p className="text-sm text-muted">Nenhum conferido nesta lista recente.</p> : null}
+                {matchedScans.length === 0 ? <p className="text-sm text-muted">Nenhum produto foi conferido.</p> : null}
                 {matchedScans.map((scan) => <ScanRow key={scan.id} scan={scan} />)}
               </div>
             ) : null}
@@ -214,7 +274,7 @@ export default function InventarioDetailPage() {
         </div>
       ) : null}
 
-      {open ? (
+      {!filter && open ? (
         <Card>
           <h2 className="mb-3 text-sm font-semibold">Bipagens</h2>
           {inventory.scans.length === 0 ? <p className="text-sm text-muted">Nenhum produto bipado ainda.</p> : null}
@@ -254,11 +314,46 @@ export default function InventarioDetailPage() {
   );
 }
 
-function Count({ label, value }) {
+function Count({ label, value, active, onClick }) {
   return (
-    <div className="card p-3 text-center">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn("card p-3 text-center transition hover:border-accent/50", active && "border-accent ring-1 ring-accent")}
+    >
       <p className="text-2xl font-semibold">{value}</p>
       <p className="text-xs text-muted">{label}</p>
+    </button>
+  );
+}
+
+function FilteredList({ title, empty, items, renderItem, onClear }) {
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="font-semibold">{title} ({items.length})</h2>
+        <button type="button" className="text-sm font-semibold text-accent" onClick={onClear}>Ver tudo</button>
+      </div>
+      {items.length === 0 ? <p className="text-sm text-muted">{empty}</p> : null}
+      <div className="grid gap-3">
+        {items.map((item) => (
+          <div key={item.id || item.productId}>{renderItem(item)}</div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ProductRow({ item }) {
+  return (
+    <div>
+      <Link href={`/estoque/${item.productId}`} className="font-medium text-accent">{item.serialOnyx}</Link>
+      <p className="text-sm text-muted">
+        {formatProductId(item.productId)} · {item.commercialName || "Sem nome comercial"}
+        {item.locationLabel ? ` · ${item.locationLabel}` : ""}
+      </p>
+      <div className="mt-1"><StatusBadge status={item.status} /></div>
     </div>
   );
 }
