@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { conflict, forbidden, notFound, validationError } from "../errors";
 import {
   CONVERSATION_EVENT_TYPES,
+  INBOX_TEAM_MEMBER_ROLES,
   isSaleOrderClosed,
   LEAD_AGENT_STAGES,
   LEAD_BOARD_STAGES,
@@ -9,7 +10,7 @@ import {
   LEAD_STAGES,
   SALE_ORDER_STATUSES,
 } from "../constants";
-import { assertInboxTeamAccess, getAgentTeamIds } from "./inbox-access";
+import { assertInboxTeamAccess, getAgentTeamIds, getInboxMemberships, getSupervisedTeamIds, isInboxAdmin } from "./inbox-access";
 import {
   clearConversationWaitlist,
   rematchConversation,
@@ -134,10 +135,17 @@ export async function setConversationLeadStage(id, stage, session, payload = {})
   }
   const conversation = await prisma.inboxConversation.findUnique({
     where: { id: Number(id) },
-    select: { id: true, teamId: true, commercialStage: true },
+    select: { id: true, teamId: true, agentId: true, commercialStage: true },
   });
   if (!conversation) throw notFound("Conversa não encontrada.");
   await assertInboxTeamAccess(session, conversation.teamId);
+  if (!isInboxAdmin(session)) {
+    const supervised = await getSupervisedTeamIds(session);
+    const assignedToMe = Number(conversation.agentId) === Number(session.id);
+    if (!supervised.includes(Number(conversation.teamId)) && !assignedToMe) {
+      throw forbidden("Você só acompanha as conversas atribuídas a você.");
+    }
+  }
   if (conversation.commercialStage === LEAD_STAGES.IN_SALE) {
     throw conflict("Esta conversa está em uma venda aberta. A etapa acompanha o pedido.");
   }
@@ -186,12 +194,31 @@ const leadCardSelect = {
   },
 };
 
+async function leadVisibility(session) {
+  if (isInboxAdmin(session)) {
+    const teamIds = await getAgentTeamIds(session);
+    return { teamIds, where: { teamId: { in: teamIds } } };
+  }
+  const [supervised, memberships] = await Promise.all([
+    getSupervisedTeamIds(session),
+    getInboxMemberships(session.id),
+  ]);
+  const agentTeamIds = memberships
+    .filter((item) => item.role !== INBOX_TEAM_MEMBER_ROLES.SUPERVISOR)
+    .map((item) => item.teamId);
+  const teamIds = [...new Set([...supervised, ...agentTeamIds])];
+  const or = [];
+  if (supervised.length) or.push({ teamId: { in: supervised } });
+  if (agentTeamIds.length) or.push({ teamId: { in: agentTeamIds }, agentId: Number(session.id) });
+  return { teamIds, where: or.length ? { OR: or } : { id: -1 } };
+}
+
 export async function listLeadBoard(filters, session) {
-  const teamIds = await getAgentTeamIds(session);
+  const { teamIds, where: visibility } = await leadVisibility(session);
   if (!teamIds.length) return { items: [], total: 0, truncated: false };
 
   const where = {
-    teamId: { in: teamIds },
+    ...visibility,
     commercialStage: { in: LEAD_BOARD_STAGES },
   };
   if (filters.teamId) {
@@ -201,12 +228,20 @@ export async function listLeadBoard(filters, session) {
   }
   const text = String(filters.q || "").trim();
   if (text) {
-    where.OR = [
-      { phone: { contains: text } },
-      { contactName: { contains: text } },
-      { customer: { name: { contains: text } } },
-      { lastMessagePreview: { contains: text } },
-    ];
+    const search = {
+      OR: [
+        { phone: { contains: text } },
+        { contactName: { contains: text } },
+        { customer: { name: { contains: text } } },
+        { lastMessagePreview: { contains: text } },
+      ],
+    };
+    if (where.OR) {
+      where.AND = [{ OR: where.OR }, search];
+      delete where.OR;
+    } else {
+      where.OR = search.OR;
+    }
   }
 
   const total = await prisma.inboxConversation.count({ where });
