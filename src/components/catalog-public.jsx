@@ -29,6 +29,23 @@ function countText(count) {
   return count === 1 ? "1 disponível" : `${count} disponíveis`;
 }
 
+function samePrice(left, right) {
+  return Number(left || 0) === Number(right || 0);
+}
+
+function PriceBlock({ cashFrom, cashTo, installmentFrom, installmentTo, size = "lg" }) {
+  const cash = priceText(cashFrom, cashTo);
+  const installment = installmentFrom > 0
+    ? priceText(installmentFrom, installmentTo).replace("A partir de ", "a partir de ")
+    : "";
+  return (
+    <div>
+      <p className={size === "lg" ? "text-3xl font-bold tracking-tight" : "text-lg font-semibold"}>{cash}</p>
+      {installment ? <p className="mt-1 text-sm text-muted">Parcelado {installment}</p> : null}
+    </div>
+  );
+}
+
 export function CatalogShell({ children }) {
   return (
     <div className="catalog-root">
@@ -99,11 +116,11 @@ export function ProductGrid({ items, filtered }) {
   );
 }
 
-export function CatalogFooter({ catalog }) {
+export function CatalogFooter({ catalog, showStores = true }) {
   return (
     <footer className="mt-12 space-y-8">
       <CatalogHighlights />
-      <div className="grid gap-8 border-t border-border pt-8 lg:grid-cols-3">
+      <div className={`grid gap-8 border-t border-border pt-8 ${showStores ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Retirada</h2>
           <p className="mt-2 text-sm leading-6">{catalog.pickupNote || "Os produtos devem ser retirados na loja."}</p>
@@ -127,13 +144,15 @@ export function CatalogFooter({ catalog }) {
             </ul>
           ) : <p className="mt-2 text-sm text-muted">Consulte a loja.</p>}
         </section>
-        <section>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Lojas</h2>
-          <div className="mt-2 space-y-4">
-            {catalog.stores.map((store) => <StoreContact key={store.id} store={store} />)}
-            {!catalog.stores.length ? <p className="text-sm text-muted">Nenhuma loja publicada no catálogo.</p> : null}
-          </div>
-        </section>
+        {showStores ? (
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Lojas</h2>
+            <div className="mt-2 space-y-4">
+              {catalog.stores.map((store) => <StoreContact key={store.id} store={store} />)}
+              {!catalog.stores.length ? <p className="text-sm text-muted">Nenhuma loja publicada no catálogo.</p> : null}
+            </div>
+          </section>
+        ) : null}
       </div>
     </footer>
   );
@@ -150,9 +169,9 @@ function StoreContact({ store, interest, showName = true }) {
       {store.email ? <p><a className="text-[#0482a4] hover:underline" href={`mailto:${store.email}`}>{store.email}</a></p> : null}
       {store.mapsUrl ? <p><a className="font-medium text-[#0482a4] hover:underline" href={store.mapsUrl} target="_blank" rel="noreferrer">Ver no mapa</a></p> : null}
       {whatsapp ? (
-        <p className="mt-2">
-          <a href={whatsapp} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#10b981] px-3 py-1.5 text-xs font-semibold text-white">
-            <WhatsAppIcon className="h-3.5 w-3.5" />
+        <p className="mt-3">
+          <a href={whatsapp} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-[#10b981] px-4 py-2 text-sm font-semibold text-white hover:bg-[#059669]">
+            <WhatsAppIcon className="h-4 w-4" />
             Pedir no WhatsApp
           </a>
         </p>
@@ -163,40 +182,65 @@ function StoreContact({ store, interest, showName = true }) {
 
 export function ProductDetail({ item }) {
   const interest = `Olá, tenho interesse em ${item.name}${item.voltageLabel ? ` ${item.voltageLabel}` : ""}.`;
+  const manyStores = item.units.length > 1;
   return (
-    <article className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <CatalogGallery imageIds={item.commercialImageIds} alt={item.name} />
-      <div>
+    <article className="grid items-start gap-8 lg:grid-cols-2 lg:gap-12">
+      <div className="lg:sticky lg:top-24">
+        <CatalogGallery imageIds={item.commercialImageIds} alt={item.name} />
+      </div>
+      <div className="min-w-0">
         <Link href="/catalogo" className="text-sm font-medium text-[#0482a4] hover:underline">Voltar ao catálogo</Link>
         {item.categoryName ? <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#0482a4]">{item.categoryName}</p> : null}
-        <h1 className="catalog-display mt-1 text-4xl leading-none">{item.name}</h1>
+        <h1 className="catalog-display mt-2 text-[1.65rem] leading-tight sm:text-[2rem]">{item.name}</h1>
         {item.manufacturer ? <p className="mt-2 text-sm text-muted">{item.manufacturer}</p> : null}
         <p className="mt-2 text-sm text-muted">
           {[item.voltageLabel, countText(item.count)].filter(Boolean).join(" · ")}
         </p>
-        <p className="mt-4 text-2xl font-semibold">{priceText(item.cashFrom, item.cashTo)}</p>
-        {item.installmentFrom > 0 ? (
-          <p className="text-sm text-muted">Parcelado {priceText(item.installmentFrom, item.installmentTo).replace("A partir de ", "a partir de ")}</p>
-        ) : null}
-        <div className="mt-6 space-y-3">
-          {item.units.map((unit) => (
-            <section key={unit.id} className="rounded-2xl border border-border bg-surface p-4">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-semibold">{unit.name}</h2>
-                <p className="text-sm text-muted">{countText(unit.count)}</p>
-              </div>
-              <p className="mt-1 text-sm">{priceText(unit.cashFrom, unit.cashTo)}{unit.installmentFrom > 0 ? ` · parcelado ${priceText(unit.installmentFrom, unit.installmentTo).replace("A partir de ", "a partir de ")}` : ""}</p>
-              <div className="mt-3">
-                <StoreContact store={unit} showName={false} interest={`${interest} Loja: ${unit.name}.`} />
-                <EvidencePhotos imageIds={unit.evidenceImageIds} />
-              </div>
-            </section>
-          ))}
+        <div className="mt-5 border-y border-border py-4">
+          <PriceBlock
+            cashFrom={item.cashFrom}
+            cashTo={item.cashTo}
+            installmentFrom={item.installmentFrom}
+            installmentTo={item.installmentTo}
+          />
+        </div>
+        <div className="mt-6 space-y-4">
+          {item.units.map((unit) => {
+            const priceDiffers = manyStores && (
+              !samePrice(unit.cashFrom, item.cashFrom)
+              || !samePrice(unit.cashTo, item.cashTo)
+              || !samePrice(unit.installmentFrom, item.installmentFrom)
+              || !samePrice(unit.installmentTo, item.installmentTo)
+            );
+            return (
+              <section key={unit.id} className="rounded-2xl border border-border bg-[#f8fafb] p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-base font-semibold">{unit.name}</h2>
+                  {manyStores ? <p className="text-sm text-muted">{countText(unit.count)}</p> : null}
+                </div>
+                {priceDiffers ? (
+                  <div className="mt-3">
+                    <PriceBlock
+                      cashFrom={unit.cashFrom}
+                      cashTo={unit.cashTo}
+                      installmentFrom={unit.installmentFrom}
+                      installmentTo={unit.installmentTo}
+                      size="sm"
+                    />
+                  </div>
+                ) : null}
+                <div className="mt-3">
+                  <StoreContact store={unit} showName={false} interest={`${interest} Loja: ${unit.name}.`} />
+                  <EvidencePhotos imageIds={unit.evidenceImageIds} />
+                </div>
+              </section>
+            );
+          })}
         </div>
         {item.specifications ? (
-          <section className="mt-6">
+          <section className="mt-8">
             <h2 className="text-sm font-semibold">Especificações</h2>
-            <p className="mt-2 whitespace-pre-line text-sm text-muted">{item.specifications}</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted">{item.specifications}</p>
           </section>
         ) : null}
       </div>

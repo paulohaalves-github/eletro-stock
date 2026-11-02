@@ -261,6 +261,7 @@ model Product {
   sales          Sale[]
   saleOrderItems SaleOrderItem[]
   workOrders     WorkOrder[]
+  waitlistMatches InboxWaitlistMatch[]
   inventoryExpected InventoryExpectedItem[]
   inventoryScans    InventoryScan[]
 
@@ -522,7 +523,7 @@ model SaleOrder {
   installmentCount Int?      @map("installment_count")
   customerId       Int       @map("customer_id")
   unitId       Int       @map("unit_id")
-  sellerId       Int       @map("seller_id")
+  sellerId       Int?      @map("seller_id")
   conversationId Int?      @map("conversation_id")
   status         String    @db.VarChar(40)
   observation    String?   @db.Text
@@ -534,7 +535,7 @@ model SaleOrder {
 
   customer     Customer            @relation(fields: [customerId], references: [id])
   unit         Unit                @relation(fields: [unitId], references: [id])
-  seller       User                @relation("SaleOrderSeller", fields: [sellerId], references: [id])
+  seller       User?               @relation("SaleOrderSeller", fields: [sellerId], references: [id])
   createdBy    User                @relation("SaleOrderCreatedBy", fields: [createdById], references: [id])
   conversation InboxConversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   items        SaleOrderItem[]
@@ -891,6 +892,15 @@ model InboxConversation {
   reopenedAt            DateTime? @map("reopened_at")
   waitingSince          DateTime? @map("waiting_since")
   unreadCount           Int       @default(0) @map("unread_count")
+  commercialStage       String    @default("NOVO") @map("commercial_stage") @db.VarChar(40)
+  commercialStageAt     DateTime  @default(now()) @map("commercial_stage_at")
+  waitlistCommercialName String?  @map("waitlist_commercial_name") @db.VarChar(190)
+  waitlistModelCode      String?  @map("waitlist_model_code") @db.VarChar(120)
+  waitlistCapacity       String?  @map("waitlist_capacity") @db.VarChar(120)
+  waitlistVoltage        String?  @map("waitlist_voltage") @db.VarChar(20)
+  waitlistCondition      String?  @map("waitlist_condition") @db.VarChar(40)
+  waitlistCategoryId     Int?     @map("waitlist_category_id")
+  waitlistLineId         Int?     @map("waitlist_line_id")
   greetingSentAt        DateTime? @map("greeting_sent_at")
   afterHoursSentAt      DateTime? @map("after_hours_sent_at")
   unansweredNotifiedAt  DateTime? @map("unanswered_notified_at")
@@ -906,15 +916,30 @@ model InboxConversation {
   messages   InboxMessage[]
   events     InboxConversationEvent[]
   saleOrders SaleOrder[]
+  waitlistMatches InboxWaitlistMatch[]
 
   @@unique([channelId, phone])
   @@index([teamId])
   @@index([customerId])
   @@index([agentId])
   @@index([status])
+  @@index([commercialStage])
   @@index([lastMessageAt])
   @@index([whatsappJid])
   @@map("inbox_conversations")
+}
+
+model InboxWaitlistMatch {
+  conversationId Int      @map("conversation_id")
+  productId      Int      @map("product_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, productId])
+  @@index([productId])
+  @@map("inbox_waitlist_matches")
 }
 
 model InboxMessage {

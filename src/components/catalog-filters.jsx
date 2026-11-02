@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ChevronDown, X } from "lucide-react";
 
 function catalogHref({ q, categoria, unidade, fabricante, ordem }) {
   const params = new URLSearchParams();
@@ -13,26 +15,44 @@ function catalogHref({ q, categoria, unidade, fabricante, ordem }) {
   return query ? `/catalogo?${query}` : "/catalogo";
 }
 
-function Chip({ href, active, children }) {
+function FilterSelect({ label, value, options, onChange, highlight }) {
+  const active = highlight ?? Boolean(value);
+  return (
+    <label className="relative min-w-[10.5rem] flex-1 sm:max-w-[16rem]">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value || ""}
+        onChange={(event) => onChange(event.target.value)}
+        className={`w-full cursor-pointer appearance-none rounded-full border bg-white py-2.5 pr-10 pl-4 text-sm outline-none transition focus:border-[#0482a4] ${
+          active ? "border-[#0482a4] font-medium text-[#0482a4]" : "border-slate-200 text-slate-600"
+        }`}
+      >
+        {options.map((option) => (
+          <option key={option.value || "all"} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+    </label>
+  );
+}
+
+function ActiveChip({ href, children }) {
   return (
     <Link
       href={href}
-      className={`inline-flex shrink-0 items-center rounded-full border bg-white px-4 py-2 text-sm font-medium text-[#0482a4] transition ${
-        active ? "border-[#0482a4] shadow-[0_0_0_1px_#0482a4]" : "border-slate-200 hover:border-[#0482a4]/40"
-      }`}
+      className="inline-flex items-center gap-1.5 rounded-full border border-[#0482a4]/30 bg-[#0482a4]/5 px-3 py-1.5 text-sm font-medium text-[#0482a4] hover:bg-[#0482a4]/10"
     >
       {children}
+      <X className="h-3.5 w-3.5" aria-hidden="true" />
     </Link>
   );
 }
 
-function ChipRow({ children }) {
-  return <div className="flex flex-wrap gap-2">{children}</div>;
-}
-
 export function CatalogFilters({ catalog, filters }) {
+  const router = useRouter();
   const ordem = filters.ordem === "preco-desc" ? "preco-desc" : "preco-asc";
-  const nextOrder = ordem === "preco-desc" ? "preco-asc" : "preco-desc";
   const shared = {
     q: filters.q,
     categoria: filters.categoria,
@@ -40,9 +60,16 @@ export function CatalogFilters({ catalog, filters }) {
     fabricante: filters.fabricante,
     ordem,
   };
+  const go = (patch) => router.push(catalogHref({ ...shared, ...patch }));
+
+  const category = catalog.categories.find((item) => String(item.id) === filters.categoria);
+  const manufacturer = catalog.manufacturers.find((item) => String(item.id) === filters.fabricante);
+  const store = catalog.stockedStores.find((item) => String(item.id) === filters.unidade);
+  const active = [filters.q, category, manufacturer, store].filter(Boolean);
+  const clearFiltersHref = catalogHref({ q: filters.q, ordem });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <form method="get" action="/catalogo" className="relative min-w-0 flex-1">
           {filters.categoria ? <input type="hidden" name="categoria" value={filters.categoria} /> : null}
@@ -66,58 +93,66 @@ export function CatalogFilters({ catalog, filters }) {
             </svg>
           </button>
         </form>
-        <Link
-          href={catalogHref({ ...shared, ordem: nextOrder })}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600"
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M8 7h10M8 7l2.5-2.5M8 7l2.5 2.5M16 17H6M16 17l-2.5-2.5M16 17l-2.5 2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          {ordem === "preco-desc" ? "Preço: Maior a Menor" : "Preço: Menor a Maior"}
-        </Link>
+        <FilterSelect
+          label="Ordenar"
+          value={ordem}
+          highlight={false}
+          onChange={(value) => go({ ordem: value })}
+          options={[
+            { value: "preco-asc", label: "Menor preço" },
+            { value: "preco-desc", label: "Maior preço" },
+          ]}
+        />
       </div>
 
-      <ChipRow>
-        <Chip href={catalogHref({ ...shared, categoria: "" })} active={!filters.categoria}>Todos</Chip>
-        {catalog.categories.map((category) => (
-          <Chip
-            key={category.id}
-            href={catalogHref({ ...shared, categoria: String(category.id) })}
-            active={filters.categoria === String(category.id)}
-          >
-            {category.name}
-          </Chip>
-        ))}
-      </ChipRow>
+      <div className="flex flex-wrap gap-2">
+        {catalog.categories.length ? (
+          <FilterSelect
+            label="Categoria"
+            value={filters.categoria}
+            onChange={(value) => go({ categoria: value })}
+            options={[
+              { value: "", label: "Categoria" },
+              ...catalog.categories.map((item) => ({ value: String(item.id), label: item.name })),
+            ]}
+          />
+        ) : null}
+        {catalog.manufacturers.length ? (
+          <FilterSelect
+            label="Marca"
+            value={filters.fabricante}
+            onChange={(value) => go({ fabricante: value })}
+            options={[
+              { value: "", label: "Marca" },
+              ...catalog.manufacturers.map((item) => ({ value: String(item.id), label: item.name })),
+            ]}
+          />
+        ) : null}
+        {catalog.stockedStores.length > 1 ? (
+          <FilterSelect
+            label="Loja"
+            value={filters.unidade}
+            onChange={(value) => go({ unidade: value })}
+            options={[
+              { value: "", label: "Loja" },
+              ...catalog.stockedStores.map((item) => ({ value: String(item.id), label: item.name })),
+            ]}
+          />
+        ) : null}
+      </div>
 
-      {catalog.manufacturers.length ? (
-        <ChipRow>
-          <Chip href={catalogHref({ ...shared, fabricante: "" })} active={!filters.fabricante}>Todos os fabricantes</Chip>
-          {catalog.manufacturers.map((manufacturer) => (
-            <Chip
-              key={manufacturer.id}
-              href={catalogHref({ ...shared, fabricante: String(manufacturer.id) })}
-              active={filters.fabricante === String(manufacturer.id)}
-            >
-              {manufacturer.name}
-            </Chip>
-          ))}
-        </ChipRow>
-      ) : null}
-
-      {catalog.stockedStores.length > 1 ? (
-        <ChipRow>
-          <Chip href={catalogHref({ ...shared, unidade: "" })} active={!filters.unidade}>Todas as lojas</Chip>
-          {catalog.stockedStores.map((store) => (
-            <Chip
-              key={store.id}
-              href={catalogHref({ ...shared, unidade: String(store.id) })}
-              active={filters.unidade === String(store.id)}
-            >
-              {store.name}
-            </Chip>
-          ))}
-        </ChipRow>
+      {active.length ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {filters.q ? <ActiveChip href={catalogHref({ ...shared, q: "" })}>Busca: {filters.q}</ActiveChip> : null}
+          {category ? <ActiveChip href={catalogHref({ ...shared, categoria: "" })}>{category.name}</ActiveChip> : null}
+          {manufacturer ? <ActiveChip href={catalogHref({ ...shared, fabricante: "" })}>{manufacturer.name}</ActiveChip> : null}
+          {store ? <ActiveChip href={catalogHref({ ...shared, unidade: "" })}>{store.name}</ActiveChip> : null}
+          {active.length > 1 || category || manufacturer || store ? (
+            <Link href={clearFiltersHref} className="text-sm font-medium text-slate-500 hover:text-[#0482a4]">
+              Limpar filtros
+            </Link>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

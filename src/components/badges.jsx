@@ -6,6 +6,7 @@ import {
   WORK_ORDER_PART_STATUS_LABELS,
   WORK_ORDER_TYPE_LABELS,
   CONVERSATION_STATUS_LABELS,
+  LEAD_STAGE_LABELS,
   INBOX_PROVIDER_LABELS,
   INBOX_CONNECTION_STATUS_LABELS,
   SALE_ORDER_STATUS_LABELS,
@@ -120,6 +121,26 @@ export function ConversationStatusBadge({ status }) {
   return (
     <Badge className={CONVERSATION_STYLES[status] || "bg-surface-2 text-muted ring-border"}>
       {CONVERSATION_STATUS_LABELS[status] || status}
+    </Badge>
+  );
+}
+
+const LEAD_STAGE_STYLES = {
+  NOVO: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+  EM_QUALIFICACAO: "bg-cyan-500/15 text-cyan-300 ring-cyan-500/30",
+  INTERESSADO: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  LISTA_ESPERA: "bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/30",
+  POS_VENDAS: "bg-teal-500/15 text-teal-300 ring-teal-500/30",
+  SEM_RETORNO: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  DESCARTADO: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
+  EM_VENDA: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  CONVERTIDA: "bg-emerald-500/15 text-emerald-200 ring-emerald-500/40",
+};
+
+export function LeadStageBadge({ stage }) {
+  return (
+    <Badge className={LEAD_STAGE_STYLES[stage] || "bg-surface-2 text-muted ring-border"}>
+      {LEAD_STAGE_LABELS[stage] || stage}
     </Badge>
   );
 }

@@ -3,6 +3,8 @@ import { conflict, forbidden, notFound, validationError } from "../errors";
 import {
   CONVERSATION_EVENT_TYPES,
   CONVERSATION_STATUSES,
+  LEAD_STAGES,
+  SALE_ORDER_CLOSED_STATUSES,
   INBOX_CONNECTION_STATUSES,
   INBOX_PROVIDERS,
   MESSAGE_DIRECTIONS,
@@ -21,6 +23,7 @@ import { sendUnofficialMessage } from "../whatsapp/unofficial";
 import { getCustomerServiceWindow } from "../whatsapp/templates";
 import { resolveTemplateSend } from "./inbox-templates";
 import { applyInboundAutomations, scheduleUnansweredAutomations } from "./inbox-automations";
+import { advanceLeadOnAccept, advanceLeadOnCustomerMessage, setConversationLeadStage } from "./lead-stages";
 
 const userLite = { select: { id: true, name: true, email: true } };
 const teamLite = { select: { id: true, name: true, color: true } };
@@ -52,6 +55,15 @@ const conversationListSelect = {
   reopenedAt: true,
   waitingSince: true,
   unreadCount: true,
+  commercialStage: true,
+  commercialStageAt: true,
+  waitlistCommercialName: true,
+  waitlistModelCode: true,
+  waitlistCapacity: true,
+  waitlistVoltage: true,
+  waitlistCondition: true,
+  waitlistCategoryId: true,
+  waitlistLineId: true,
   createdAt: true,
   updatedAt: true,
   channel: channelLite,
@@ -257,12 +269,28 @@ export async function getConversation(id, session, { markRead = false } = {}) {
         id: true,
         number: true,
         status: true,
+        closedAt: true,
         createdAt: true,
         seller: { select: { id: true, name: true } },
       },
     });
   }
+  const openSale = await prisma.saleOrder.findFirst({
+    where: {
+      conversationId: conversation.id,
+      closedAt: null,
+      status: { notIn: SALE_ORDER_CLOSED_STATUSES },
+    },
+    select: { id: true, number: true },
+  });
+  conversation.hasOpenSale = Boolean(openSale);
+  conversation.openSaleNumber = openSale?.number || null;
   return serializeConversation(conversation);
+}
+
+export async function updateConversationLeadStage(id, stage, session, payload) {
+  await setConversationLeadStage(id, stage, session, payload);
+  return getConversation(id, session, { markRead: false });
 }
 
 export async function linkConversationCustomer(id, customerId, session) {
@@ -411,6 +439,7 @@ export async function ingestIncomingMessage({
         reopened = true;
         await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.REOPENED, "Cliente enviou uma nova mensagem.");
       }
+      await advanceLeadOnCustomerMessage(tx, conversation);
     }
 
     await tx.inboxMessage.create({
@@ -490,6 +519,7 @@ export async function acceptConversation(id, session) {
     });
     if (!conversation.agentId || conversation.agentId !== session.id) {
       await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.ACCEPTED, `${session.name} entrou na conversa.`, session.id);
+      await advanceLeadOnAccept(tx, conversation, session.id, session.name);
     }
     return next;
   });
@@ -543,6 +573,7 @@ export async function transferConversation(id, payload, session) {
       ? `${session.name} transferiu para ${agent.name} (${team.name}).`
       : `${session.name} transferiu para a fila de ${team.name}.`;
     await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.TRANSFERRED, target, session.id);
+    if (agentId) await advanceLeadOnAccept(tx, conversation, session.id, agent.name);
   });
   return getConversation(conversation.id, session);
 }
@@ -846,6 +877,8 @@ export async function startOutboundConversation(payload, session) {
           queuedAt: now,
           waitingSince: null,
           unreadCount: 0,
+          commercialStage: LEAD_STAGES.QUALIFYING,
+          commercialStageAt: now,
         },
       });
       await addEvent(
@@ -894,6 +927,7 @@ export async function startOutboundConversation(payload, session) {
     if (wasClosed) {
       await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.REOPENED, `${session.name} reabriu a conversa para enviar uma mensagem.`, session.id);
     }
+    await advanceLeadOnAccept(tx, conversation, session.id, session.name);
     return conversation.id;
   });
 

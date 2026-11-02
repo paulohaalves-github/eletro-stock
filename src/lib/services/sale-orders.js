@@ -4,6 +4,7 @@ import { writeAudit, writeMovement } from "../audit";
 import {
   EXIT_REASONS,
   MOVEMENT_TYPES,
+  LEAD_STAGES,
   SALE_ORDER_CLOSED_STATUSES,
   SALE_ORDER_EVENT_TYPES,
   SALE_ORDER_ITEM_STATUSES,
@@ -21,6 +22,8 @@ import { isAdminRole, requireActiveUnit, unitSelect } from "../units";
 import { getProduct, movementUnitFields } from "./products";
 import { assertNoOpenInventory } from "../inventory-lock";
 import { getLatestSale, parseSoldAt } from "./sales";
+import { moveLeadStage, syncLeadStageWithSales } from "./lead-stages";
+import { releaseWaitlistProduct, syncProductWaitlist } from "./waitlist";
 
 const productSelect = {
   id: true,
@@ -79,15 +82,23 @@ export function saleOrderAccessWhere(session) {
     where.unitId = { in: (session.units || []).map((unit) => unit.id) };
   }
   if (!canViewAllSaleOrders(session.role)) {
-    where.sellerId = Number(session.id);
+    where.OR = [
+      { sellerId: Number(session.id) },
+      { sellerId: null, createdById: Number(session.id) },
+    ];
   }
   return where;
+}
+
+function ownsSaleOrder(session, order) {
+  if (order.sellerId) return Number(order.sellerId) === Number(session.id);
+  return Number(order.createdById) === Number(session.id);
 }
 
 function canOperateSaleOrder(session, order) {
   if (!session || !order) return false;
   if (canManageAllSaleOrders(session.role)) return true;
-  return Number(order.sellerId) === Number(session.id);
+  return ownsSaleOrder(session, order);
 }
 
 function canViewSaleOrder(session, order) {
@@ -97,7 +108,7 @@ function canViewSaleOrder(session, order) {
     if (!ids.includes(order.unitId)) return false;
   }
   if (canViewAllSaleOrders(session.role)) return true;
-  return Number(order.sellerId) === Number(session.id);
+  return ownsSaleOrder(session, order);
 }
 
 function assertCanView(session, order) {
@@ -111,12 +122,15 @@ function assertCanOperate(session, order) {
   }
 }
 
-async function resolveSeller(payload, user) {
-  const requested = payload.sellerId != null && String(payload.sellerId).trim() !== ""
-    ? parseId(payload.sellerId)
-    : Number(user.id);
-  if (requested !== Number(user.id) && !canManageAllSaleOrders(user.role)) {
-    throw forbidden("Você só pode abrir vendas no seu nome.");
+async function resolveSeller(payload, user, { required = false, anySeller = false } = {}) {
+  const raw = payload?.sellerId;
+  if (raw == null || String(raw).trim() === "") {
+    if (required) throw validationError("Informe o vendedor para gerar o pedido.");
+    return null;
+  }
+  const requested = parseId(raw);
+  if (!anySeller && requested !== Number(user.id) && !canManageAllSaleOrders(user.role)) {
+    throw forbidden("Você só pode vincular outro vendedor ao gerar o pedido.");
   }
   const seller = await prisma.user.findUnique({
     where: { id: requested },
@@ -260,6 +274,7 @@ export async function expireExpiredReservations() {
           ...movementUnitFields(item.product),
           userId: item.saleOrder.createdById,
         });
+        await syncProductWaitlist(item.productId);
         await writeAudit({
           userId: item.saleOrder.createdById,
           action: "STOCK_UNRESERVE",
@@ -341,11 +356,12 @@ async function addEvent(db, { saleOrderId, type, message, userId }) {
   });
 }
 
-async function persistDerivedStatus(db, orderId) {
+async function persistDerivedStatus(db, orderId, userId = null) {
   const order = await db.saleOrder.findUnique({
     where: { id: orderId },
     include: { items: true },
   });
+  const previous = order.status;
   const status = deriveStatus(order);
   const closed =
     SALE_ORDER_CLOSED_STATUSES.includes(status) ||
@@ -359,6 +375,13 @@ async function persistDerivedStatus(db, orderId) {
   }
   if (status !== order.status || data.closedAt !== undefined) {
     await db.saleOrder.update({ where: { id: orderId }, data });
+  }
+  if (order.conversationId && status !== previous) {
+    if (status === SALE_ORDER_STATUSES.COMPLETED) {
+      await syncLeadStageWithSales(db, order.conversationId, { userId, prefer: "converted" });
+    } else if (!SALE_ORDER_CLOSED_STATUSES.includes(status)) {
+      await syncLeadStageWithSales(db, order.conversationId, { userId, prefer: "open" });
+    }
   }
   return status;
 }
@@ -478,12 +501,25 @@ export async function createSaleOrder(payload, user) {
   const conversation = await resolveConversation(payload, customer.id, user);
 
   const created = await prisma.$transaction(async (tx) => {
+    if (conversation) {
+      const openSale = await tx.saleOrder.findFirst({
+        where: {
+          conversationId: conversation.id,
+          closedAt: null,
+          status: { notIn: SALE_ORDER_CLOSED_STATUSES },
+        },
+        select: { number: true },
+      });
+      if (openSale) {
+        throw conflict(`Esta conversa já tem a venda ${openSale.number} em andamento.`);
+      }
+    }
     const order = await tx.saleOrder.create({
       data: {
         number: `TMP-${Date.now()}-${user.id}`,
         customerId,
         unitId,
-        sellerId: seller.id,
+        sellerId: seller?.id || null,
         conversationId: conversation?.id || null,
         status: SALE_ORDER_STATUSES.INTEREST,
         observation: emptyToNull(payload.observation),
@@ -496,13 +532,19 @@ export async function createSaleOrder(payload, user) {
       saleOrderId: order.id,
       type: SALE_ORDER_EVENT_TYPES.OPEN,
       message: [
-        seller.id === user.id
-          ? `Venda ${number} aberta para ${customer.name}.`
-          : `Venda ${number} aberta para ${customer.name} e vinculada a ${seller.name}.`,
+        seller && seller.id !== user.id
+          ? `Venda ${number} aberta para ${customer.name} e vinculada a ${seller.name}.`
+          : `Venda ${number} aberta para ${customer.name}.`,
         conversation ? `Origem: conversa #${conversation.id}.` : null,
       ].filter(Boolean).join(" "),
       userId: user.id,
     });
+    if (conversation) {
+      await moveLeadStage(tx, conversation.id, LEAD_STAGES.IN_SALE, {
+        userId: user.id,
+        reason: `Venda ${number} aberta. A conversa saiu do quadro de leads.`,
+      });
+    }
     return order.id;
   });
 
@@ -511,7 +553,7 @@ export async function createSaleOrder(payload, user) {
     action: "SALE_ORDER_CREATED",
     entity: "sale_order",
     entityId: created,
-    newData: { customerId, unitId, sellerId: seller.id, conversationId: conversation?.id || null },
+    newData: { customerId, unitId, sellerId: seller?.id || null, conversationId: conversation?.id || null },
   });
 
   return getSaleOrder(created, user);
@@ -586,7 +628,7 @@ export async function addSaleOrderItem(orderId, productId, user) {
   await addEvent(prisma, {
     saleOrderId: order.id,
     type: SALE_ORDER_EVENT_TYPES.PRODUCT,
-    message: `Produto ${formatProductId(product.id)} (${product.commercialName || product.serialOnyx}) incluído como interesse.`,
+    message: `Produto ${formatProductId(product.id)} (${product.commercialName || product.serialOnyx}) incluído na negociação.`,
     userId: user.id,
   });
   await persistDerivedStatus(prisma, order.id);
@@ -634,6 +676,7 @@ export async function removeSaleOrderItem(orderId, itemId, user) {
     userId: user.id,
   });
   await persistDerivedStatus(prisma, order.id);
+  await releaseWaitlistProduct(order.conversationId, product.id);
   return getSaleOrder(order.id, user);
 }
 
@@ -711,10 +754,11 @@ export async function unreserveSaleOrderItem(orderId, itemId, user) {
   return getSaleOrder(order.id, user);
 }
 
-export async function generateSaleOrder(orderId, user) {
+export async function generateSaleOrder(orderId, payload, user) {
   const order = await getRawOrder(orderId, user);
   assertCanOperate(user, order);
   assertOpen(order);
+  const seller = await resolveSeller(payload, user, { required: !order.sellerId, anySeller: true });
   const reservable = order.items.filter((item) =>
     [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
   );
@@ -734,12 +778,13 @@ export async function generateSaleOrder(orderId, user) {
     data: {
       status: SALE_ORDER_STATUSES.ORDER,
       orderedAt: order.orderedAt || new Date(),
+      ...(seller ? { sellerId: seller.id } : {}),
     },
   });
   await addEvent(prisma, {
     saleOrderId: order.id,
     type: SALE_ORDER_EVENT_TYPES.ORDER,
-    message: `Pedido de venda gerado com ${reservable.length} produto(s). Aguardando baixa no caixa.`,
+    message: `Pedido de venda gerado com ${reservable.length} produto(s) para ${seller?.name || order.seller?.name}. Aguardando baixa no caixa.`,
     userId: user.id,
   });
   await writeAudit({
@@ -822,7 +867,7 @@ export async function checkoutSaleOrder(orderId, payload, user) {
     message: `Caixa deu baixa em ${requested.length} produto(s).`,
     userId: user.id,
   });
-  await persistDerivedStatus(prisma, order.id);
+  await persistDerivedStatus(prisma, order.id, user.id);
   return getSaleOrder(order.id, user);
 }
 
@@ -862,6 +907,12 @@ export async function closeSaleOrder(orderId, payload, user) {
     message: note,
     userId: user.id,
   });
+  if (order.conversationId) {
+    await syncLeadStageWithSales(prisma, order.conversationId, {
+      userId: user.id,
+      prefer: sold.length ? "converted" : "lost",
+    });
+  }
   await writeAudit({
     userId: user.id,
     action: "SALE_ORDER_CLOSED",
@@ -1114,6 +1165,13 @@ export async function deleteSaleOrder(id, user) {
     await tx.saleOrder.delete({ where: { id: order.id } });
   });
 
+  for (const item of order.items) {
+    await syncProductWaitlist(item.productId);
+  }
+
+  if (order.conversationId) {
+    await syncLeadStageWithSales(prisma, order.conversationId, { userId: user.id });
+  }
   await writeAudit({
     userId: user.id,
     action: "SALE_ORDER_DELETED",

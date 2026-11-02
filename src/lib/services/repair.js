@@ -16,6 +16,7 @@ import {
   resolveWorkOrderType,
 } from "../constants";
 import { emptyToNull, parseId, toNumber } from "../validations";
+import { syncProductWaitlist } from "./waitlist";
 import { paginationResult, parsePagination } from "../pagination";
 import {
   canViewWorkOrder,
@@ -448,6 +449,7 @@ export async function updateWorkOrder(id, payload, user) {
     return saved;
   });
 
+  await syncProductWaitlist(order.productId);
   return serializeWorkOrder(updated);
 }
 
@@ -540,6 +542,7 @@ export async function deliverWorkOrder(id, payload, user) {
     newData: { number: order.number },
   });
 
+  await syncProductWaitlist(order.productId);
   return serializeWorkOrder(updated);
 }
 
@@ -730,6 +733,7 @@ export async function addWorkOrderInteraction(id, payload, user) {
     await addWorkOrderImageFiles(order.id, files, user);
   }
 
+  await syncProductWaitlist(order.productId);
   return getWorkOrder(id, user);
 }
 
@@ -867,6 +871,7 @@ export async function deleteWorkOrder(id, user) {
     await tx.workOrder.delete({ where: { id: order.id } });
   });
 
+  await syncProductWaitlist(order.productId);
   await writeAudit({
     userId: user.id,
     action: "WORK_ORDER_DELETED",

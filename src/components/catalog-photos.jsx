@@ -7,7 +7,7 @@ export function CatalogGallery({ imageIds, alt }) {
   const [active, setActive] = useState(ids[0] || null);
   if (!ids.length) {
     return (
-      <div className="flex min-h-72 items-center justify-center rounded-2xl border border-border bg-white">
+      <div className="flex aspect-square max-h-[32rem] w-full items-center justify-center rounded-2xl border border-border bg-white">
         <span className="text-sm text-muted">Sem foto</span>
       </div>
     );
@@ -15,8 +15,8 @@ export function CatalogGallery({ imageIds, alt }) {
   const current = ids.includes(active) ? active : ids[0];
   return (
     <div className="space-y-3">
-      <div className="flex min-h-72 items-center justify-center rounded-2xl border border-border bg-white">
-        <img src={`/api/catalog/commercial/${current}`} alt={alt || ""} className="max-h-[28rem] w-full object-contain" />
+      <div className="flex aspect-square max-h-[32rem] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-white">
+        <img src={`/api/catalog/commercial/${current}`} alt={alt || ""} className="h-full w-full object-contain p-4" />
       </div>
       {ids.length > 1 ? (
         <div className="flex gap-2 overflow-x-auto">

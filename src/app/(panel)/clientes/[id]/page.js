@@ -172,7 +172,7 @@ export default function ClienteDetailPage() {
       {canViewSales ? (
         <HistoryCard
           title="Pedidos de venda"
-          description="Interesse, reserva e concretização vinculados a este cliente."
+          description="Negociação, reserva e concretização vinculados a este cliente."
           truncated={saleOrders.length >= 50}
         >
           {saleOrders.length ? (

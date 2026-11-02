@@ -12,6 +12,7 @@ import { formatProductId } from "../format";
 import { parseProductIds } from "../validations";
 import { paginationResult, parsePagination } from "../pagination";
 import { getProduct, movementUnitFields } from "./products";
+import { syncProductWaitlist } from "./waitlist";
 import { resolveProductLocation } from "./locations";
 import { assertNoOpenInventory } from "../inventory-lock";
 import {
@@ -127,6 +128,7 @@ export async function exitProduct({ productId, reason, observation, user, custom
     newData: { status: newStatus, reason, observation },
   });
 
+  await syncProductWaitlist(product.id);
   return updated;
 }
 
@@ -164,6 +166,7 @@ export async function reserveProduct(productId, observation, user, { fromSaleOrd
     newData: { status: STATUSES.RESERVED },
   });
 
+  await syncProductWaitlist(product.id);
   return updated;
 }
 
@@ -207,6 +210,7 @@ export async function unreserveProduct(productId, observation, user, { fromSaleO
 
   const { syncSaleOrderAfterUnreserve } = await import("./sale-orders");
   await syncSaleOrderAfterUnreserve(product.id, user);
+  await syncProductWaitlist(product.id);
 
   return updated;
 }
@@ -290,6 +294,7 @@ export async function sendTransfer({ productId, toUnitId, observation, user }) {
     newData: { status: STATUSES.IN_TRANSIT, transferToUnitId: destination.id },
   });
 
+  await syncProductWaitlist(updated.id);
   return getProduct(updated.id);
 }
 
@@ -339,6 +344,7 @@ export async function receiveTransfer({ productId, observation, user, locationId
     newData: { status: STATUSES.AVAILABLE, unitId },
   });
 
+  await syncProductWaitlist(updated.id);
   return getProduct(updated.id);
 }
 
@@ -388,6 +394,7 @@ async function returnFromTransit({ productId, user, type, action, defaultObserva
     newData: { status: STATUSES.AVAILABLE, transferToUnitId: null },
   });
 
+  await syncProductWaitlist(updated.id);
   return getProduct(updated.id);
 }
 

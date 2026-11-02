@@ -15,11 +15,28 @@ export async function listManufacturers() {
   return { items };
 }
 
-export async function findOrCreateManufacturer(name, actor) {
-  const normalized = normalizeManufacturerName(name);
+async function findManufacturerByName(name) {
+  const key = name.toLocaleLowerCase("pt-BR");
+  const items = await prisma.manufacturer.findMany({
+    select: { id: true, name: true, active: true },
+  });
+  const matches = items.filter((item) => item.name.toLocaleLowerCase("pt-BR") === key);
+  return matches.find((item) => item.active) || matches[0] || null;
+}
+
+export async function findOrCreateManufacturer(name, actor, { uppercase = false } = {}) {
+  const normalized = normalizeManufacturerName(uppercase ? String(name || "").toLocaleUpperCase("pt-BR") : name);
   if (!normalized) return null;
-  const existing = await prisma.manufacturer.findFirst({ where: { name: normalized } });
-  if (existing) return existing;
+  const existing = await findManufacturerByName(normalized);
+  if (existing) {
+    if (!uppercase || existing.name === normalized) return existing;
+    try {
+      return await prisma.manufacturer.update({ where: { id: existing.id }, data: { name: normalized } });
+    } catch (error) {
+      if (error?.code !== "P2002") throw error;
+      return (await findManufacturerByName(normalized)) || existing;
+    }
+  }
   try {
     const manufacturer = await prisma.manufacturer.create({ data: { name: normalized } });
     if (actor?.id) {
@@ -34,7 +51,7 @@ export async function findOrCreateManufacturer(name, actor) {
     return manufacturer;
   } catch (error) {
     if (error?.code !== "P2002") throw error;
-    const again = await prisma.manufacturer.findFirst({ where: { name: normalized } });
+    const again = await findManufacturerByName(normalized);
     if (again) return again;
     throw error;
   }
@@ -43,7 +60,7 @@ export async function findOrCreateManufacturer(name, actor) {
 export async function registerManufacturer(name, actor) {
   const normalized = normalizeManufacturerName(name);
   if (!normalized) throw validationError("Informe o nome do fabricante.");
-  const existing = await prisma.manufacturer.findFirst({ where: { name: normalized } });
+  const existing = await findManufacturerByName(normalized);
   const manufacturer = existing || await findOrCreateManufacturer(normalized, actor);
   return { manufacturer, created: !existing };
 }

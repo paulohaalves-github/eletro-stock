@@ -640,7 +640,7 @@ function saleOrderCell(item, me) {
       return `${item.openSaleOrder.number} · até ${formatDate(item.openSaleOrder.reservedUntil)}`;
     }
     return item.openSaleOrder.itemStatus === "INTERESSE"
-      ? `${item.openSaleOrder.number} · interesse`
+      ? `${item.openSaleOrder.number} · em negociação`
       : item.openSaleOrder.number;
   }
   return item.openSaleOrder.reservedUntil ? "Reservado em outra venda" : "Em outra venda";

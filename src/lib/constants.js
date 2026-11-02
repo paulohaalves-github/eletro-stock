@@ -190,6 +190,7 @@ export const EXIT_REASONS = {
   RETURN: "DEVOLUCAO",
   DAMAGE: "AVARIA",
   DISCARD: "DESCARTE",
+  INTERNAL_USE: "USO_INTERNO",
   OTHER: "OUTRO",
 };
 
@@ -199,6 +200,7 @@ export const EXIT_REASON_LABELS = {
   DEVOLUCAO: "Devolução",
   AVARIA: "Avaria",
   DESCARTE: "Descarte",
+  USO_INTERNO: "Uso interno",
   OUTRO: "Outro",
 };
 
@@ -212,6 +214,7 @@ export const EXIT_REASON_TO_STATUS = {
   DEVOLUCAO: "DEVOLVIDO",
   AVARIA: "DESCARTADO",
   DESCARTE: "DESCARTADO",
+  USO_INTERNO: "DESCARTADO",
   OUTRO: "DESCARTADO",
 };
 
@@ -249,7 +252,7 @@ export const SALE_ORDER_STATUSES = {
 };
 
 export const SALE_ORDER_STATUS_LABELS = {
-  INTERESSE: "Interesse",
+  INTERESSE: "Negociação",
   RESERVADA: "Reservada",
   PEDIDO: "Pedido gerado",
   PARCIAL: "Parcialmente concretizada",
@@ -269,7 +272,7 @@ export const SALE_ORDER_ITEM_STATUSES = {
 };
 
 export const SALE_ORDER_ITEM_STATUS_LABELS = {
-  INTERESSE: "Interesse",
+  INTERESSE: "Em negociação",
   RESERVADO: "Reservado",
   PEDIDO: "No pedido",
   VENDIDO: "Vendido",
@@ -592,6 +595,49 @@ export const CONVERSATION_STATUS_LABELS = {
   ENCERRADA: "Conversa encerrada",
 };
 
+export const LEAD_STAGES = {
+  NEW: "NOVO",
+  QUALIFYING: "EM_QUALIFICACAO",
+  INTERESTED: "INTERESSADO",
+  WAITLIST: "LISTA_ESPERA",
+  AFTER_SALES: "POS_VENDAS",
+  NO_REPLY: "SEM_RETORNO",
+  DISCARDED: "DESCARTADO",
+  IN_SALE: "EM_VENDA",
+  CONVERTED: "CONVERTIDA",
+};
+
+export const LEAD_STAGE_LABELS = {
+  NOVO: "Novo",
+  EM_QUALIFICACAO: "Em qualificação",
+  INTERESSADO: "Interessado",
+  LISTA_ESPERA: "Lista de Espera",
+  POS_VENDAS: "Pós vendas",
+  SEM_RETORNO: "Sem retorno",
+  DESCARTADO: "Descartado",
+  EM_VENDA: "Em venda",
+  CONVERTIDA: "Convertida",
+};
+
+export const LEAD_BOARD_STAGES = [
+  LEAD_STAGES.NEW,
+  LEAD_STAGES.QUALIFYING,
+  LEAD_STAGES.INTERESTED,
+  LEAD_STAGES.WAITLIST,
+  LEAD_STAGES.AFTER_SALES,
+  LEAD_STAGES.NO_REPLY,
+  LEAD_STAGES.DISCARDED,
+];
+
+export const LEAD_AGENT_STAGES = [
+  LEAD_STAGES.QUALIFYING,
+  LEAD_STAGES.INTERESTED,
+  LEAD_STAGES.WAITLIST,
+  LEAD_STAGES.AFTER_SALES,
+  LEAD_STAGES.NO_REPLY,
+  LEAD_STAGES.DISCARDED,
+];
+
 export const MESSAGE_DIRECTIONS = {
   IN: "IN",
   OUT: "OUT",
@@ -615,6 +661,7 @@ export const CONVERSATION_EVENT_TYPES = {
   NOTE: "NOTA",
   CUSTOMER: "CLIENTE",
   AUTOMATION: "AUTOMACAO",
+  STAGE: "ETAPA",
 };
 
 export const CONVERSATION_EVENT_LABELS = {
@@ -626,6 +673,7 @@ export const CONVERSATION_EVENT_LABELS = {
   NOTA: "Nota interna",
   CLIENTE: "Cliente vinculado",
   AUTOMACAO: "Resposta automática",
+  ETAPA: "Etapa comercial",
 };
 
 export const GREETING_MODES = {

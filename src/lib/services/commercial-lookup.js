@@ -42,6 +42,10 @@ function text(value, max) {
   return String(value || "").trim().slice(0, max);
 }
 
+function upper(value, max) {
+  return text(value, max).toLocaleUpperCase("pt-BR");
+}
+
 function proposedPrice(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0 || number > 1000000) return null;
@@ -134,7 +138,7 @@ export async function previewCommercialLookup(productId, user, payload = {}) {
 
   void sweepOldPreviews();
   let imageUrls = await localPreviews(found.imageUrls || []);
-  if (imageUrls.length < 2 && found.sources?.length) {
+  if (imageUrls.length < MAX_LOOKUP_IMAGES && found.sources?.length) {
     const fromPages = await imageUrlsFromPages(found.sources.map((source) => source.url));
     const extra = await localPreviews(fromPages);
     imageUrls = [...imageUrls, ...extra.filter((url) => !imageUrls.includes(url))].slice(0, MAX_LOOKUP_IMAGES);
@@ -148,8 +152,8 @@ export async function previewCommercialLookup(productId, user, payload = {}) {
     priceHigh: found.priceHigh ?? null,
     current: snapshot(product),
     proposed: {
-      commercialName: text(found.commercialName, 190),
-      manufacturer: text(found.manufacturer, 160),
+      commercialName: upper(found.commercialName, 190),
+      manufacturer: upper(found.manufacturer, 160),
       specifications: text(found.specifications, 12000),
       marketPrice: proposedPrice(found.marketPrice),
       voltage: proposedVoltage(found.voltage),
@@ -182,12 +186,12 @@ export async function applyCommercialLookup(productId, user, payload = {}) {
 
   const modelData = {};
   if (flags.commercialName) {
-    const commercialName = text(values.commercialName, 190);
+    const commercialName = upper(values.commercialName, 190);
     if (!commercialName) throw validationError("A consulta não trouxe um nome comercial.");
     modelData.commercialName = commercialName;
   }
   if (flags.manufacturer) {
-    const manufacturer = await findOrCreateManufacturer(values.manufacturer, user);
+    const manufacturer = await findOrCreateManufacturer(values.manufacturer, user, { uppercase: true });
     if (!manufacturer) throw validationError("A consulta não trouxe um fabricante.");
     modelData.manufacturerId = manufacturer.id;
   }

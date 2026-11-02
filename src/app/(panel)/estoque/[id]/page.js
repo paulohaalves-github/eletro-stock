@@ -248,7 +248,7 @@ export default function ProductDetailPage() {
                   label="Venda em andamento"
                   value={
                     canOpenSale
-                      ? `${product.openSaleOrder.number}${product.openSaleOrder.reservedUntil ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}` : product.openSaleOrder.itemStatus === "INTERESSE" ? " · interesse" : ""}`
+                      ? `${product.openSaleOrder.number}${product.openSaleOrder.reservedUntil ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}` : product.openSaleOrder.itemStatus === "INTERESSE" ? " · em negociação" : ""}`
                       : product.openSaleOrder.reservedUntil
                         ? `Reservado até ${formatDate(product.openSaleOrder.reservedUntil)}`
                         : "Em outra venda"

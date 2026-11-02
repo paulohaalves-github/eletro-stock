@@ -520,7 +520,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         .filter((item) => [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status))
         .map((item) => item.id);
 
-      await generateSaleOrder(order.id, user);
+      await generateSaleOrder(order.id, { sellerId: order.sellerId }, user);
       generated = true;
       if (outsideCare.length) {
         await prisma.saleOrderItem.updateMany({

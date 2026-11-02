@@ -214,7 +214,7 @@ export default function VendasPage() {
     <div className="w-full">
       <PageHeader
         title="Vendas"
-        subtitle="Acompanhe o interesse do cliente, a reserva, o pedido e a baixa no caixa."
+        subtitle="Acompanhe a negociação, a reserva, o pedido e a baixa no caixa."
         actions={
           <>
             <Button variant="secondary" onClick={() => setView(view === "table" ? "kanban" : "table")}>

@@ -11,12 +11,18 @@ import { Modal } from "@/components/modal";
 import { CustomerPicker } from "@/components/customer-picker";
 import { EmojiPicker, insertEmoji } from "@/components/emoji-picker";
 import { WhatsappTemplatePicker } from "@/components/whatsapp-template-picker";
-import { ConversationStatusBadge, InboxProviderBadge } from "@/components/badges";
+import { ConversationStatusBadge, InboxProviderBadge, LeadStageBadge } from "@/components/badges";
+import { ConversationSale } from "@/components/conversation-sale";
+import { WaitlistDialog } from "@/components/waitlist-dialog";
 import {
   CONVERSATION_EVENT_LABELS,
   CONVERSATION_EVENT_TYPES,
   CONVERSATION_STATUSES,
   CONVERSATION_STATUS_LABELS,
+  isSaleOrderClosed,
+  LEAD_AGENT_STAGES,
+  LEAD_STAGE_LABELS,
+  LEAD_STAGES,
   INBOX_CONNECTION_STATUSES,
   INBOX_PROVIDERS,
   MESSAGE_DIRECTIONS,
@@ -163,6 +169,8 @@ export default function InboxPage() {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkCustomer, setLinkCustomer] = useState(null);
   const [linking, setLinking] = useState(false);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistSaving, setWaitlistSaving] = useState(false);
   const [chatTemplate, setChatTemplate] = useState(null);
   const [startTemplate, setStartTemplate] = useState(null);
   const [useTemplate, setUseTemplate] = useState(false);
@@ -251,6 +259,25 @@ export default function InboxPage() {
     () => teams.find((team) => Number(team.id) === Number(transfer.teamId)),
     [teams, transfer.teamId],
   );
+
+  async function saveWaitlist(form) {
+    if (!selected) return;
+    setWaitlistSaving(true);
+    try {
+      const data = await api(`/api/inbox/conversations/${selected.id}/stage`, {
+        method: "POST",
+        json: { stage: LEAD_STAGES.WAITLIST, ...form },
+      });
+      setConversation(data.conversation);
+      setWaitlistOpen(false);
+      toast.success("Etapa comercial: Lista de Espera.");
+      void loadList();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setWaitlistSaving(false);
+    }
+  }
 
   async function runAction(path, json, success) {
     if (!selected) return;
@@ -500,6 +527,7 @@ export default function InboxPage() {
                   <p className="mt-1 truncate text-xs text-muted">{item.lastMessagePreview || "Sem mensagens"}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <ConversationStatusBadge status={item.status} />
+                    {item.commercialStage ? <LeadStageBadge stage={item.commercialStage} /> : null}
                     {item.unreadCount > 0 ? (
                       <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-slate-950">{item.unreadCount}</span>
                     ) : null}
@@ -524,6 +552,7 @@ export default function InboxPage() {
                   <p className="text-sm text-muted">{formatPhone(selected.phone)}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <ConversationStatusBadge status={selected.status} />
+                    {selected.commercialStage ? <LeadStageBadge stage={selected.commercialStage} /> : null}
                     <InboxProviderBadge provider={selected.channel?.provider} />
                     <span className="text-xs text-muted">{selected.team?.name}</span>
                     {selected.agent?.name ? <span className="text-xs text-muted">Agente: {selected.agent.name}</span> : <span className="text-xs text-amber-300">Sem agente</span>}
@@ -531,7 +560,7 @@ export default function InboxPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {canCreateSale && selected.customer ? (
+                  {canCreateSale && selected.customer && !selected.hasOpenSale ? (
                     <Button
                       variant="secondary"
                       onClick={() => router.push(`/vendas/novo?customerId=${selected.customer.id}&conversationId=${selected.id}`)}
@@ -801,6 +830,48 @@ export default function InboxPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted">Detalhes</p>
                   <dl className="mt-3 space-y-3">
                     <Info label="Status" value={CONVERSATION_STATUS_LABELS[selected.status]} />
+                    <Info
+                      label="Etapa comercial"
+                      value={(
+                        <div className="mt-1">
+                          <Select
+                            aria-label="Etapa comercial"
+                            value={selected.commercialStage || ""}
+                            disabled={selected.commercialStage === LEAD_STAGES.IN_SALE || !canReply}
+                            onChange={(event) => {
+                              const stage = event.target.value;
+                              if (!stage || stage === selected.commercialStage || !LEAD_AGENT_STAGES.includes(stage)) return;
+                              if (stage === LEAD_STAGES.WAITLIST) {
+                                setWaitlistOpen(true);
+                                return;
+                              }
+                              void runAction(
+                                `/api/inbox/conversations/${selected.id}/stage`,
+                                { stage },
+                                `Etapa comercial: ${LEAD_STAGE_LABELS[stage]}.`,
+                              );
+                            }}
+                          >
+                            {(LEAD_AGENT_STAGES.includes(selected.commercialStage)
+                              ? LEAD_AGENT_STAGES
+                              : [selected.commercialStage, ...LEAD_AGENT_STAGES]
+                            ).filter(Boolean).map((stage) => (
+                              <option key={stage} value={stage}>
+                                {LEAD_STAGE_LABELS[stage] || stage}
+                              </option>
+                            ))}
+                          </Select>
+                          {selected.commercialStage === LEAD_STAGES.IN_SALE ? (
+                            <p className="mt-2 text-xs text-muted">A etapa acompanha a venda aberta.</p>
+                          ) : null}
+                          {selected.commercialStage === LEAD_STAGES.WAITLIST && canReply ? (
+                            <button type="button" className="mt-2 text-xs text-accent hover:underline" onClick={() => setWaitlistOpen(true)}>
+                              Editar o que o cliente espera
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+                    />
                     <Info label="Criada em" value={formatDateTime(selected.createdAt)} />
                     <Info label="Última mensagem" value={formatDateTime(selected.lastMessageAt)} />
                     <Info label="Aceita em" value={selected.acceptedAt ? `${formatDateTime(selected.acceptedAt)}${selected.acceptedBy?.name ? ` · ${selected.acceptedBy.name}` : ""}` : "Ainda não aceita"} />
@@ -833,7 +904,23 @@ export default function InboxPage() {
                       }
                     />
                   </dl>
-                  {selected.saleOrders?.length ? (
+                  {(selected.saleOrders || []).some((order) => !isSaleOrderClosed(order)) ? (
+                    <div className="mt-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Venda em andamento</p>
+                      <ConversationSale
+                        saleId={(selected.saleOrders || []).find((order) => !isSaleOrderClosed(order)).id}
+                        canEdit={canCreateSale}
+                        onChanged={() => void loadConversation(selected.id)}
+                      />
+                    </div>
+                  ) : selected.hasOpenSale ? (
+                    <div className="mt-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Venda em andamento</p>
+                      <p className="mt-2 text-xs text-muted">
+                        A venda {selected.openSaleNumber || "vinculada"} está com outro responsável. Não é possível abrir outra.
+                      </p>
+                    </div>
+                  ) : selected.saleOrders?.length ? (
                     <div className="mt-5">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted">Vendas</p>
                       <ul className="mt-2 space-y-2">
@@ -856,6 +943,14 @@ export default function InboxPage() {
           )}
         </section>
       </div>
+
+      <WaitlistDialog
+        open={waitlistOpen}
+        initial={selected}
+        saving={waitlistSaving}
+        onClose={() => setWaitlistOpen(false)}
+        onSave={(form) => void saveWaitlist(form)}
+      />
 
       <Modal
         open={transferOpen}

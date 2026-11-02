@@ -34,6 +34,7 @@ import {
   Radio,
   UsersRound,
   ShoppingCart,
+  Kanban,
   Handshake,
   Trash2,
   Settings,
@@ -90,6 +91,7 @@ const NAV_GROUPS = [
     icon: Handshake,
     items: [
       { href: "/clientes", label: "Clientes", icon: Users, permission: PERMISSIONS.CUSTOMER_VIEW },
+      { href: "/leads", label: "Leads", icon: Kanban, permission: PERMISSIONS.INBOX_VIEW },
       { href: "/vendas", label: "Vendas", icon: ShoppingCart, permission: PERMISSIONS.SALE_VIEW },
     ],
   },

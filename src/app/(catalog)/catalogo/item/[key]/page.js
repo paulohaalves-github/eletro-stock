@@ -18,7 +18,7 @@ export default async function CatalogItemPage({ params }) {
   return (
     <CatalogShell>
       <ProductDetail item={catalog.item} />
-      <CatalogFooter catalog={catalog} />
+      <CatalogFooter catalog={catalog} showStores={false} />
     </CatalogShell>
   );
 }

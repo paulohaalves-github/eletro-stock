@@ -9,6 +9,7 @@ import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
 import { toExcelBuffer } from "./reports";
 import { assertNoOpenInventory } from "../inventory-lock";
+import { syncProductWaitlist } from "./waitlist";
 import {
   assertCanViewProduct,
   assertProductInActiveUnit,
@@ -545,6 +546,7 @@ export async function createProduct(payload, user) {
     newData: product,
   });
 
+  await syncProductWaitlist(product.id);
   return serializeProduct(product);
 }
 
@@ -688,6 +690,7 @@ export async function updateProduct(id, payload, user) {
     newData: updated,
   });
 
+  await syncProductWaitlist(current.id);
   return serializeProduct(updated);
 }
 

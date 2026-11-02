@@ -35,6 +35,9 @@ export default function VendaDetailPage() {
   const [reserveItem, setReserveItem] = useState(null);
   const [reservedUntil, setReservedUntil] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [sellers, setSellers] = useState([]);
+  const [sellerId, setSellerId] = useState("");
 
   const load = useCallback(async () => {
     const [{ saleOrder }, { user }] = await Promise.all([
@@ -192,7 +195,17 @@ export default function VendaDetailPage() {
           <>
             <Link href="/vendas"><Button variant="secondary">Voltar</Button></Link>
             {canCreate && readyForOrder ? (
-              <Button variant="secondary" disabled={saving} onClick={() => void run(`/api/sale-orders/${order.id}/order`, {})}>
+              <Button
+                variant="secondary"
+                disabled={saving}
+                onClick={() => {
+                  setSellerId(order.seller?.id ? String(order.seller.id) : "");
+                  setOrderOpen(true);
+                  api("/api/sale-orders/sellers")
+                    .then((data) => setSellers(data.items || []))
+                    .catch((error) => toast.error(error.message));
+                }}
+              >
                 Gerar pedido
               </Button>
             ) : null}
@@ -212,7 +225,7 @@ export default function VendaDetailPage() {
         </div>
         {!order.canOperate && !order.closed ? (
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-            Esta venda pertence a {order.seller?.name || "outro vendedor"}. Você pode consultar, mas não alterar o funil comercial.
+            Esta venda pertence a {order.seller?.name || order.createdBy?.name || "outro usuário"}. Você pode consultar, mas não alterar o funil comercial.
           </p>
         ) : null}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -227,7 +240,10 @@ export default function VendaDetailPage() {
             }
           />
           <Info label="Unidade" value={order.unit?.name} />
-          <Info label="Vendedor" value={order.seller?.name} />
+          <Info label="Vendedor" value={order.seller?.name || "A definir"} />
+          {!order.seller ? (
+            <p className="text-xs text-muted">O vendedor será definido ao gerar o pedido.</p>
+          ) : null}
           <Info label="OV" value={order.ov || "—"} />
           {order.paymentMethod || order.installmentCount ? (
             <Info
@@ -263,11 +279,11 @@ export default function VendaDetailPage() {
       <Card className="mb-4 space-y-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Produtos</p>
-          <p className="mt-1 text-sm text-muted">Inclua o interesse, reserve a unidade e só então gere o pedido para o caixa.</p>
+          <p className="mt-1 text-sm text-muted">Inclua o produto na negociação, reserve a unidade e só então gere o pedido para o caixa.</p>
         </div>
         {canCreate ? (
           <div>
-            <Field label="Incluir produto de interesse">
+            <Field label="Incluir produto na negociação">
               <ScanField
                 value={query}
                 onChange={setQuery}
@@ -439,6 +455,38 @@ export default function VendaDetailPage() {
             </div>
           ))}
         </div>
+      </Modal>
+
+      <Modal
+        open={orderOpen}
+        title="Gerar pedido"
+        onClose={() => !saving && setOrderOpen(false)}
+        className="max-w-md"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setOrderOpen(false)} disabled={saving}>Cancelar</Button>
+            <Button
+              type="button"
+              disabled={saving || !sellerId}
+              onClick={() => {
+                void run(`/api/sale-orders/${order.id}/order`, { sellerId }, "Pedido de venda gerado.").then((data) => {
+                  if (data) setOrderOpen(false);
+                });
+              }}
+            >
+              {saving ? "Gerando..." : "Gerar pedido"}
+            </Button>
+          </>
+        }
+      >
+        <Field label="Vendedor" required hint="O vendedor da venda é definido neste momento.">
+          <Select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
+            <option value="">Selecione o vendedor</option>
+            {sellers.map((seller) => (
+              <option key={seller.id} value={seller.id}>{seller.name}</option>
+            ))}
+          </Select>
+        </Field>
       </Modal>
 
       <Modal
