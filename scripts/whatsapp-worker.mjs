@@ -6,6 +6,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { convertToWhatsAppVoice } from "../src/lib/whatsapp/audio-convert.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const uploadDir = process.env.UPLOAD_DIR || "uploads";
@@ -414,11 +415,12 @@ async function sendMessage(channelId, to, text, jid, media, quotedId, location) 
     if (media.kind === "image") content = { image: buffer, caption };
     else if (media.kind === "video") content = { video: buffer, caption };
     else if (media.kind === "audio") {
-      const mime = media.mimeType || "audio/ogg; codecs=opus";
+      const voice = await convertToWhatsAppVoice(buffer);
       content = {
-        audio: buffer,
-        mimetype: mime,
-        ptt: /ogg|opus|webm/i.test(mime),
+        audio: voice.buffer,
+        mimetype: voice.mimeType,
+        ptt: true,
+        ...(voice.seconds ? { seconds: voice.seconds } : {}),
       };
     } else {
       content = {

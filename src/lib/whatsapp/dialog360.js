@@ -2,8 +2,9 @@ import { readFile } from "node:fs/promises";
 import { validationError } from "../errors";
 import { normalizeWhatsAppPhone } from "../phone";
 import { resolveUploadPath } from "../services/images";
-import { encodeInboxLocation, isVoiceAudioMime } from "../inbox-payload";
+import { encodeInboxLocation } from "../inbox-payload";
 import { saveInboxMediaBuffer } from "../services/inbox-media";
+import { convertToWhatsAppVoice } from "./audio-convert";
 
 const DEFAULT_BASE_URL = "https://waba-v2.360dialog.io";
 
@@ -132,11 +133,18 @@ export async function listDialog360Templates(channel, { force = false } = {}) {
 
 async function uploadDialog360Media(channel, media) {
   const full = resolveUploadPath(media.relativePath);
-  const bytes = await readFile(full);
+  let bytes = await readFile(full);
+  let mimeType = media.mimeType || media.mediaType || "application/octet-stream";
+  let fileName = media.fileName || "arquivo";
+  if (media.kind === "audio") {
+    const voice = await convertToWhatsAppVoice(bytes);
+    bytes = voice.buffer;
+    mimeType = voice.mimeType;
+    fileName = "audio.ogg";
+  }
   const form = new FormData();
   form.append("messaging_product", "whatsapp");
-  const mimeType = media.mimeType || media.mediaType || "application/octet-stream";
-  form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), media.fileName || "arquivo");
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), fileName);
   form.append("type", mimeType);
   const response = await fetch(`${baseUrl()}/media`, {
     method: "POST",
@@ -279,7 +287,7 @@ export async function sendDialog360Message(channel, { to, body, media, location,
       [type]: {
         id: mediaId,
         ...(caption ? { caption } : {}),
-        ...(type === "audio" && isVoiceAudioMime(media.mimeType || media.mediaType) ? { voice: true } : {}),
+        ...(type === "audio" ? { voice: true } : {}),
         ...(type === "document" ? { filename: media.fileName || "arquivo" } : {}),
       },
     };
