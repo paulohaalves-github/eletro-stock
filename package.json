@@ -12,7 +12,7 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "whatsapp:worker": "node --env-file=.env scripts/whatsapp-worker.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && node node_modules/ffmpeg-static/install.js"
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"

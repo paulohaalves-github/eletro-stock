@@ -12,6 +12,7 @@ import {
   INBOX_VIDEO_MIME_TYPES,
 } from "../constants";
 import { parseInboxLocation } from "../inbox-payload";
+import { convertToWhatsAppVoice } from "../whatsapp/audio-convert";
 import { extFromName, saveBuffer } from "./images";
 
 function baseMime(mimeType) {
@@ -76,17 +77,30 @@ export async function saveInboxAttachment(conversationId, file, { prefix = "inbo
   if (!kind || (!allowed.has(baseMime(mime)) && !allowedExt.has(ext))) {
     throw validationError("Envie imagem, áudio, vídeo MP4 ou documento (PDF, Word, Excel, TXT ou ZIP).");
   }
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const filename = `${randomUUID()}${ext || ""}`;
+  let bytes = Buffer.from(await file.arrayBuffer());
+  let savedExt = ext || "";
+  let savedMime = mime || kind;
+  let savedName = file.name || "";
+  if (kind === "audio") {
+    try {
+      const voice = await convertToWhatsAppVoice(bytes);
+      bytes = voice.buffer;
+      savedExt = ".ogg";
+      savedMime = voice.mimeType;
+      savedName = `${savedName.replace(/\.[^.]+$/, "") || "audio"}.ogg`;
+    } catch (error) {
+      throw validationError(error.message || "Não foi possível preparar o áudio para o WhatsApp.");
+    }
+  }
+  const filename = `${randomUUID()}${savedExt}`;
   const relativeDir = `${prefix}/${Number(conversationId)}`;
   const mediaUrl = await saveBuffer(relativeDir, filename, bytes);
-  const mediaType = mime || kind;
   return {
     kind,
     mediaUrl,
-    mediaType,
-    mimeType: mediaType,
-    fileName: file.name || filename,
+    mediaType: savedMime,
+    mimeType: savedMime,
+    fileName: savedName || filename,
     relativePath: `${relativeDir}/${filename}`.replaceAll("\\", "/"),
     size: bytes.length,
   };

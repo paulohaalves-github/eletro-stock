@@ -17,7 +17,8 @@ function resolveFfmpeg() {
       // ignore
     }
   }
-  candidates.push("ffmpeg");
+  const bundledDir = path.join(process.cwd(), "node_modules", "ffmpeg-static");
+  candidates.push(path.join(bundledDir, "ffmpeg.exe"), path.join(bundledDir, "ffmpeg"), "ffmpeg");
   return candidates.find((candidate) => candidate === "ffmpeg" || fs.existsSync(candidate)) || "ffmpeg";
 }
 

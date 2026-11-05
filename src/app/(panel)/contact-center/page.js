@@ -200,10 +200,13 @@ export default function InboxPage() {
 
   const loadConversation = useCallback(async (id) => {
     if (!id) return;
+    const requestId = Number(id);
     try {
-      const data = await api(`/api/inbox/conversations/${id}`);
+      const data = await api(`/api/inbox/conversations/${requestId}`);
+      if (selectedIdRef.current !== requestId) return;
       setConversation(data.conversation);
     } catch (error) {
+      if (selectedIdRef.current !== requestId) return;
       toast.error(error.message);
     }
   }, []);
@@ -511,11 +514,11 @@ export default function InboxPage() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             {loadingList && !items.length ? <p className="p-4 text-sm text-muted">Carregando conversas...</p> : null}
             {!loadingList && !items.length ? <p className="p-4 text-sm text-muted">Nenhuma conversa nesta fila.</p> : null}
-            {items.map((item) => {
+            {items.map((item, index) => {
               const active = item.id === selectedId;
               return (
                 <button
-                  key={item.id}
+                  key={`conversation-${item.id}-${index}`}
                   type="button"
                   onClick={() => setSelectedId(item.id)}
                   className={cn(
@@ -610,10 +613,10 @@ export default function InboxPage() {
               <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
                   <div ref={messagesRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-                    {timeline.map((entry) => {
+                    {timeline.map((entry, index) => {
                       if (entry.kind === "event") {
                         return (
-                          <div key={`event-${entry.item.id}`} className="flex justify-center">
+                          <div key={`event-${entry.item.id}-${index}`} className="flex justify-center">
                             <p className="max-w-[90%] rounded-full bg-surface-2 px-3 py-1 text-center text-[11px] text-muted">
                               {entry.item.message || CONVERSATION_EVENT_LABELS[entry.item.type] || "Atualização da conversa"}
                               <span className="ml-1 opacity-70">· {formatDateTime(entry.item.createdAt)}</span>
@@ -628,7 +631,7 @@ export default function InboxPage() {
                       const kind = location ? "location" : mediaKind(message);
                       const caption = messageCaption(message, kind, location);
                       return (
-                        <div key={`msg-${message.id}`} className={cn("flex", incoming ? "justify-start" : "justify-end")}>
+                        <div key={`msg-${message.id}-${index}`} className={cn("flex", incoming ? "justify-start" : "justify-end")}>
                           <div
                             className={cn(
                               "max-w-[85%] rounded-2xl px-3.5 py-2 text-sm",
@@ -689,7 +692,7 @@ export default function InboxPage() {
                     })}
                   </div>
                   {canReply ? (
-                    <form onSubmit={send} className="border-t border-border p-3">
+                    <form key={selected.id} onSubmit={send} className="border-t border-border p-3">
                       {replyTo && !internal && !showTemplateComposer ? (
                         <div className="mb-2 flex items-start justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2">
                           <QuotedBlock quoted={replyTo} contactName={selected.displayName} className="min-w-0 flex-1" />
@@ -771,7 +774,6 @@ export default function InboxPage() {
                             Nota interna
                           </label>
                           <EmojiPicker
-                            key={selected.id}
                             disabled={sending || showTemplateComposer || (isClosed && !internal)}
                             onSelect={(emoji) => insertEmoji(draftRef.current, draft, emoji, setDraft)}
                           />
@@ -799,7 +801,6 @@ export default function InboxPage() {
                           </Button>
                           {isInstagram ? null : (
                             <AudioRecorder
-                              key={selected.id}
                               disabled={sending || internal || showTemplateComposer || instagramWindowClosed || (isClosed && !internal)}
                               onRecorded={(next) => {
                                 setFile(next);
