@@ -400,3 +400,98 @@ export async function saveOpenAISettings(payload, actor) {
     configured: Boolean(apiKey),
   });
 }
+
+const INSTAGRAM_KEYS = {
+  appId: "instagram.appId",
+  appSecret: "instagram.appSecret",
+  verifyToken: "instagram.verifyToken",
+};
+
+function instagramUrls() {
+  const base = String(process.env.APP_URL || "").replace(/\/$/, "");
+  return {
+    webhookUrl: base ? `${base}/api/integrations/instagram` : "",
+    redirectUrl: base ? `${base}/api/integrations/instagram/callback` : "",
+  };
+}
+
+export async function getInstagramSettings() {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: Object.values(INSTAGRAM_KEYS) } },
+  });
+  const appId = String(stored(rows, INSTAGRAM_KEYS.appId) || "").trim();
+  const appSecret = String(stored(rows, INSTAGRAM_KEYS.appSecret) || "").trim();
+  const verifyToken = String(stored(rows, INSTAGRAM_KEYS.verifyToken) || "").trim();
+  return {
+    appId,
+    appSecret,
+    verifyToken,
+    secretSet: Boolean(appSecret),
+    configured: Boolean(appId && appSecret && verifyToken),
+  };
+}
+
+export function publicInstagramSettings(settings) {
+  return {
+    appId: settings.appId || "",
+    secretSet: Boolean(settings.secretSet),
+    verifyToken: settings.verifyToken || "",
+    configured: Boolean(settings.configured),
+    ...instagramUrls(),
+  };
+}
+
+export async function saveInstagramSettings(payload, actor) {
+  const current = await getInstagramSettings();
+  const appId = String(payload.appId ?? current.appId).trim();
+  const typedSecret = String(payload.appSecret || "").trim();
+  const verifyToken = String(payload.verifyToken ?? current.verifyToken).trim();
+  let appSecret = typedSecret || current.appSecret;
+
+  if (!appId && !typedSecret && !verifyToken) {
+    appSecret = "";
+  } else if (!/^[0-9]{5,32}$/.test(appId)) {
+    throw validationError("Informe o ID numérico do aplicativo da Meta.");
+  } else if (!appSecret) {
+    throw validationError("Informe a chave secreta do aplicativo.");
+  } else if (appSecret.length > 500) {
+    throw validationError("A chave secreta deve ter no máximo 500 caracteres.");
+  } else if (verifyToken.length < 8 || verifyToken.length > 200 || /\s/.test(verifyToken)) {
+    throw validationError("O token de verificação precisa ter entre 8 e 200 caracteres, sem espaços.");
+  }
+
+  const values = {
+    [INSTAGRAM_KEYS.appId]: appId,
+    [INSTAGRAM_KEYS.appSecret]: appSecret,
+    [INSTAGRAM_KEYS.verifyToken]: verifyToken,
+  };
+
+  await prisma.$transaction(
+    Object.entries(values).map(([key, value]) =>
+      prisma.appSetting.upsert({
+        where: { key },
+        create: { key, value },
+        update: { value },
+      }),
+    ),
+  );
+
+  await writeAudit({
+    userId: actor.id,
+    action: "INSTAGRAM_SETTINGS_UPDATED",
+    entity: "settings",
+    entityId: 0,
+    newData: {
+      appId,
+      secretChanged: Boolean(typedSecret),
+      configured: Boolean(appId && appSecret && verifyToken),
+    },
+  });
+
+  return publicInstagramSettings({
+    appId,
+    secretSet: Boolean(appSecret),
+    verifyToken,
+    configured: Boolean(appId && appSecret && verifyToken),
+  });
+}

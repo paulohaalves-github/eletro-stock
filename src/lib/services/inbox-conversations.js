@@ -20,6 +20,7 @@ import { inboxMediaPreview, saveInboxAttachment } from "./inbox-media";
 import { encodeInboxLocation } from "../inbox-payload";
 import { sendDialog360Message } from "../whatsapp/dialog360";
 import { sendUnofficialMessage } from "../whatsapp/unofficial";
+import { sendInstagramMessage } from "../instagram/graph";
 import { getCustomerServiceWindow } from "../whatsapp/templates";
 import { resolveTemplateSend } from "./inbox-templates";
 import { applyInboundAutomations, scheduleUnansweredAutomations } from "./inbox-automations";
@@ -41,6 +42,7 @@ const conversationListSelect = {
   closedById: true,
   phone: true,
   whatsappJid: true,
+  externalContactId: true,
   contactName: true,
   status: true,
   lastMessagePreview: true,
@@ -85,10 +87,15 @@ function previewOf(body, mediaType, fileName) {
   return inboxMediaPreview(body, mediaType, mediaType, fileName);
 }
 
-function withAgentName(name, body) {
+function withAgentName(name, body, { plain = false } = {}) {
   const agent = String(name || "").trim();
   const text = String(body || "").trim();
   if (!agent) return text;
+  if (plain) {
+    if (!text) return agent;
+    if (text.startsWith(`${agent}:`)) return text;
+    return `${agent}:\n${text}`;
+  }
   if (!text) return `*${agent}*`;
   if (text.startsWith(`*${agent}*`)) return text;
   return `*${agent}*\n${text}`;
@@ -137,7 +144,7 @@ function serializeConversation(conversation) {
   return {
     ...conversation,
     customer: serializeCustomer(conversation.customer),
-    displayName: conversation.customer?.name || conversation.contactName || conversation.phone,
+    displayName: conversation.customer?.name || conversation.contactName || conversation.phone || "Instagram",
     requiresTemplate: windowInfo.requiresTemplate,
     customerWindowOpen: windowInfo.open,
     customerWindowExpiresAt: windowInfo.expiresAt,
@@ -213,6 +220,7 @@ export async function listConversations(filters, session) {
   if (text) {
     where.OR = [
       { phone: { contains: text } },
+      { externalContactId: { contains: text } },
       { contactName: { contains: text } },
       { customer: { name: { contains: text } } },
       { lastMessagePreview: { contains: text } },
@@ -336,7 +344,13 @@ function parseIncomingDate(timestamp) {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-async function findInboundConversation(tx, channelId, phone, jid) {
+async function findInboundConversation(tx, channelId, phone, jid, externalContactId) {
+  if (externalContactId) {
+    const byExternal = await tx.inboxConversation.findFirst({
+      where: { channelId, externalContactId: String(externalContactId) },
+    });
+    if (byExternal) return byExternal;
+  }
   if (jid) {
     const byJid = await tx.inboxConversation.findFirst({
       where: { channelId, whatsappJid: String(jid) },
@@ -365,10 +379,14 @@ export async function ingestIncomingMessage({
   fileName,
   quotedExternalId,
   jid,
+  externalContactId,
 }) {
-  const phone = normalizeWhatsAppPhone(from);
+  const instagram = channel.provider === INBOX_PROVIDERS.META_INSTAGRAM;
+  const contactId = String(externalContactId || (instagram ? from : "") || "").trim();
+  const phone = instagram ? "" : normalizeWhatsAppPhone(from);
   const remoteJid = emptyToNull(jid);
-  if (!phone && !remoteJid) throw validationError("Telefone de origem inválido.");
+  if (instagram && !contactId) throw validationError("Contato do Instagram sem identificação.");
+  if (!instagram && !phone && !remoteJid) throw validationError("Telefone de origem inválido.");
   if (externalId) {
     const existing = await prisma.inboxMessage.findUnique({ where: { externalId: String(externalId) } });
     if (existing) return getConversation(existing.conversationId, { system: true });
@@ -381,9 +399,9 @@ export async function ingestIncomingMessage({
   let reopened = false;
 
   const conversationId = await prisma.$transaction(async (tx) => {
-    let conversation = await findInboundConversation(tx, channel.id, phone, remoteJid);
-    if (!conversation && !phone) {
-      throw validationError("Não foi possível identificar o contato do WhatsApp.");
+    let conversation = await findInboundConversation(tx, channel.id, phone, remoteJid, contactId);
+    if (!conversation && !phone && !contactId) {
+      throw validationError("Não foi possível identificar o contato.");
     }
     const wasClosed = conversation?.status === CONVERSATION_STATUSES.CLOSED;
 
@@ -394,8 +412,9 @@ export async function ingestIncomingMessage({
           channelId: channel.id,
           teamId: channel.defaultTeamId,
           customerId: customer?.id || null,
-          phone,
+          phone: phone || null,
           whatsappJid: remoteJid,
+          externalContactId: contactId || null,
           contactName: pushName || customer?.name || null,
           status: CONVERSATION_STATUSES.WAITING_AGENT,
           lastMessagePreview: preview,
@@ -407,7 +426,7 @@ export async function ingestIncomingMessage({
           unreadCount: 1,
         },
       });
-      await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.CREATED, "Conversa criada pelo WhatsApp.");
+      await addEvent(tx, conversation.id, CONVERSATION_EVENT_TYPES.CREATED, instagram ? "Conversa criada pelo Instagram." : "Conversa criada pelo WhatsApp.");
     } else {
       conversation = await tx.inboxConversation.update({
         where: { id: conversation.id },
@@ -654,6 +673,9 @@ async function sendViaChannel(channel, payload) {
   if (channel.provider === INBOX_PROVIDERS.UNOFFICIAL) {
     return sendUnofficialMessage(channel, payload);
   }
+  if (channel.provider === INBOX_PROVIDERS.META_INSTAGRAM) {
+    return sendInstagramMessage(channel, payload);
+  }
   throw validationError("Provedor de canal não suportado.");
 }
 
@@ -707,6 +729,12 @@ export async function sendConversationMessage(id, payload, session) {
   if (!channel.active) throw validationError("Este canal está inativo.");
 
   const windowInfo = getCustomerServiceWindow(conversation);
+  if (channel.provider === INBOX_PROVIDERS.META_INSTAGRAM && !windowInfo.open) {
+    throw validationError("A janela de 24 horas do Instagram está fechada. Aguarde uma nova mensagem do cliente.");
+  }
+  if (location && channel.provider === INBOX_PROVIDERS.META_INSTAGRAM) {
+    throw validationError("O Instagram não envia localização.");
+  }
   if (windowInfo.requiresTemplate && !isTemplate) {
     throw validationError("A janela de 24 horas está fechada. Envie um modelo aprovado para falar com o cliente.");
   }
@@ -728,7 +756,7 @@ export async function sendConversationMessage(id, payload, session) {
     });
     if (!quoted) throw validationError("Mensagem citada não encontrada nesta conversa.");
     if (quoted.direction === MESSAGE_DIRECTIONS.INTERNAL) {
-      throw validationError("Não é possível responder uma nota interna no WhatsApp.");
+      throw validationError("Não é possível responder uma nota interna neste canal.");
     }
     quotedExternalId = quoted.externalId || null;
   }
@@ -739,9 +767,12 @@ export async function sendConversationMessage(id, payload, session) {
     : locationPayload
       ? encodeInboxLocation(locationPayload)
       : body;
-  const outboundBody = template ? storedBody : skipCaption ? body : withAgentName(session.name, body);
+  const outboundBody = template ? storedBody : skipCaption ? body : withAgentName(session.name, body, {
+    plain: channel.provider === INBOX_PROVIDERS.META_INSTAGRAM,
+  });
   const sent = await sendViaChannel(channel, {
     to: conversation.phone,
+    externalContactId: conversation.externalContactId,
     jid: conversation.whatsappJid,
     body: outboundBody,
     media: attachment,
@@ -832,6 +863,9 @@ function assertChannelCanSend(channel) {
   }
   if (channel.provider === INBOX_PROVIDERS.DIALOG_360 && !channel.apiKey) {
     throw validationError("O canal oficial está sem API key.");
+  }
+  if (channel.provider === INBOX_PROVIDERS.META_INSTAGRAM) {
+    throw validationError("No Instagram a conversa começa quando o cliente envia uma mensagem.");
   }
 }
 

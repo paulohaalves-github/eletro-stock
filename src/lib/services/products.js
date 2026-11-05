@@ -4,6 +4,7 @@ import { writeAudit, writeMovement } from "../audit";
 import { CONDITION_LABELS, CONDITIONS, ESTOQUE_PAGE_SIZE, MOVEMENT_TYPES, SALE_ORDER_CLOSED_STATUSES, STATUS_LABELS, STATUSES, VOLTAGE_LABELS, WORK_ORDER_CLOSED_STATUSES } from "../constants";
 import { formatCurrency, formatDate, formatProductId, saoPauloDayRange } from "../format";
 import { parseEstoqueSort } from "../estoque-list-state";
+import { parseFilterList, parseNumericFilterList } from "../filter-list";
 import { emptyToNull, MAX_TRANSFER_BATCH, parseProductIds, validateProductPayload } from "../validations";
 import { resolveCatalogModel } from "./catalog-models";
 import { formatLocationPath, resolveProductLocation } from "./locations";
@@ -202,6 +203,18 @@ function buildSearchWhere(query) {
   };
 }
 
+function applyIdFilter(where, field, raw) {
+  const ids = parseNumericFilterList(raw);
+  if (ids.length === 1) where[field] = ids[0];
+  else if (ids.length > 1) where[field] = { in: ids };
+}
+
+function applyEnumFilter(where, field, raw) {
+  const values = parseFilterList(raw);
+  if (values.length === 1) where[field] = values[0];
+  else if (values.length > 1) where[field] = { in: values };
+}
+
 function buildProductListWhere(filters = {}, session) {
   const {
     q,
@@ -228,9 +241,11 @@ function buildProductListWhere(filters = {}, session) {
     ...buildSearchWhere(q),
   };
 
-  const manufacturer = Number(manufacturerId);
-  if (Number.isInteger(manufacturer) && manufacturer > 0) {
-    where.catalogModel = { manufacturerId: manufacturer };
+  const manufacturerIds = parseNumericFilterList(manufacturerId);
+  if (manufacturerIds.length) {
+    where.catalogModel = {
+      manufacturerId: manufacturerIds.length === 1 ? manufacturerIds[0] : { in: manufacturerIds },
+    };
   }
   const photo = String(commercialPhoto || "");
   if (photo === "with" || photo === "without") {
@@ -242,11 +257,11 @@ function buildProductListWhere(filters = {}, session) {
       where.catalogModel = modelFilter;
     }
   }
-  if (categoryId) where.categoryId = Number(categoryId);
-  if (lineId) where.lineId = Number(lineId);
-  if (condition) where.condition = condition;
-  if (status) where.status = status;
-  if (voltage) where.voltage = voltage;
+  applyIdFilter(where, "categoryId", categoryId);
+  applyIdFilter(where, "lineId", lineId);
+  applyEnumFilter(where, "condition", condition);
+  applyEnumFilter(where, "status", status);
+  applyEnumFilter(where, "voltage", voltage);
   if (minPrice || maxPrice) {
     where.cashPrice = {};
     if (minPrice) where.cashPrice.gte = Number(minPrice);
@@ -261,10 +276,16 @@ function buildProductListWhere(filters = {}, session) {
       where.entryDate.lte = end;
     }
   }
-  if (locationId) {
-    where.locationId = Number(locationId);
-  } else if (locationTypeId) {
-    where.location = { locationTypeId: Number(locationTypeId) };
+  const locationIds = parseNumericFilterList(locationId);
+  const locationTypeIds = parseNumericFilterList(locationTypeId);
+  if (locationIds.length === 1) {
+    where.locationId = locationIds[0];
+  } else if (locationIds.length > 1) {
+    where.locationId = { in: locationIds };
+  } else if (locationTypeIds.length === 1) {
+    where.location = { locationTypeId: locationTypeIds[0] };
+  } else if (locationTypeIds.length > 1) {
+    where.location = { locationTypeId: { in: locationTypeIds } };
   }
 
   const priceDay = saoPauloDayRange(priceUpdatedOn);

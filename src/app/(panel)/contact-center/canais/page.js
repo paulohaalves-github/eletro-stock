@@ -81,6 +81,9 @@ export default function CanaisPage() {
   const [editing, setEditing] = useState(null);
   const [qrChannel, setQrChannel] = useState(null);
   const [tab, setTab] = useState("conexao");
+  const [pendingChannelId, setPendingChannelId] = useState(null);
+  const [pendingAccounts, setPendingAccounts] = useState([]);
+  const [choosing, setChoosing] = useState(false);
 
   const [webhookBase, setWebhookBase] = useState("");
 
@@ -110,6 +113,21 @@ export default function CanaisPage() {
 
   useEffect(() => {
     void load();
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("instagramError");
+    const connected = params.get("instagram");
+    const channelId = params.get("instagramChannel");
+    if (error) toast.error(error);
+    if (connected === "connected") toast.success("Instagram conectado.");
+    if (channelId) {
+      setPendingChannelId(channelId);
+      api(`/api/integrations/instagram/pending?channelId=${channelId}`)
+        .then((data) => setPendingAccounts(data.accounts || []))
+        .catch((loadError) => toast.error(loadError.message));
+    }
+    if (error || connected || channelId) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   useEffect(() => {
@@ -238,6 +256,24 @@ export default function CanaisPage() {
     }
   }
 
+  async function chooseInstagram(account) {
+    setChoosing(true);
+    try {
+      await api("/api/integrations/instagram/complete", {
+        method: "POST",
+        json: { channelId: Number(pendingChannelId), igUserId: account.igUserId },
+      });
+      toast.success("Instagram conectado.");
+      setPendingChannelId(null);
+      setPendingAccounts([]);
+      await load();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setChoosing(false);
+    }
+  }
+
   function copy(text) {
     navigator.clipboard.writeText(text).then(() => toast.success("URL copiada.")).catch(() => toast.error("Não foi possível copiar."));
   }
@@ -246,7 +282,7 @@ export default function CanaisPage() {
     <div className="w-full">
       <PageHeader
         title="Canais"
-        subtitle="Conexões de WhatsApp, horário de atendimento e respostas automáticas."
+        subtitle="Conexões de WhatsApp e Instagram, horário de atendimento e respostas automáticas."
         actions={canManage ? <Button onClick={openCreate}>Novo canal</Button> : null}
       />
 
@@ -272,7 +308,10 @@ export default function CanaisPage() {
                   <td className="px-5 py-4 text-muted">{channel.phoneNumber ? formatPhone(channel.phoneNumber) : "—"}</td>
                   <td className="px-5 py-4 text-muted">{channel.defaultTeam?.name || "—"}</td>
                   <td className="px-5 py-4 text-muted">{automationSummary(channel)}</td>
-                  <td className="px-5 py-4"><InboxConnectionBadge status={channel.connectionStatus} /></td>
+                  <td className="px-5 py-4">
+                    <InboxConnectionBadge status={channel.connectionStatus} />
+                    {channel.connectionError ? <p className="mt-1 max-w-xs text-xs text-rose-300">{channel.connectionError}</p> : null}
+                  </td>
                   <td className="px-5 py-4 text-right">
                     {canManage ? (
                       <div className="flex flex-wrap justify-end gap-2">
@@ -281,6 +320,17 @@ export default function CanaisPage() {
                             <Button variant="secondary" onClick={() => disconnect(channel)}>Desconectar</Button>
                           ) : (
                             <Button variant="secondary" onClick={() => connect(channel)}>Conectar QR</Button>
+                          )
+                        ) : channel.provider === INBOX_PROVIDERS.META_INSTAGRAM ? (
+                          channel.connectionStatus === INBOX_CONNECTION_STATUSES.CONNECTED ? (
+                            <Button variant="secondary" onClick={() => disconnect(channel)}>Desconectar</Button>
+                          ) : (
+                            <a
+                              href={`/api/integrations/instagram/connect?channelId=${channel.id}`}
+                              className="inline-flex items-center justify-center rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-semibold text-text transition hover:bg-border"
+                            >
+                              Conectar
+                            </a>
                           )
                         ) : channel.webhookPath ? (
                           <Button variant="secondary" onClick={() => copy(`${webhookBase}${channel.webhookPath}`)}>Webhook</Button>
@@ -357,9 +407,15 @@ export default function CanaisPage() {
                   ))}
                 </Select>
               </Field>
-              <Field label="Número do WhatsApp">
-                <Input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} placeholder="5511999999999" />
-              </Field>
+              {form.provider === INBOX_PROVIDERS.META_INSTAGRAM ? (
+                <p className="text-sm text-muted">
+                  Salve o canal e use Conectar na lista. O login é o do Facebook, na conta administradora da Página ligada ao Instagram. O ID e a chave do aplicativo ficam em Configurações.
+                </p>
+              ) : (
+                <Field label="Número do WhatsApp">
+                  <Input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} placeholder="5511999999999" />
+                </Field>
+              )}
               {form.provider === INBOX_PROVIDERS.DIALOG_360 ? (
                 <>
                   <Field label="API key 360dialog" hint={editing ? "Deixe em branco para manter a chave atual." : "Header D360-API-KEY"}>
@@ -369,11 +425,11 @@ export default function CanaisPage() {
                     <Input value={form.externalId} onChange={(e) => setForm({ ...form, externalId: e.target.value })} />
                   </Field>
                 </>
-              ) : (
+              ) : form.provider === INBOX_PROVIDERS.UNOFFICIAL ? (
                 <p className="text-sm text-muted">
                   Depois de salvar, use Conectar QR com o worker `npm run whatsapp:worker` em execução neste servidor.
                 </p>
-              )}
+              ) : null}
             </>
           ) : (
             <>
@@ -553,6 +609,39 @@ export default function CanaisPage() {
           <p className="text-sm text-muted">
             {qrChannel?.connectionError || "Aguardando o worker gerar o QR Code. Confirme se `npm run whatsapp:worker` está rodando."}
           </p>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(pendingChannelId)}
+        title="Escolha a conta do Instagram"
+        onClose={() => {
+          if (!choosing) setPendingChannelId(null);
+        }}
+        className="max-w-lg"
+      >
+        {pendingAccounts.length ? (
+          <div className="space-y-2">
+            {pendingAccounts.map((account) => (
+              <button
+                key={account.igUserId}
+                type="button"
+                disabled={choosing}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-left hover:bg-surface-2 disabled:opacity-60"
+                onClick={() => chooseInstagram(account)}
+              >
+                <span>
+                  <span className="block font-medium">{account.igName || account.pageName}</span>
+                  <span className="block text-sm text-muted">
+                    {account.igUsername ? `@${account.igUsername}` : "Sem @"} · {account.pageName}
+                  </span>
+                </span>
+                <span className="text-sm font-semibold text-accent">{choosing ? "..." : "Conectar"}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted">Nenhuma conta pendente. Conecte de novo pelo botão do canal.</p>
         )}
       </Modal>
     </div>

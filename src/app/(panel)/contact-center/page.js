@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { api, uploadWithProgress } from "@/lib/api-client";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
+import { AudioRecorder } from "@/components/audio-recorder";
 import { CustomerPicker } from "@/components/customer-picker";
 import { EmojiPicker, insertEmoji } from "@/components/emoji-picker";
 import { WhatsappTemplatePicker } from "@/components/whatsapp-template-picker";
@@ -249,6 +250,8 @@ export default function InboxPage() {
   const isClosed = selected?.status === CONVERSATION_STATUSES.CLOSED;
   const requiresTemplate = Boolean(selected?.requiresTemplate);
   const isOfficial = selected?.channel?.provider === INBOX_PROVIDERS.DIALOG_360;
+  const isInstagram = selected?.channel?.provider === INBOX_PROVIDERS.META_INSTAGRAM;
+  const instagramWindowClosed = Boolean(isInstagram && selected?.customerWindowOpen === false);
   const showTemplateComposer = Boolean(isOfficial && !internal && (requiresTemplate || useTemplate));
   const startChannel = useMemo(
     () => channels.find((channel) => String(channel.id) === String(start.channelId)),
@@ -549,14 +552,16 @@ export default function InboxPage() {
               <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border p-4">
                 <div>
                   <p className="text-lg font-semibold">{selected.displayName}</p>
-                  <p className="text-sm text-muted">{formatPhone(selected.phone)}</p>
+                  <p className="text-sm text-muted">
+                    {selected.phone ? formatPhone(selected.phone) : isInstagram ? "Instagram Direct" : "—"}
+                  </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <ConversationStatusBadge status={selected.status} />
                     {selected.commercialStage ? <LeadStageBadge stage={selected.commercialStage} /> : null}
                     <InboxProviderBadge provider={selected.channel?.provider} />
                     <span className="text-xs text-muted">{selected.team?.name}</span>
                     {selected.agent?.name ? <span className="text-xs text-muted">Agente: {selected.agent.name}</span> : <span className="text-xs text-amber-300">Sem agente</span>}
-                    {requiresTemplate ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-200">Janela 24h fechada</span> : null}
+                    {requiresTemplate || instagramWindowClosed ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-200">Janela 24h fechada</span> : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -667,7 +672,7 @@ export default function InboxPage() {
                                 {message.user?.name ? `${message.user.name} · ` : ""}
                                 {formatDateTime(message.sentAt)}
                               </span>
-                              {canReply && !note && !isClosed && !requiresTemplate && message.externalId ? (
+                              {canReply && !note && !isClosed && !requiresTemplate && !instagramWindowClosed && message.externalId ? (
                                 <button
                                   type="button"
                                   className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 hover:bg-bg hover:text-text"
@@ -695,7 +700,7 @@ export default function InboxPage() {
                       ) : null}
                       {file ? (
                         <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
-                          <span className="truncate">{file.name}</span>
+                          <span className="truncate">{String(file.type || "").startsWith("audio/") ? `Áudio gravado (${file.name})` : file.name}</span>
                           <button type="button" onClick={() => setFile(null)} className="rounded-full p-1 text-muted hover:bg-bg" aria-label="Remover anexo">
                             <X size={14} />
                           </button>
@@ -710,6 +715,11 @@ export default function InboxPage() {
                             <X size={14} />
                           </button>
                         </div>
+                      ) : null}
+                      {instagramWindowClosed && !internal ? (
+                        <p className="mb-2 text-xs text-amber-200">
+                          A janela de 24 horas está fechada. Aguarde o cliente escrever de novo. Notas internas continuam disponíveis.
+                        </p>
                       ) : null}
                       {showTemplateComposer ? (
                         <div className="mb-3">
@@ -748,8 +758,8 @@ export default function InboxPage() {
                                 event.currentTarget.form?.requestSubmit();
                               }
                             }}
-                            placeholder={isClosed ? "Reabra a conversa para responder." : internal ? "Nota visível só para o time..." : pendingLocation ? "Nome do local (opcional)..." : "Escreva a resposta..."}
-                            disabled={sending || (isClosed && !internal)}
+                            placeholder={isClosed ? "Reabra a conversa para responder." : instagramWindowClosed && !internal ? "Janela de 24 horas fechada." : internal ? "Nota visível só para o time..." : pendingLocation ? "Nome do local (opcional)..." : "Escreva a resposta..."}
+                            disabled={sending || (isClosed && !internal) || (instagramWindowClosed && !internal)}
                           />
                           <p className="mt-1 text-[11px] text-muted">Enter envia · Shift+Enter nova linha</p>
                         </>
@@ -781,22 +791,34 @@ export default function InboxPage() {
                             type="button"
                             variant="ghost"
                             className="px-2 py-1.5"
-                            disabled={sending || internal || showTemplateComposer || (isClosed && !internal)}
+                            disabled={sending || internal || showTemplateComposer || instagramWindowClosed || (isClosed && !internal)}
                             onClick={() => fileRef.current?.click()}
                           >
                             <Paperclip size={16} />
                             Anexar
                           </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="px-2 py-1.5"
-                            disabled={sending || internal || showTemplateComposer || locating || (isClosed && !internal)}
-                            onClick={pickLocation}
-                          >
-                            <MapPin size={16} />
-                            {locating ? "Obtendo..." : "Localização"}
-                          </Button>
+                          {isInstagram ? null : (
+                            <AudioRecorder
+                              key={selected.id}
+                              disabled={sending || internal || showTemplateComposer || instagramWindowClosed || (isClosed && !internal)}
+                              onRecorded={(next) => {
+                                setFile(next);
+                                setPendingLocation(null);
+                              }}
+                            />
+                          )}
+                          {isInstagram ? null : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-2 py-1.5"
+                              disabled={sending || internal || showTemplateComposer || locating || (isClosed && !internal)}
+                              onClick={pickLocation}
+                            >
+                              <MapPin size={16} />
+                              {locating ? "Obtendo..." : "Localização"}
+                            </Button>
+                          )}
                           {isOfficial && !internal && !requiresTemplate && !useTemplate ? (
                             <Button
                               type="button"
@@ -814,6 +836,7 @@ export default function InboxPage() {
                           disabled={
                             sending
                             || (isClosed && !internal)
+                            || (instagramWindowClosed && !internal)
                             || (internal && !draft.trim())
                             || (!internal && showTemplateComposer && !chatTemplate?.ready)
                             || (!internal && !showTemplateComposer && !draft.trim() && !file && !pendingLocation)
@@ -1012,10 +1035,11 @@ export default function InboxPage() {
             <Select value={start.channelId} onChange={(e) => setStart({ ...start, channelId: e.target.value })}>
               <option value="">Selecione o canal</option>
               {channels.map((channel) => {
-                const ready = channel.provider !== INBOX_PROVIDERS.UNOFFICIAL || channel.connectionStatus === INBOX_CONNECTION_STATUSES.CONNECTED;
+                const instagram = channel.provider === INBOX_PROVIDERS.META_INSTAGRAM;
+                const ready = !instagram && (channel.provider !== INBOX_PROVIDERS.UNOFFICIAL || channel.connectionStatus === INBOX_CONNECTION_STATUSES.CONNECTED);
                 return (
                   <option key={channel.id} value={channel.id} disabled={!ready}>
-                    {channel.name}{ready ? "" : " (desconectado)"}
+                    {channel.name}{instagram ? " (só recebe mensagem)" : ready ? "" : " (desconectado)"}
                   </option>
                 );
               })}

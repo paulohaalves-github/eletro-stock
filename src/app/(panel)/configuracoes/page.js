@@ -434,17 +434,109 @@ function CatalogSettings() {
   );
 }
 
+const emptyInstagram = {
+  appId: "",
+  appSecret: "",
+  verifyToken: "",
+  secretSet: false,
+  configured: false,
+  webhookUrl: "",
+  redirectUrl: "",
+};
+
+function InstagramSettings() {
+  const [form, setForm] = useState(emptyInstagram);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api("/api/settings/instagram")
+      .then((data) => setForm({ ...emptyInstagram, ...data.settings, appSecret: "" }))
+      .catch((error) => toast.error(error.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const data = await api("/api/settings/instagram", { method: "PUT", json: form });
+      setForm({ ...emptyInstagram, ...data.settings, appSecret: "" });
+      toast.success(data.message || "Instagram salvo.");
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section>
+      <SectionHeading
+        title="Instagram"
+        description="Aplicativo da Meta usado para receber e responder o Direct no Contact Center. A chave secreta fica só no servidor."
+      />
+      <Card>
+        <form onSubmit={save} className="grid gap-4">
+          <Field label="ID do aplicativo" hint="Número do app em developers.facebook.com.">
+            <Input
+              value={form.appId}
+              disabled={loading}
+              inputMode="numeric"
+              autoComplete="off"
+              onChange={(event) => setForm({ ...form, appId: event.target.value })}
+            />
+          </Field>
+          <Field
+            label="Chave secreta"
+            hint={form.secretSet ? "Deixe em branco para manter a chave já salva. Ela não volta para a tela." : "A chave secreta do aplicativo. Não volta para a tela depois de salva."}
+          >
+            <Input
+              type="password"
+              value={form.appSecret}
+              disabled={loading}
+              autoComplete="new-password"
+              placeholder={form.secretSet ? "••••••••" : ""}
+              onChange={(event) => setForm({ ...form, appSecret: event.target.value })}
+            />
+          </Field>
+          <Field label="Token de verificação" hint="O mesmo valor informado no webhook da Meta. Você pode copiar daqui depois de salvar.">
+            <Input
+              value={form.verifyToken}
+              disabled={loading}
+              autoComplete="off"
+              onChange={(event) => setForm({ ...form, verifyToken: event.target.value })}
+            />
+          </Field>
+          <Field label="URL de redirecionamento" hint="Cadastre esta URL no Facebook Login do aplicativo.">
+            <Input value={form.redirectUrl} readOnly />
+          </Field>
+          <Field label="URL do webhook" hint={form.webhookUrl ? "No produto Instagram, assine o campo messages." : "Defina APP_URL para montar o endereço público."}>
+            <Input value={form.webhookUrl} readOnly />
+          </Field>
+          <p className="text-xs leading-relaxed text-muted">
+            Permissões do app: pages_show_list, pages_read_engagement, pages_manage_metadata, instagram_basic, instagram_manage_messages e business_management. A conta do Instagram precisa ser profissional e estar ligada a uma Página. Depois de conectar o canal, o encaminhamento da conversa no Meta Business Suite deve apontar para este aplicativo.
+          </p>
+          <p className="text-xs text-muted">{form.configured ? "O aplicativo está pronto para conectar um canal." : "Sem estes dados, o botão Conectar do canal fica indisponível."}</p>
+          <Button type="submit" disabled={loading || saving}>{saving ? "Salvando..." : "Salvar Instagram"}</Button>
+        </form>
+      </Card>
+    </section>
+  );
+}
+
 export default function ConfiguracoesPage() {
   return (
     <div className="w-full max-w-3xl space-y-10">
       <PageHeader
         title="Configurações"
-        subtitle="Sistema é o acesso interno. Catálogo é a vitrine que o cliente vê. Icecat e a consulta por IA completam a ficha."
+        subtitle="Sistema é o acesso interno. Catálogo é a vitrine que o cliente vê. Icecat, a consulta por IA e o Instagram completam as integrações."
       />
       <SystemSettings />
       <CatalogSettings />
       <IcecatSettings />
       <OpenAISettings />
+      <InstagramSettings />
     </div>
   );
 }

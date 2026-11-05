@@ -11,6 +11,7 @@ import {
 import { isWithinBusinessHours } from "../inbox-hours";
 import { sendDialog360Message } from "../whatsapp/dialog360";
 import { sendUnofficialMessage } from "../whatsapp/unofficial";
+import { sendInstagramMessage } from "../instagram/graph";
 import { getCustomerServiceWindow } from "../whatsapp/templates";
 
 const UNANSWERED_INTERVAL_MS = 60_000;
@@ -24,6 +25,9 @@ async function sendViaChannel(channel, payload) {
   if (channel.provider === INBOX_PROVIDERS.UNOFFICIAL) {
     return sendUnofficialMessage(channel, payload);
   }
+  if (channel.provider === INBOX_PROVIDERS.META_INSTAGRAM) {
+    return sendInstagramMessage(channel, payload);
+  }
   throw new Error("Provedor de canal não suportado.");
 }
 
@@ -34,6 +38,9 @@ function channelCanSend(channel) {
   }
   if (channel.provider === INBOX_PROVIDERS.DIALOG_360) {
     return Boolean(channel.apiKey);
+  }
+  if (channel.provider === INBOX_PROVIDERS.META_INSTAGRAM) {
+    return channel.connectionStatus === INBOX_CONNECTION_STATUSES.CONNECTED && Boolean(channel.apiKey);
   }
   return false;
 }
@@ -53,6 +60,7 @@ async function sendAutomationMessage({ channel, conversation, body, eventMessage
   try {
     const sent = await sendViaChannel(channel, {
       to: conversation.phone,
+      externalContactId: conversation.externalContactId,
       jid: conversation.whatsappJid,
       body: text,
     });
@@ -152,6 +160,7 @@ export async function processUnansweredAutomations() {
         id: true,
         phone: true,
         whatsappJid: true,
+        externalContactId: true,
         lastCustomerMessageAt: true,
       },
       take: 50,

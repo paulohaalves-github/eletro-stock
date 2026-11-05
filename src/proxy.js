@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/constants";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth/login", "/api/integrations/whatsapp", "/catalogo", "/api/catalog"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth/login", "/api/integrations/whatsapp", "/api/integrations/instagram", "/catalogo", "/api/catalog"];
 
 function isCatalogPath(pathname) {
   return pathname === "/catalogo" || pathname.startsWith("/catalogo/") || pathname === "/api/catalog" || pathname.startsWith("/api/catalog/");

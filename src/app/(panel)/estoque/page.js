@@ -34,7 +34,9 @@ import {
   sortFromParams,
   writeEstoqueListState,
 } from "@/lib/estoque-list-state";
+import { parseFilterList } from "@/lib/filter-list";
 import { MAX_TRANSFER_BATCH } from "@/lib/validations";
+import { MultiSelect } from "@/components/multi-select";
 
 const EMPTY_FILTERS = EMPTY_ESTOQUE_FILTERS;
 
@@ -368,41 +370,46 @@ function EstoqueContent() {
           placeholder="ID, Serial Onyx, EAN, model code, categoria..."
         />
         <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Select value={filters.categoryId} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}>
-            <option value="">Categoria</option>
-            {categories.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </Select>
-          <Select value={filters.manufacturerId} onChange={(e) => setFilters({ ...filters, manufacturerId: e.target.value })}>
-            <option value="">Fabricante</option>
-            {manufacturers.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </Select>
-          <Select value={filters.condition} onChange={(e) => setFilters({ ...filters, condition: e.target.value })}>
-            <option value="">Condição</option>
-            {Object.entries(CONDITION_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </Select>
-          <Select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-            <option value="">Status</option>
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </Select>
+          <MultiSelect
+            placeholder="Categoria"
+            emptyLabel="Todas as categorias"
+            value={filters.categoryId}
+            onChange={(categoryId) => setFilters({ ...filters, categoryId })}
+            options={categories.map((item) => ({ value: item.id, label: item.name }))}
+          />
+          <MultiSelect
+            placeholder="Fabricante"
+            emptyLabel="Todos os fabricantes"
+            value={filters.manufacturerId}
+            onChange={(manufacturerId) => setFilters({ ...filters, manufacturerId })}
+            options={manufacturers.map((item) => ({ value: item.id, label: item.name }))}
+          />
+          <MultiSelect
+            placeholder="Condição"
+            emptyLabel="Todas as condições"
+            value={filters.condition}
+            onChange={(condition) => setFilters({ ...filters, condition })}
+            options={Object.entries(CONDITION_LABELS).map(([value, label]) => ({ value, label }))}
+          />
+          <MultiSelect
+            placeholder="Status"
+            emptyLabel="Todos os status"
+            value={filters.status}
+            onChange={(status) => setFilters({ ...filters, status })}
+            options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+          />
           <Select value={filters.commercialPhoto || ""} onChange={(e) => setFilters({ ...filters, commercialPhoto: e.target.value })}>
             <option value="">Foto comercial</option>
             <option value="with">Com foto comercial</option>
             <option value="without">Sem foto comercial</option>
           </Select>
-          <Select value={filters.voltage} onChange={(e) => setFilters({ ...filters, voltage: e.target.value })}>
-            <option value="">Tensão</option>
-            {Object.entries(VOLTAGE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </Select>
+          <MultiSelect
+            placeholder="Tensão"
+            emptyLabel="Todas as tensões"
+            value={filters.voltage}
+            onChange={(voltage) => setFilters({ ...filters, voltage })}
+            options={Object.entries(VOLTAGE_LABELS).map(([value, label]) => ({ value, label }))}
+          />
           <Input placeholder="Preço mín." value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} />
           <Input placeholder="Preço máx." value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
           <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
@@ -422,27 +429,30 @@ function EstoqueContent() {
               <option key={item.value} value={item.value}>{item.label}</option>
             ))}
           </Select>
-          <Select
+          <MultiSelect
+            placeholder="Tipo de localização"
+            emptyLabel="Todos os tipos"
             value={filters.locationTypeId}
-            onChange={(e) => setFilters({ ...filters, locationTypeId: e.target.value, locationId: "" })}
-          >
-            <option value="">Tipo de localização</option>
-            {locationTypes.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </Select>
-          <Select
+            onChange={(locationTypeId) => {
+              const typeIds = new Set(parseFilterList(locationTypeId));
+              const allowed = new Set(
+                locations.filter((item) => typeIds.has(String(item.locationTypeId))).map((item) => String(item.id)),
+              );
+              const locationId = parseFilterList(filters.locationId).filter((id) => allowed.has(id)).join(",");
+              setFilters({ ...filters, locationTypeId, locationId });
+            }}
+            options={locationTypes.map((item) => ({ value: item.id, label: item.name }))}
+          />
+          <MultiSelect
+            placeholder={filters.locationTypeId ? "Localização" : "Selecione o tipo"}
+            emptyLabel="Todas as localizações"
             value={filters.locationId}
-            onChange={(e) => setFilters({ ...filters, locationId: e.target.value })}
+            onChange={(locationId) => setFilters({ ...filters, locationId })}
             disabled={!filters.locationTypeId}
-          >
-            <option value="">{filters.locationTypeId ? "Todas as localizações" : "Selecione o tipo"}</option>
-            {locations
-              .filter((item) => String(item.locationTypeId) === String(filters.locationTypeId))
-              .map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-          </Select>
+            options={locations
+              .filter((item) => parseFilterList(filters.locationTypeId).includes(String(item.locationTypeId)))
+              .map((item) => ({ value: item.id, label: item.name }))}
+          />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           {data.items.length ? (

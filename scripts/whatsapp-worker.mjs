@@ -418,7 +418,7 @@ async function sendMessage(channelId, to, text, jid, media, quotedId, location) 
       content = {
         audio: buffer,
         mimetype: mime,
-        ptt: /ogg|opus/i.test(mime),
+        ptt: /ogg|opus|webm/i.test(mime),
       };
     } else {
       content = {

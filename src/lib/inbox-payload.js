@@ -42,5 +42,5 @@ export function mapsUrl(location) {
 
 export function isVoiceAudioMime(mimeType) {
   const mime = String(mimeType || "").toLowerCase();
-  return mime.includes("ogg") || mime.includes("opus");
+  return mime.includes("ogg") || mime.includes("opus") || mime.includes("webm");
 }

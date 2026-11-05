@@ -838,6 +838,7 @@ model InboxChannel {
   provider         String   @db.VarChar(40)
   phoneNumber      String?  @map("phone_number") @db.VarChar(40)
   externalId       String?  @map("external_id") @db.VarChar(120)
+  pageExternalId   String?  @map("page_external_id") @db.VarChar(64)
   apiKey           String?  @map("api_key") @db.Text
   webhookSecret    String?  @map("webhook_secret") @db.VarChar(255)
   connectionStatus String   @default("DISCONNECTED") @map("connection_status") @db.VarChar(40)
@@ -876,8 +877,9 @@ model InboxConversation {
   agentId               Int?      @map("agent_id")
   acceptedById          Int?      @map("accepted_by")
   closedById            Int?      @map("closed_by")
-  phone                 String    @db.VarChar(40)
+  phone                 String?   @db.VarChar(40)
   whatsappJid           String?   @map("whatsapp_jid") @db.VarChar(120)
+  externalContactId     String?   @map("external_contact_id") @db.VarChar(80)
   contactName           String?   @map("contact_name") @db.VarChar(190)
   status                String    @db.VarChar(40)
   lastMessagePreview    String?   @map("last_message_preview") @db.VarChar(255)
@@ -919,6 +921,7 @@ model InboxConversation {
   waitlistMatches InboxWaitlistMatch[]
 
   @@unique([channelId, phone])
+  @@unique([channelId, externalContactId])
   @@index([teamId])
   @@index([customerId])
   @@index([agentId])

@@ -76,7 +76,9 @@ function serializeChannel(channel, { includeSecrets = false, includeQr = false }
     webhookPath:
       channel.provider === INBOX_PROVIDERS.DIALOG_360
         ? `/api/integrations/whatsapp/360dialog/${channel.id}`
-        : null,
+        : channel.provider === INBOX_PROVIDERS.META_INSTAGRAM
+          ? "/api/integrations/instagram"
+          : null,
     ...(includeSecrets ? { apiKey: channel.apiKey || null } : {}),
   };
 }
@@ -203,12 +205,13 @@ async function assertTeam(teamId) {
 export async function createInboxChannel(payload, actor) {
   const name = String(payload.name || "").trim();
   if (!name) throw validationError("Informe o nome do canal.");
-  const type = payload.type || INBOX_CHANNEL_TYPES.WHATSAPP;
-  if (!Object.values(INBOX_CHANNEL_TYPES).includes(type)) throw validationError("Tipo de canal inválido.");
   const provider = String(payload.provider || "").trim();
   if (!Object.values(INBOX_PROVIDERS).includes(provider)) {
-    throw validationError("Informe o provedor: 360dialog ou WhatsApp não oficial.");
+    throw validationError("Informe o provedor do canal.");
   }
+  const instagram = provider === INBOX_PROVIDERS.META_INSTAGRAM;
+  const type = instagram ? INBOX_CHANNEL_TYPES.INSTAGRAM : payload.type || INBOX_CHANNEL_TYPES.WHATSAPP;
+  if (!Object.values(INBOX_CHANNEL_TYPES).includes(type)) throw validationError("Tipo de canal inválido.");
   const defaultTeamId = parseId(payload.defaultTeamId);
   await assertTeam(defaultTeamId);
 
@@ -220,9 +223,9 @@ export async function createInboxChannel(payload, actor) {
       name,
       type,
       provider,
-      phoneNumber: normalizeWhatsAppPhone(payload.phoneNumber) || emptyToNull(payload.phoneNumber),
-      externalId: emptyToNull(payload.externalId),
-      apiKey: emptyToNull(payload.apiKey),
+      phoneNumber: instagram ? null : normalizeWhatsAppPhone(payload.phoneNumber) || emptyToNull(payload.phoneNumber),
+      externalId: instagram ? null : emptyToNull(payload.externalId),
+      apiKey: instagram ? null : emptyToNull(payload.apiKey),
       defaultTeamId,
       connectionStatus:
         provider === INBOX_PROVIDERS.DIALOG_360 && payload.apiKey
@@ -254,11 +257,12 @@ export async function updateInboxChannel(id, payload, actor) {
     const exists = await prisma.inboxChannel.findFirst({ where: { name: data.name } });
     if (exists && exists.id !== current.id) throw conflict("Já existe um canal com este nome.");
   }
-  if (payload.phoneNumber !== undefined) {
+  const instagram = current.provider === INBOX_PROVIDERS.META_INSTAGRAM;
+  if (!instagram && payload.phoneNumber !== undefined) {
     data.phoneNumber = normalizeWhatsAppPhone(payload.phoneNumber) || emptyToNull(payload.phoneNumber);
   }
-  if (payload.externalId !== undefined) data.externalId = emptyToNull(payload.externalId);
-  if (payload.apiKey !== undefined && payload.apiKey !== "") data.apiKey = emptyToNull(payload.apiKey);
+  if (!instagram && payload.externalId !== undefined) data.externalId = emptyToNull(payload.externalId);
+  if (!instagram && payload.apiKey !== undefined && payload.apiKey !== "") data.apiKey = emptyToNull(payload.apiKey);
   if (payload.defaultTeamId !== undefined) {
     data.defaultTeamId = parseId(payload.defaultTeamId);
     await assertTeam(data.defaultTeamId);
@@ -319,12 +323,19 @@ export async function disconnectInboxChannel(id) {
       // still mark disconnected locally
     }
   }
+  const instagram = channel.provider === INBOX_PROVIDERS.META_INSTAGRAM;
+  if (instagram) {
+    await prisma.appSetting.deleteMany({ where: { key: `instagram.pending.${channel.id}` } });
+  }
   const updated = await prisma.inboxChannel.update({
     where: { id: channel.id },
     data: {
       connectionStatus: INBOX_CONNECTION_STATUSES.DISCONNECTED,
       qrPayload: null,
       connectionError: null,
+      ...(instagram
+        ? { apiKey: null, externalId: null, pageExternalId: null, phoneNumber: null }
+        : {}),
     },
     select: { ...channelSelect, apiKey: true },
   });
@@ -371,6 +382,18 @@ export async function findChannelForDialog360({ channelId, phoneNumberId, displa
     if (byPhone) return byPhone;
   }
   return null;
+}
+
+export async function findChannelForInstagram(igUserId) {
+  if (!igUserId) return null;
+  return prisma.inboxChannel.findFirst({
+    where: {
+      provider: INBOX_PROVIDERS.META_INSTAGRAM,
+      active: true,
+      connectionStatus: INBOX_CONNECTION_STATUSES.CONNECTED,
+      externalId: String(igUserId),
+    },
+  });
 }
 
 export async function listUnofficialChannels() {

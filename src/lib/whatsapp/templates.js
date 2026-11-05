@@ -6,18 +6,23 @@ export function isOfficialWhatsApp(channel) {
   return channel?.provider === INBOX_PROVIDERS.DIALOG_360;
 }
 
+export function isInstagramChannel(channel) {
+  return channel?.provider === INBOX_PROVIDERS.META_INSTAGRAM;
+}
+
 export function getCustomerServiceWindow(conversation, at = new Date()) {
-  const applies = isOfficialWhatsApp(conversation?.channel);
-  if (!applies) {
+  const official = isOfficialWhatsApp(conversation?.channel);
+  const instagram = isInstagramChannel(conversation?.channel);
+  if (!official && !instagram) {
     return { applies: false, open: true, expiresAt: null, requiresTemplate: false };
   }
   const last = conversation?.lastCustomerMessageAt ? new Date(conversation.lastCustomerMessageAt) : null;
   if (!last || Number.isNaN(last.getTime())) {
-    return { applies: true, open: false, expiresAt: null, requiresTemplate: true };
+    return { applies: true, open: false, expiresAt: null, requiresTemplate: official };
   }
   const expiresAt = new Date(last.getTime() + WHATSAPP_CUSTOMER_WINDOW_MS);
   const open = expiresAt.getTime() > at.getTime();
-  return { applies: true, open, expiresAt, requiresTemplate: !open };
+  return { applies: true, open, expiresAt, requiresTemplate: official && !open };
 }
 
 export function templateKey(template) {

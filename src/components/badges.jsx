@@ -108,6 +108,7 @@ const CONVERSATION_STYLES = {
 const CHANNEL_PROVIDER_STYLES = {
   DIALOG_360: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
   UNOFFICIAL: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  META_INSTAGRAM: "bg-pink-500/15 text-pink-300 ring-pink-500/30",
 };
 
 const CONNECTION_STYLES = {

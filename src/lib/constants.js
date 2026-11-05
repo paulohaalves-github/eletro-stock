@@ -543,20 +543,24 @@ export function resolveLabelModel(value) {
 
 export const INBOX_CHANNEL_TYPES = {
   WHATSAPP: "WHATSAPP",
+  INSTAGRAM: "INSTAGRAM",
 };
 
 export const INBOX_CHANNEL_TYPE_LABELS = {
   WHATSAPP: "WhatsApp",
+  INSTAGRAM: "Instagram",
 };
 
 export const INBOX_PROVIDERS = {
   DIALOG_360: "DIALOG_360",
   UNOFFICIAL: "UNOFFICIAL",
+  META_INSTAGRAM: "META_INSTAGRAM",
 };
 
 export const INBOX_PROVIDER_LABELS = {
   DIALOG_360: "WhatsApp oficial (360dialog)",
   UNOFFICIAL: "WhatsApp não oficial",
+  META_INSTAGRAM: "Instagram (Meta)",
 };
 
 export const INBOX_CONNECTION_STATUSES = {
