@@ -4,7 +4,9 @@
  */
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { convertToWhatsAppVoice } from "../src/lib/whatsapp/audio-convert.js";
 
@@ -412,16 +414,28 @@ async function sendMessage(channelId, to, text, jid, media, quotedId, location) 
   } else if (media?.relativePath) {
     const buffer = fs.readFileSync(safeUploadPath(media.relativePath));
     const caption = String(text || "") || undefined;
+    const mime = String(media.mimeType || "").toLowerCase();
+    const isAudio = media.kind === "audio" || mime.startsWith("audio/") || /\.(ogg|opus|webm|mp3|m4a|aac|amr)$/i.test(String(media.fileName || media.relativePath || ""));
     if (media.kind === "image") content = { image: buffer, caption };
     else if (media.kind === "video") content = { video: buffer, caption };
-    else if (media.kind === "audio") {
+    else if (isAudio) {
       const voice = await convertToWhatsAppVoice(buffer);
-      content = {
-        audio: voice.buffer,
-        mimetype: voice.mimeType,
-        ptt: true,
-        ...(voice.seconds ? { seconds: voice.seconds } : {}),
-      };
+      const tmp = path.join(os.tmpdir(), `wa-send-${randomUUID()}.ogg`);
+      fs.writeFileSync(tmp, voice.buffer);
+      console.log(`[whatsapp] áudio ${buffer.length}b -> ${voice.buffer.length}b ${voice.seconds || "?"}s para ${dest}`);
+      try {
+        const sent = await entry.sock.sendMessage(dest, {
+          audio: { url: tmp },
+          mimetype: "audio/ogg; codecs=opus",
+          ptt: false,
+          ...(voice.seconds ? { seconds: voice.seconds } : {}),
+        }, quotedId
+          ? { quoted: { key: { remoteJid: dest, id: String(quotedId) }, message: { conversation: "." } } }
+          : {});
+        return { externalId: sent?.key?.id || null, jid: dest };
+      } finally {
+        fs.rmSync(tmp, { force: true });
+      }
     } else {
       content = {
         document: buffer,

@@ -1,4 +1,5 @@
 "use client";
+"use no memo";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -692,7 +693,7 @@ export default function InboxPage() {
                     })}
                   </div>
                   {canReply ? (
-                    <form key={selected.id} onSubmit={send} className="border-t border-border p-3">
+                    <form onSubmit={send} className="border-t border-border p-3">
                       {replyTo && !internal && !showTemplateComposer ? (
                         <div className="mb-2 flex items-start justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2">
                           <QuotedBlock quoted={replyTo} contactName={selected.displayName} className="min-w-0 flex-1" />
@@ -775,7 +776,7 @@ export default function InboxPage() {
                           </label>
                           <EmojiPicker
                             disabled={sending || showTemplateComposer || (isClosed && !internal)}
-                            onSelect={(emoji) => insertEmoji(draftRef.current, draft, emoji, setDraft)}
+                            onSelect={(emoji) => insertEmoji(draftRef.current, draftRef.current?.value ?? draft, emoji, setDraft)}
                           />
                           <input
                             ref={fileRef}

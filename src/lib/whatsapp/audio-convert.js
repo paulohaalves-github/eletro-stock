@@ -30,13 +30,21 @@ function parseDuration(stderr) {
   return Math.max(1, Math.round(seconds));
 }
 
+function sniffAudioExt(buffer) {
+  if (buffer[0] === 0x4f && buffer[1] === 0x67 && buffer[2] === 0x67) return ".ogg";
+  if (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) return ".mp3";
+  if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return ".mp3";
+  if (buffer[0] === 0x1a && buffer[1] === 0x45) return ".webm";
+  return ".webm";
+}
+
 export async function convertToWhatsAppVoice(buffer) {
   if (!buffer?.length) {
     throw new Error("Áudio vazio.");
   }
   const ffmpeg = resolveFfmpeg();
   const id = randomUUID();
-  const inputPath = path.join(os.tmpdir(), `wa-audio-in-${id}`);
+  const inputPath = path.join(os.tmpdir(), `wa-audio-in-${id}${sniffAudioExt(buffer)}`);
   const outputPath = path.join(os.tmpdir(), `wa-audio-out-${id}.ogg`);
   await fs.promises.writeFile(inputPath, buffer);
   try {
@@ -52,13 +60,17 @@ export async function convertToWhatsAppVoice(buffer) {
           "-ac",
           "1",
           "-ar",
-          "16000",
+          "48000",
           "-c:a",
           "libopus",
           "-b:a",
-          "24k",
+          "32k",
+          "-vbr",
+          "on",
           "-application",
           "voip",
+          "-frame_duration",
+          "20",
           "-avoid_negative_ts",
           "make_zero",
           "-f",
