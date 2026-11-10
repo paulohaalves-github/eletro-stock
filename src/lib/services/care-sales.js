@@ -510,7 +510,14 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         .filter((item) => [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status))
         .map((item) => item.id);
 
-      await generateSaleOrder(order.id, { sellerId: order.sellerId }, user);
+      const sellerMatch = matchSeller(entry.sellerName, users);
+      if (!sellerMatch.seller) {
+        skipped.push({ ov, reason: sellerMatch.error });
+        onStep(`OV ${ov} ignorada: ${sellerMatch.error}`);
+        continue;
+      }
+
+      await generateSaleOrder(order.id, { sellerId: sellerMatch.seller.id }, user);
       generated = true;
       if (outsideCare.length) {
         await prisma.saleOrderItem.updateMany({
