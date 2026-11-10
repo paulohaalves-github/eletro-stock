@@ -12,7 +12,7 @@ import { ScanField } from "@/components/scan-field";
 import { SaleOrderItemBadge, SaleOrderStatusBadge, StatusBadge } from "@/components/badges";
 import { SaleOrderTimeline } from "@/components/sale-order-timeline";
 import { SALE_ORDER_ITEM_STATUSES, SALE_ORDER_STATUSES, WARRANTY_MONTHS } from "@/lib/constants";
-import { calendarDayKey, formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { can, canManageAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
@@ -31,12 +31,11 @@ export default function VendaDetailPage() {
   const [soldAt, setSoldAt] = useState("");
   const [ov, setOv] = useState("");
   const [warranties, setWarranties] = useState({});
+  const [prices, setPrices] = useState({});
   const [reserveItem, setReserveItem] = useState(null);
   const [reservedUntil, setReservedUntil] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
-  const [soldAtOpen, setSoldAtOpen] = useState(false);
-  const [editSoldAt, setEditSoldAt] = useState("");
   const [orderOpen, setOrderOpen] = useState(false);
   const [sellers, setSellers] = useState([]);
   const [sellerId, setSellerId] = useState("");
@@ -71,9 +70,6 @@ export default function VendaDetailPage() {
   const canRevert = canManageSales && order && (
     order.status === SALE_ORDER_STATUSES.COMPLETED || order.status === SALE_ORDER_STATUSES.PARTIAL
   ) && (order.itemCounts?.sold || 0) > 0;
-  const canEditSoldAt = me && order?.soldAt && (
-    canManageSales || can(me, PERMISSIONS.SALE_CHECKOUT)
-  );
   const readyForOrder = items.some((item) =>
     [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
   );
@@ -165,11 +161,15 @@ export default function VendaDetailPage() {
   }
 
   function openCheckout() {
-    const next = {};
+    const nextWarranties = {};
+    const nextPrices = {};
     checkoutItems.forEach((item) => {
-      next[item.id] = String(item.warrantyMonths || 3);
+      nextWarranties[item.id] = String(item.warrantyMonths || 3);
+      const amount = item.cashPrice ?? item.product?.cashPrice;
+      nextPrices[item.id] = amount == null || amount === "" ? "" : String(amount);
     });
-    setWarranties(next);
+    setWarranties(nextWarranties);
+    setPrices(nextPrices);
     setInvoiceNumber(checkoutItems.find((item) => item.invoiceNumber)?.invoiceNumber || "");
     setSoldAt(todayDate());
     setOv(order?.ov || "");
@@ -181,6 +181,14 @@ export default function VendaDetailPage() {
       toast.error("Informe a data da venda.");
       return;
     }
+    for (const item of checkoutItems) {
+      const raw = String(prices[item.id] ?? "").trim().replace(",", ".");
+      const amount = Number(raw);
+      if (!raw || !Number.isFinite(amount) || amount < 0) {
+        toast.error(`Informe o valor vendido de ${formatProductId(item.productId)}.`);
+        return;
+      }
+    }
     const payload = {
       invoiceNumber,
       soldAt,
@@ -189,6 +197,7 @@ export default function VendaDetailPage() {
         itemId: item.id,
         warrantyMonths: Number(warranties[item.id] || 3),
         invoiceNumber,
+        cashPrice: Number(String(prices[item.id]).trim().replace(",", ".")),
       })),
     };
     const data = await run(`/api/sale-orders/${order.id}/checkout`, payload);
@@ -222,18 +231,6 @@ export default function VendaDetailPage() {
             ) : null}
             {canCheckout && orderGenerated && checkoutItems.length ? (
               <Button disabled={saving} onClick={openCheckout}>Dar baixa no caixa</Button>
-            ) : null}
-            {canEditSoldAt ? (
-              <Button
-                variant="secondary"
-                disabled={saving}
-                onClick={() => {
-                  setEditSoldAt(calendarDayKey(order.soldAt));
-                  setSoldAtOpen(true);
-                }}
-              >
-                Alterar data da venda
-              </Button>
             ) : null}
             {canRevert ? (
               <Button variant="secondary" disabled={saving} onClick={() => setRevertOpen(true)}>
@@ -466,7 +463,7 @@ export default function VendaDetailPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Informe a data da venda e, se houver, a OV do Care e a NF. O status do produto só muda para Vendido nesta etapa.
+            Informe a data da venda, o valor vendido de cada produto e, se houver, a OV do Care e a NF. O status do produto só muda para Vendido nesta etapa.
           </p>
           <Field label="Data da venda" required>
             <Input type="date" max={todayDate()} value={soldAt} onChange={(e) => setSoldAt(e.target.value)} />
@@ -480,6 +477,15 @@ export default function VendaDetailPage() {
           {checkoutItems.map((item) => (
             <div key={item.id} className="rounded-xl border border-border p-3">
               <p className="text-sm font-medium">{formatProductId(item.productId)} · {item.commercialName || item.product?.serialOnyx}</p>
+              <Field label="Valor vendido" required className="mt-2">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={prices[item.id] ?? ""}
+                  onChange={(e) => setPrices((current) => ({ ...current, [item.id]: e.target.value }))}
+                />
+              </Field>
               <Field label="Garantia (meses)" className="mt-2">
                 <Select
                   value={warranties[item.id] || "3"}
@@ -590,46 +596,6 @@ export default function VendaDetailPage() {
           if (data) setRevertOpen(false);
         }}
       />
-
-      <Modal
-        open={soldAtOpen}
-        title="Alterar data da venda"
-        onClose={() => !saving && setSoldAtOpen(false)}
-        className="max-w-md"
-        footer={
-          <>
-            <Button type="button" variant="secondary" onClick={() => setSoldAtOpen(false)} disabled={saving}>Fechar</Button>
-            <Button
-              type="button"
-              disabled={saving || !editSoldAt}
-              onClick={() => {
-                void (async () => {
-                  setSaving(true);
-                  try {
-                    const data = await api(`/api/sale-orders/${order.id}`, {
-                      method: "PATCH",
-                      json: { soldAt: editSoldAt },
-                    });
-                    toast.success(data.message);
-                    setSoldAtOpen(false);
-                    await load();
-                  } catch (error) {
-                    toast.error(error.message);
-                  } finally {
-                    setSaving(false);
-                  }
-                })();
-              }}
-            >
-              {saving ? "Salvando..." : "Salvar data"}
-            </Button>
-          </>
-        }
-      >
-        <Field label="Data da venda" required>
-          <Input type="date" max={todayDate()} value={editSoldAt} onChange={(e) => setEditSoldAt(e.target.value)} />
-        </Field>
-      </Modal>
 
       <ConfirmDialog
         open={Boolean(closeOpen)}

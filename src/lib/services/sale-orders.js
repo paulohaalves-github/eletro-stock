@@ -1016,38 +1016,6 @@ export async function closeSaleOrder(orderId, payload, user) {
   return getSaleOrder(order.id, user);
 }
 
-export async function updateSaleOrderSoldAt(orderId, soldAtValue, user) {
-  if (!canManageAllSaleOrders(user) && !can(user, PERMISSIONS.SALE_CHECKOUT)) {
-    throw forbidden("Somente o caixa, o gestor ou o administrador pode alterar a data da venda.");
-  }
-  const order = await getRawOrder(orderId, user);
-  const soldItems = order.items.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD);
-  if (!soldItems.length) throw validationError("Esta venda ainda não tem produtos baixados.");
-  const soldAt = parseSoldAt(soldAtValue);
-  const saleIds = soldItems.map((item) => item.saleId).filter(Boolean);
-  if (saleIds.length) {
-    await prisma.sale.updateMany({ where: { id: { in: saleIds } }, data: { soldAt } });
-  }
-  await prisma.saleOrderItem.updateMany({
-    where: { id: { in: soldItems.map((item) => item.id) } },
-    data: { soldAt },
-  });
-  await addEvent(prisma, {
-    saleOrderId: order.id,
-    type: SALE_ORDER_EVENT_TYPES.NOTE,
-    message: `Data da venda alterada para ${formatDate(soldAt)}.`,
-    userId: user.id,
-  });
-  await writeAudit({
-    userId: user.id,
-    action: "SALE_ORDER_SOLD_AT_UPDATED",
-    entity: "sale_order",
-    entityId: order.id,
-    newData: { soldAt },
-  });
-  return getSaleOrder(order.id, user);
-}
-
 export async function revertSaleOrderToReserved(orderId, user) {
   if (!canManageAllSaleOrders(user)) {
     throw forbidden("Só o gestor ou o administrador pode retroagir uma venda concretizada.");
