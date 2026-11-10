@@ -59,8 +59,8 @@ export default function PecasPage() {
     void load().catch((error) => toast.error(error.message));
   }, []);
 
-  const canManage = me && can(me.role, PERMISSIONS.PART_MANAGE);
-  const canStock = me && can(me.role, PERMISSIONS.PART_STOCK);
+  const canManage = me && can(me, PERMISSIONS.PART_MANAGE);
+  const canStock = me && can(me, PERMISSIONS.PART_STOCK);
   const selectedPart = list.items.find((item) => String(item.id) === String(selectedPartId));
 
   function openPanel(next) {

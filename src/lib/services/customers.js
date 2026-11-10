@@ -82,7 +82,7 @@ function validateCustomerPayload(payload, { partial = false } = {}) {
     if (!partial && !data.name) throw validationError("Informe o nome do cliente.");
   }
   if (!partial || payload.document !== undefined) {
-    data.document = emptyToNull(payload.document);
+    data.document = normalizeDocument(payload.document);
   }
   if (!partial || payload.email !== undefined) {
     data.email = emptyToNull(payload.email);
@@ -117,19 +117,28 @@ function samePhone(left, right) {
   return phoneMatchVariants(right).some((item) => variants.has(item));
 }
 
+export function normalizeDocument(value) {
+  const doc = digitsOnly(value);
+  return doc || null;
+}
+
+export async function findCustomerByDocument(document) {
+  const doc = digitsOnly(document);
+  if (doc.length < 11) return null;
+  const candidates = await prisma.customer.findMany({
+    where: { document: { not: null } },
+    select: { id: true, name: true, document: true },
+  });
+  return candidates.find((item) => digitsOnly(item.document) === doc) || null;
+}
+
 async function assertUniqueDocument({ document, excludeId } = {}) {
   const doc = digitsOnly(document);
   if (doc.length < 11) return;
-  const candidates = await prisma.customer.findMany({
-    where: {
-      document: { not: null },
-      ...(excludeId ? { id: { not: Number(excludeId) } } : {}),
-      OR: [{ document: doc }, { document: { contains: doc } }],
-    },
-    select: { id: true, name: true, document: true },
-  });
-  const match = candidates.find((item) => digitsOnly(item.document) === doc);
-  if (match) throw conflict(`Já existe o cliente ${match.name} com este CPF/CNPJ.`);
+  const match = await findCustomerByDocument(doc);
+  if (match && (!excludeId || Number(match.id) !== Number(excludeId))) {
+    throw conflict(`Já existe o cliente ${match.name} com este CPF/CNPJ.`);
+  }
 }
 
 async function findPhoneOwner({ phones, excludeId } = {}) {
@@ -233,9 +242,11 @@ export async function listCustomers({ q, page = 1, pageSize } = {}) {
   const where = {};
   const text = String(q || "").trim();
   if (text) {
+    const docDigits = digitsOnly(text);
     where.OR = [
       { name: { contains: text } },
       { document: { contains: text } },
+      ...(docDigits && docDigits !== text ? [{ document: { contains: docDigits } }] : []),
       { email: { contains: text } },
       { address: { contains: text } },
       ...phoneSearchWhere(text),

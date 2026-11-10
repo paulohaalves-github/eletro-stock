@@ -34,7 +34,7 @@ export default function ClientesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canManage = me && can(me.role, PERMISSIONS.CUSTOMER_MANAGE);
+  const canManage = me && can(me, PERMISSIONS.CUSTOMER_MANAGE);
 
   function closeModal() {
     if (saving) return;

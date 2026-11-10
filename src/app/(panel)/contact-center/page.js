@@ -184,9 +184,9 @@ export default function InboxPage() {
 
   selectedIdRef.current = selectedId;
 
-  const canReply = me && can(me.role, PERMISSIONS.INBOX_REPLY);
-  const canAssign = me && can(me.role, PERMISSIONS.INBOX_ASSIGN);
-  const canCreateSale = me && can(me.role, PERMISSIONS.SALE_CREATE);
+  const canReply = me && can(me, PERMISSIONS.INBOX_REPLY);
+  const canAssign = me && can(me, PERMISSIONS.INBOX_ASSIGN);
+  const canCreateSale = me && can(me, PERMISSIONS.SALE_CREATE);
 
   const loadList = useCallback(async () => {
     try {

@@ -7,7 +7,7 @@ export const GET = apiHandler(
   async (_request, { params, session }) => {
     const { id } = await params;
     const product = await getProduct(parseId(id), {
-      includeDeleted: can(session.role, PERMISSIONS.PRODUCT_TRASH),
+      includeDeleted: can(session, PERMISSIONS.PRODUCT_TRASH),
     });
     assertCanViewProduct(session, product);
     return { product };
@@ -22,11 +22,11 @@ export const PATCH = apiHandler(
     const current = await getProduct(parseId(id));
     assertCanViewProduct(session, current);
     if (body.condition && body.condition !== current.condition) {
-      assertCan(session.role, PERMISSIONS.CONDITION_CHANGE);
+      assertCan(session, PERMISSIONS.CONDITION_CHANGE);
     }
     const keys = Object.keys(body || {});
     const locationOnly = keys.length > 0 && keys.every((key) => key === "locationId" || key === "locationTypeId");
-    assertCan(session.role, locationOnly ? PERMISSIONS.LOCATION_ASSIGN : PERMISSIONS.PRODUCT_EDIT);
+    assertCan(session, locationOnly ? PERMISSIONS.LOCATION_ASSIGN : PERMISSIONS.PRODUCT_EDIT);
     const product = await updateProduct(current.id, body, session);
     return { product, message: "Produto atualizado com sucesso." };
   },

@@ -4,7 +4,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 
 export default async function ReparosLayout({ children }) {
   const session = await getSession();
-  if (!session || !can(session.role, PERMISSIONS.REPAIR_VIEW)) {
+  if (!session || !can(session, PERMISSIONS.REPAIR_VIEW)) {
     redirect("/");
   }
   return children;

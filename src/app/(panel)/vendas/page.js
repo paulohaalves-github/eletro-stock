@@ -132,8 +132,8 @@ export default function VendasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canCreate = me && can(me.role, PERMISSIONS.SALE_CREATE);
-  const canSync = me && canManageAllSaleOrders(me.role) && can(me.role, PERMISSIONS.SALE_CHECKOUT);
+  const canCreate = me && can(me, PERMISSIONS.SALE_CREATE);
+  const canSync = me && canManageAllSaleOrders(me) && can(me, PERMISSIONS.SALE_CHECKOUT);
 
   useEffect(() => {
     if (stepsRef.current) stepsRef.current.scrollTop = stepsRef.current.scrollHeight;
@@ -244,8 +244,8 @@ export default function VendasPage() {
             </Select>
           </Field>
           <Field label="Vendedor">
-            <Select value={sellerId} onChange={(e) => setSellerId(e.target.value)} disabled={!me || !canViewAllSaleOrders(me.role)}>
-              <option value="">{me && canViewAllSaleOrders(me.role) ? "Todos os vendedores" : (me?.name || "Meu usuário")}</option>
+            <Select value={sellerId} onChange={(e) => setSellerId(e.target.value)} disabled={!me || !canViewAllSaleOrders(me)}>
+              <option value="">{me && canViewAllSaleOrders(me) ? "Todos os vendedores" : (me?.name || "Meu usuário")}</option>
               {sellers.map((seller) => (
                 <option key={seller.id} value={seller.id}>{seller.name}</option>
               ))}

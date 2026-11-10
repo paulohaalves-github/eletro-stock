@@ -8,7 +8,7 @@ export function apiHandler(handler, { permission, public: isPublic = false } = {
     try {
       const session = await getSession();
       if (!isPublic && !session) throw unauthorized();
-      if (permission && session && !can(session.role, permission)) throw forbidden();
+      if (permission && session && !can(session, permission)) throw forbidden();
       const result = await handler(request, { ...(context || {}), session });
       if (result instanceof Response) return result;
       return NextResponse.json(result);

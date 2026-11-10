@@ -33,6 +33,8 @@ async function main() {
   await prisma.catalogModel.deleteMany();
   await prisma.category.deleteMany();
   await prisma.line.deleteMany();
+  await prisma.userPermission.deleteMany();
+  await prisma.rolePermission.deleteMany();
   await prisma.userUnit.deleteMany();
   await prisma.user.deleteMany();
   await prisma.unit.deleteMany();
@@ -57,6 +59,7 @@ async function main() {
   console.log("Seed concluído: banco zerado, unidades e administrador.");
   console.log("  Unidades: Onyx Outlet (Matriz), Eletromall Outlet (Filial), Laboratório Central");
   console.log("  ti@multifix.com.br");
+  console.log("  Permissões por perfil são criadas automaticamente na primeira carga do painel.");
 }
 
 main()

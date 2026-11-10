@@ -37,8 +37,8 @@ export const GET = apiHandler(
     const relative = (segments || []).join("/");
     const inboxFile = relative.startsWith("inbox/") || relative.startsWith("inbox-in/");
     if (inboxFile) {
-      if (!can(session.role, PERMISSIONS.INBOX_VIEW)) throw forbidden();
-    } else if (!can(session.role, PERMISSIONS.PRODUCT_VIEW) && !can(session.role, PERMISSIONS.REPAIR_VIEW)) {
+      if (!can(session, PERMISSIONS.INBOX_VIEW)) throw forbidden();
+    } else if (!can(session, PERMISSIONS.PRODUCT_VIEW) && !can(session, PERMISSIONS.REPAIR_VIEW)) {
       throw forbidden();
     }
     const full = resolveUploadPath(relative);

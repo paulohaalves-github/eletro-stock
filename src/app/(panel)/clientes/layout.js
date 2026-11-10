@@ -4,7 +4,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 
 export default async function ClientesLayout({ children }) {
   const session = await getSession();
-  if (!session || !can(session.role, PERMISSIONS.CUSTOMER_VIEW)) {
+  if (!session || !can(session, PERMISSIONS.CUSTOMER_VIEW)) {
     redirect("/");
   }
   return children;

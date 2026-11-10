@@ -59,10 +59,10 @@ export default function VendaDetailPage() {
   const checkoutItems = items.filter((item) =>
     [SALE_ORDER_ITEM_STATUSES.ORDERED, SALE_ORDER_ITEM_STATUSES.RESERVED].includes(item.status),
   );
-  const canCreate = me && can(me.role, PERMISSIONS.SALE_CREATE) && order && !order.closed && order.canOperate;
-  const canCheckout = me && can(me.role, PERMISSIONS.SALE_CHECKOUT) && order && !order.closed;
-  const canNote = me && can(me.role, PERMISSIONS.SALE_CREATE) && order?.canOperate;
-  const canDelete = me && can(me.role, PERMISSIONS.SALE_DELETE);
+  const canCreate = me && can(me, PERMISSIONS.SALE_CREATE) && order && !order.closed && order.canOperate;
+  const canCheckout = me && can(me, PERMISSIONS.SALE_CHECKOUT) && order && !order.closed;
+  const canNote = me && can(me, PERMISSIONS.SALE_CREATE) && order?.canOperate;
+  const canDelete = me && can(me, PERMISSIONS.SALE_DELETE);
   const readyForOrder = items.some((item) =>
     [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
   );

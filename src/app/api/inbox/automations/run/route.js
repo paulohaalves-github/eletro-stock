@@ -13,7 +13,7 @@ export const POST = apiHandler(
       assertWorkerSecret(request);
     } else if (!session) {
       throw unauthorized();
-    } else if (!can(session.role, PERMISSIONS.INBOX_CHANNEL_MANAGE)) {
+    } else if (!can(session, PERMISSIONS.INBOX_CHANNEL_MANAGE)) {
       throw forbidden();
     }
     const result = await processUnansweredAutomations();

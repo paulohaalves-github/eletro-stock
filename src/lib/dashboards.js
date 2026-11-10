@@ -8,7 +8,7 @@ export const DASHBOARD_VIEWS = [
 
 export function canAccessDashboardView(user, view) {
   if (!user || !view) return false;
-  if (!can(user.role, view.permission)) return false;
+  if (!can(user, view.permission)) return false;
   if (view.supervisor && !user.inboxSupervisor) return false;
   return true;
 }

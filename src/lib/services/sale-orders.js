@@ -12,12 +12,12 @@ import {
   STATUSES,
   WORK_ORDER_CLOSED_STATUSES,
   isSaleOrderClosed,
-  ROLES,
 } from "../constants";
 import { emptyToNull, parseId } from "../validations";
 import { paginationResult, parsePagination } from "../pagination";
 import { formatDate, formatProductId, saoPauloDayRange } from "../format";
 import { can, canManageAllSaleOrders, canViewAllSaleOrders, PERMISSIONS } from "../permissions";
+import { attachEffectivePermissions } from "./permissions";
 import { isAdminRole, requireActiveUnit, unitSelect } from "../units";
 import { getProduct, movementUnitFields } from "./products";
 import { assertNoOpenInventory } from "../inventory-lock";
@@ -81,7 +81,7 @@ export function saleOrderAccessWhere(session) {
   if (!isAdminRole(session.role)) {
     where.unitId = { in: (session.units || []).map((unit) => unit.id) };
   }
-  if (!canViewAllSaleOrders(session.role)) {
+  if (!canViewAllSaleOrders(session)) {
     where.OR = [
       { sellerId: Number(session.id) },
       { sellerId: null, createdById: Number(session.id) },
@@ -97,7 +97,7 @@ function ownsSaleOrder(session, order) {
 
 function canOperateSaleOrder(session, order) {
   if (!session || !order) return false;
-  if (canManageAllSaleOrders(session.role)) return true;
+  if (canManageAllSaleOrders(session)) return true;
   return ownsSaleOrder(session, order);
 }
 
@@ -107,7 +107,7 @@ function canViewSaleOrder(session, order) {
     const ids = (session.units || []).map((unit) => unit.id);
     if (!ids.includes(order.unitId)) return false;
   }
-  if (canViewAllSaleOrders(session.role)) return true;
+  if (canViewAllSaleOrders(session)) return true;
   return ownsSaleOrder(session, order);
 }
 
@@ -129,7 +129,7 @@ async function resolveSeller(payload, user, { required = false, anySeller = fals
     return null;
   }
   const requested = parseId(raw);
-  if (!anySeller && requested !== Number(user.id) && !canManageAllSaleOrders(user.role)) {
+  if (!anySeller && requested !== Number(user.id) && !canManageAllSaleOrders(user)) {
     throw forbidden("Você só pode vincular outro vendedor ao gerar o pedido.");
   }
   const seller = await prisma.user.findUnique({
@@ -137,7 +137,8 @@ async function resolveSeller(payload, user, { required = false, anySeller = fals
     select: { id: true, name: true, active: true, role: true },
   });
   if (!seller?.active) throw validationError("Vendedor inválido ou inativo.");
-  if (!can(seller.role, PERMISSIONS.SALE_CREATE)) {
+  const sellerWithPermissions = await attachEffectivePermissions(seller);
+  if (!can(sellerWithPermissions, PERMISSIONS.SALE_CREATE)) {
     throw validationError("Este usuário não pode ser vinculado como vendedor.");
   }
   return seller;
@@ -174,7 +175,7 @@ async function resolveConversation(payload, customerId, user) {
 }
 
 function lockingConflictMessage(session, locked, reserved = false) {
-  if (canViewAllSaleOrders(session.role) && locked?.saleOrder?.number) {
+  if (canViewAllSaleOrders(session) && locked?.saleOrder?.number) {
     return reserved
       ? `Este produto já está reservado na venda ${locked.saleOrder.number}.`
       : `Este produto já está na venda ${locked.saleOrder.number}.`;
@@ -421,7 +422,7 @@ export async function listSaleOrders(filters, session) {
   }
   if (filters.status) where.status = String(filters.status);
   if (filters.customerId) where.customerId = parseId(filters.customerId);
-  if (filters.sellerId && canViewAllSaleOrders(session.role)) {
+  if (filters.sellerId && canViewAllSaleOrders(session)) {
     where.sellerId = parseId(filters.sellerId);
   }
   const soldRange = {};
@@ -474,22 +475,26 @@ export async function listSaleOrders(filters, session) {
 }
 
 export async function listSaleSellers(session) {
-  if (!canViewAllSaleOrders(session.role)) {
+  if (!canViewAllSaleOrders(session)) {
     return [{ id: Number(session.id), name: session.name }];
   }
   const unitFilter = isAdminRole(session.role)
     ? {}
     : { unitId: { in: (session.units || []).map((unit) => unit.id) } };
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: {
       OR: [
-        { active: true, role: { in: [ROLES.ADMIN, ROLES.GESTOR, ROLES.SELLER, ROLES.TECHNICIAN] } },
+        { active: true },
         { saleOrdersAsSeller: { some: unitFilter } },
       ],
     },
-    select: userNameSelect,
+    select: { ...userNameSelect, role: true, active: true },
     orderBy: { name: "asc" },
   });
+  const withPermissions = await attachEffectivePermissions(users);
+  return withPermissions
+    .filter((user) => user.active && can(user, PERMISSIONS.SALE_CREATE))
+    .map(({ id, name }) => ({ id, name }));
 }
 
 export async function createSaleOrder(payload, user) {
@@ -797,7 +802,7 @@ export async function generateSaleOrder(orderId, payload, user) {
 }
 
 export async function checkoutSaleOrder(orderId, payload, user) {
-  if (!can(user.role, PERMISSIONS.SALE_CHECKOUT)) {
+  if (!can(user, PERMISSIONS.SALE_CHECKOUT)) {
     throw forbidden("Somente o caixa pode concretizar a venda e dar baixa no estoque.");
   }
   const order = await getRawOrder(orderId, user);
@@ -1075,7 +1080,7 @@ async function saleLinkedToSoldItem(item) {
 }
 
 export async function deleteSaleOrder(id, user) {
-  if (!canManageAllSaleOrders(user.role)) throw forbidden("Só o gestor ou o administrador pode excluir uma venda.");
+  if (!canManageAllSaleOrders(user)) throw forbidden("Só o gestor ou o administrador pode excluir uma venda.");
   const order = await prisma.saleOrder.findUnique({
     where: { id: Number(id) },
     include: {

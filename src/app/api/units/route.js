@@ -6,7 +6,7 @@ import { UNIT_TYPE_LABELS } from "@/lib/constants";
 export const GET = apiHandler(async (request, { session }) => {
   const { searchParams } = new URL(request.url);
   const all = searchParams.get("all") === "1";
-  if (all && can(session.role, PERMISSIONS.UNIT_MANAGE)) {
+  if (all && can(session, PERMISSIONS.UNIT_MANAGE)) {
     return listUnits({
       includeInactive: true,
       q: searchParams.get("q"),

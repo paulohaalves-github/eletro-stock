@@ -71,15 +71,15 @@ export default function ProductDetailPage() {
 
   if (!product || !me) return <p className="text-muted">Carregando produto...</p>;
 
-  const canMutate = can(me.role, PERMISSIONS.STOCK_EXIT);
-  const canEdit = can(me.role, PERMISSIONS.PRODUCT_EDIT);
-  const canAssignLocation = can(me.role, PERMISSIONS.LOCATION_ASSIGN);
-  const canPhoto = can(me.role, PERMISSIONS.PHOTO_UPLOAD);
-  const canDeletePhoto = can(me.role, PERMISSIONS.PHOTO_DELETE);
-  const canTransfer = can(me.role, PERMISSIONS.STOCK_TRANSFER);
-  const canRepair = can(me.role, PERMISSIONS.REPAIR_CREATE) || can(me.role, PERMISSIONS.REPAIR_VIEW);
-  const canOpenSale = can(me.role, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder);
-  const canTrash = can(me.role, PERMISSIONS.PRODUCT_TRASH);
+  const canMutate = can(me, PERMISSIONS.STOCK_EXIT);
+  const canEdit = can(me, PERMISSIONS.PRODUCT_EDIT);
+  const canAssignLocation = can(me, PERMISSIONS.LOCATION_ASSIGN);
+  const canPhoto = can(me, PERMISSIONS.PHOTO_UPLOAD);
+  const canDeletePhoto = can(me, PERMISSIONS.PHOTO_DELETE);
+  const canTransfer = can(me, PERMISSIONS.STOCK_TRANSFER);
+  const canRepair = can(me, PERMISSIONS.REPAIR_CREATE) || can(me, PERMISSIONS.REPAIR_VIEW);
+  const canOpenSale = can(me, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder);
+  const canTrash = can(me, PERMISSIONS.PRODUCT_TRASH);
   const inTrash = Boolean(product.deletedAt);
   const closed = CLOSED_STATUSES.includes(product.status);
   const inActiveUnit = Number(me.activeUnitId) === Number(product.unitId);
@@ -191,7 +191,7 @@ export default function ProductDetailPage() {
                 canTransfer && inActiveUnit && !inTrash && product.status === STATUSES.AVAILABLE ? { label: "Transferir", onClick: () => setTransferOpen(true) } : null,
                 canTransfer && inActiveUnit && !inTrash && product.status === STATUSES.IN_TRANSIT ? { label: "Cancelar envio", onClick: () => runTransfer("cancel") } : null,
                 canTransfer && incomingHere && !inTrash ? { label: "Receber", onClick: () => setReceiveOpen(true) } : null,
-                can(me.role, PERMISSIONS.REPAIR_CREATE) && !inTrash && !product.openWorkOrder ? { label: "Abrir OS", onClick: () => router.push(`/reparos/novo?productId=${product.id}`) } : null,
+                can(me, PERMISSIONS.REPAIR_CREATE) && !inTrash && !product.openWorkOrder ? { label: "Abrir OS", onClick: () => router.push(`/reparos/novo?productId=${product.id}`) } : null,
                 canRepair && product.openWorkOrder ? { label: `Ver OS ${product.openWorkOrder.number}`, onClick: () => router.push(`/reparos/${product.openWorkOrder.id}`) } : null,
                 canOpenSale ? { label: `Ver venda ${product.openSaleOrder.number}`, onClick: () => router.push(`/vendas/${product.openSaleOrder.id}`) } : null,
                 canTrash && inActiveUnit && !inTrash ? { label: "Mover para a lixeira", danger: true, onClick: () => setTrashOpen(true) } : null,

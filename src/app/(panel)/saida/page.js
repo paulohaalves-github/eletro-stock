@@ -144,7 +144,7 @@ function SaidaContent() {
           {commercialLock ? (
             <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               Este produto está em uma venda comercial
-              {me && can(me.role, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder)
+              {me && can(me, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder)
                 ? <> ({product.openSaleOrder.number}{product.openSaleOrder.reservedUntil ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}` : ""}). <Link className="text-accent underline" href={`/vendas/${product.openSaleOrder.id}`}>Abrir venda</Link></>
                 : ". Conclua ou libere pelo fluxo comercial."}
             </p>

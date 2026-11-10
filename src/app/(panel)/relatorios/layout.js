@@ -4,6 +4,6 @@ import { canAccessGestao } from "@/lib/permissions";
 
 export default async function RelatoriosLayout({ children }) {
   const session = await getSession();
-  if (!canAccessGestao(session?.role)) redirect("/");
+  if (!canAccessGestao(session)) redirect("/");
   return children;
 }

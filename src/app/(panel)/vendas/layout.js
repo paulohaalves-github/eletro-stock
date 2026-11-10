@@ -4,7 +4,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 
 export default async function VendasLayout({ children }) {
   const session = await getSession();
-  if (!session || !can(session.role, PERMISSIONS.SALE_VIEW)) {
+  if (!session || !can(session, PERMISSIONS.SALE_VIEW)) {
     redirect("/");
   }
   return children;

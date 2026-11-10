@@ -87,7 +87,7 @@ export default function CanaisPage() {
 
   const [webhookBase, setWebhookBase] = useState("");
 
-  const canManage = me && can(me.role, PERMISSIONS.INBOX_CHANNEL_MANAGE);
+  const canManage = me && can(me, PERMISSIONS.INBOX_CHANNEL_MANAGE);
 
   useEffect(() => {
     setWebhookBase(window.location.origin);

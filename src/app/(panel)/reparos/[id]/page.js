@@ -78,8 +78,8 @@ export default function WorkOrderDetailPage() {
 
   if (!order || !me) return <p className="text-muted">Carregando ordem de serviço...</p>;
 
-  const canUpdate = can(me.role, PERMISSIONS.REPAIR_UPDATE) && !order.closed;
-  const canDelete = can(me.role, PERMISSIONS.REPAIR_DELETE);
+  const canUpdate = can(me, PERMISSIONS.REPAIR_UPDATE) && !order.closed;
+  const canDelete = can(me, PERMISSIONS.REPAIR_DELETE);
   const atLab = order.servicePlace === SERVICE_PLACES.LAB && Number(me.activeUnitId) === Number(order.labUnitId);
   const stockRepair = isStockRepair(order);
   const sale = order.sale;

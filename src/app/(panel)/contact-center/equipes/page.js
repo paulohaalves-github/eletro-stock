@@ -23,7 +23,7 @@ export default function EquipesPage() {
   const [selected, setSelected] = useState(null);
   const [memberRows, setMemberRows] = useState([]);
 
-  const canManage = me && can(me.role, PERMISSIONS.INBOX_TEAM_MANAGE);
+  const canManage = me && can(me, PERMISSIONS.INBOX_TEAM_MANAGE);
 
   async function load() {
     setLoading(true);

@@ -96,7 +96,7 @@ export async function listSoldCommercialRows(session, range) {
         unitId,
         soldAt,
         saleOrderItems: { none: {} },
-        ...(canViewAllSaleOrders(session.role) ? {} : { createdById: Number(session.id) }),
+        ...(canViewAllSaleOrders(session) ? {} : { createdById: Number(session.id) }),
       },
       include: {
         createdBy: { select: { id: true, name: true } },
@@ -217,7 +217,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
   return {
     unit: serializeUnit(session.activeUnit),
     range,
-    canViewAll: canViewAllSaleOrders(session.role),
+    canViewAll: canViewAllSaleOrders(session),
     cards: {
       amount: totalAmount,
       count: totalCount,

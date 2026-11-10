@@ -51,8 +51,35 @@ model User {
   inventoriesCompleted InventoryCount[] @relation("InventoryCompletedBy")
   inventoriesCancelled InventoryCount[] @relation("InventoryCancelledBy")
   inventoryScans       InventoryScan[]
+  permissionOverrides  UserPermission[]
 
   @@map("users")
+}
+
+model RolePermission {
+  id         Int      @id @default(autoincrement())
+  role       String   @db.VarChar(40)
+  permission String   @db.VarChar(80)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([role, permission])
+  @@index([role])
+  @@map("role_permissions")
+}
+
+model UserPermission {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  permission String   @db.VarChar(80)
+  effect     String   @db.VarChar(10)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+  @@index([userId])
+  @@map("user_permissions")
 }
 
 model Unit {

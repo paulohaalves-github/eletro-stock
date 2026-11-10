@@ -71,7 +71,7 @@ export default function LeadsPage() {
   const [waitlistItem, setWaitlistItem] = useState(null);
   const [waitlistSaving, setWaitlistSaving] = useState(false);
 
-  const canMove = me && can(me.role, PERMISSIONS.INBOX_REPLY);
+  const canMove = me && can(me, PERMISSIONS.INBOX_REPLY);
 
   const load = useCallback(async (filters) => {
     setLoading(true);

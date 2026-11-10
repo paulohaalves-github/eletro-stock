@@ -77,11 +77,11 @@ export default function EditarProdutoPage() {
   }, [form?.supplierModelCode]);
 
   if (!form || !me) return <p className="text-muted">Carregando...</p>;
-  if (!can(me.role, PERMISSIONS.PRODUCT_EDIT)) {
+  if (!can(me, PERMISSIONS.PRODUCT_EDIT)) {
     return <p className="text-danger">Você não tem permissão para editar produtos.</p>;
   }
 
-  const canCondition = can(me.role, PERMISSIONS.CONDITION_CHANGE);
+  const canCondition = can(me, PERMISSIONS.CONDITION_CHANGE);
 
   async function save(event) {
     event.preventDefault();

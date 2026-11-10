@@ -2,6 +2,7 @@ export const ROLES = {
   ADMIN: "ADMINISTRADOR",
   GESTOR: "GESTOR",
   STOCK: "ESTOQUE",
+  CASHIER: "CAIXA",
   SELLER: "VENDEDOR",
   TECHNICIAN: "TECNICO",
   VIEWER: "CONSULTA",
@@ -53,9 +54,15 @@ export const ROLE_LABELS = {
   ADMINISTRADOR: "Administrador",
   GESTOR: "Gestor",
   ESTOQUE: "Estoque",
+  CAIXA: "Caixa",
   VENDEDOR: "Vendedor",
   TECNICO: "Técnico",
   CONSULTA: "Consulta",
+};
+
+export const PERMISSION_EFFECTS = {
+  GRANT: "GRANT",
+  DENY: "DENY",
 };
 
 export const CONDITIONS = {

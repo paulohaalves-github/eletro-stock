@@ -30,6 +30,12 @@ export default function UsuariosPage() {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [permissionsUser, setPermissionsUser] = useState(null);
+  const [permissionsDetail, setPermissionsDetail] = useState(null);
+  const [permissionSelected, setPermissionSelected] = useState([]);
+  const [permissionsSaving, setPermissionsSaving] = useState(false);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
 
   function loader(page, pageSize) {
     return api(`/api/users?${listQuery({ q }, page, pageSize)}`);
@@ -127,6 +133,61 @@ export default function UsuariosPage() {
     saveUnits(user, next);
   }
 
+  async function openPermissions(user) {
+    setPermissionsUser(user);
+    setPermissionsOpen(true);
+    setPermissionsLoading(true);
+    setPermissionsDetail(null);
+    try {
+      const data = await api(`/api/permissions/users/${user.id}`);
+      setPermissionsDetail(data);
+      setPermissionSelected([...(data.effective || [])]);
+    } catch (error) {
+      toast.error(error.message);
+      setPermissionsOpen(false);
+      setPermissionsUser(null);
+    } finally {
+      setPermissionsLoading(false);
+    }
+  }
+
+  function closePermissions() {
+    if (permissionsSaving) return;
+    setPermissionsOpen(false);
+    setPermissionsUser(null);
+    setPermissionsDetail(null);
+    setPermissionSelected([]);
+  }
+
+  function togglePermission(permission) {
+    setPermissionSelected((current) => (
+      current.includes(permission)
+        ? current.filter((item) => item !== permission)
+        : [...current, permission]
+    ));
+  }
+
+  async function savePermissions(event) {
+    event.preventDefault();
+    if (!permissionsUser) return;
+    setPermissionsSaving(true);
+    try {
+      const data = await api(`/api/permissions/users/${permissionsUser.id}`, {
+        method: "PUT",
+        json: { permissions: permissionSelected },
+      });
+      setPermissionsDetail(data);
+      setPermissionSelected([...(data.effective || [])]);
+      toast.success("Exceções de permissão atualizadas.");
+      setPermissionsOpen(false);
+      setPermissionsUser(null);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setPermissionsSaving(false);
+    }
+  }
+
   return (
     <div className="w-full">
       <PageHeader
@@ -184,8 +245,11 @@ export default function UsuariosPage() {
                   </td>
                   <td className="px-5 py-4">{user.active ? "Ativo" : "Inativo"}</td>
                   <td className="px-5 py-4 text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="secondary" onClick={() => openEdit(user)}>Editar</Button>
+                      {user.role !== ROLES.ADMIN ? (
+                        <Button variant="secondary" onClick={() => void openPermissions(user)}>Exceções</Button>
+                      ) : null}
                       <Button variant="ghost" onClick={() => toggle(user)}>{user.active ? "Desativar" : "Ativar"}</Button>
                     </div>
                   </td>
@@ -239,6 +303,70 @@ export default function UsuariosPage() {
             )}
           </Field>
         </form>
+      </Modal>
+
+      <Modal
+        open={permissionsOpen}
+        title={permissionsUser ? `Exceções · ${permissionsUser.name}` : "Exceções"}
+        onClose={closePermissions}
+        className="max-w-3xl"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={closePermissions} disabled={permissionsSaving}>Cancelar</Button>
+            <Button type="submit" form="user-permissions-form" disabled={permissionsSaving || permissionsLoading || permissionsDetail?.locked}>
+              {permissionsSaving ? "Salvando..." : "Salvar exceções"}
+            </Button>
+          </>
+        }
+      >
+        {permissionsLoading || !permissionsDetail ? (
+          <p className="text-sm text-muted">Carregando permissões do colaborador...</p>
+        ) : (
+          <form id="user-permissions-form" onSubmit={savePermissions} className="space-y-4">
+            <p className="text-sm text-muted">
+              Perfil base: <strong>{ROLE_LABELS[permissionsDetail.user.role] || permissionsDetail.user.role}</strong>.
+              Marque o que este colaborador pode acessar além (ou a menos) do padrão do perfil.
+            </p>
+            <div className="space-y-5">
+              {(permissionsDetail.groups || []).map((group) => (
+                <div key={group.id}>
+                  <h3 className="mb-2 text-sm font-semibold">{group.label}</h3>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {group.permissions.map((permission) => {
+                      const inRole = (permissionsDetail.rolePermissions || []).includes(permission);
+                      const checked = permissionSelected.includes(permission);
+                      const isException = checked !== inRole;
+                      return (
+                        <label key={permission} className="flex items-start gap-3 rounded-xl border border-border px-3.5 py-3">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
+                            checked={checked}
+                            disabled={permissionsDetail.locked}
+                            onChange={() => togglePermission(permission)}
+                          />
+                          <span>
+                            <span className="block text-sm font-medium">
+                              {permissionsDetail.permissionLabels?.[permission] || permission}
+                              {isException ? (
+                                <span className="ml-2 text-xs font-normal text-accent">
+                                  {checked ? "liberado" : "bloqueado"}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-muted">
+                              {inRole ? "Incluído no perfil" : "Fora do perfil"}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

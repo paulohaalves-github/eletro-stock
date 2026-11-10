@@ -4,7 +4,7 @@ import { can, PERMISSIONS } from "@/lib/permissions";
 
 export default async function LocalizacoesLayout({ children }) {
   const session = await getSession();
-  if (!session || !can(session.role, PERMISSIONS.LOCATION_MANAGE)) {
+  if (!session || !can(session, PERMISSIONS.LOCATION_MANAGE)) {
     redirect("/");
   }
   return children;

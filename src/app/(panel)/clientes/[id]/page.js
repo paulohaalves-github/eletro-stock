@@ -52,11 +52,11 @@ export default function ClienteDetailPage() {
   if (error) return <p className="text-muted">{error}</p>;
   if (!customer || !me || !form) return <p className="text-muted">Carregando cliente...</p>;
 
-  const canManage = can(me.role, PERMISSIONS.CUSTOMER_MANAGE);
-  const canViewProduct = can(me.role, PERMISSIONS.PRODUCT_VIEW);
-  const canViewRepair = can(me.role, PERMISSIONS.REPAIR_VIEW);
-  const canViewSales = can(me.role, PERMISSIONS.SALE_VIEW);
-  const canCreateSale = can(me.role, PERMISSIONS.SALE_CREATE);
+  const canManage = can(me, PERMISSIONS.CUSTOMER_MANAGE);
+  const canViewProduct = can(me, PERMISSIONS.PRODUCT_VIEW);
+  const canViewRepair = can(me, PERMISSIONS.REPAIR_VIEW);
+  const canViewSales = can(me, PERMISSIONS.SALE_VIEW);
+  const canCreateSale = can(me, PERMISSIONS.SALE_CREATE);
   const sales = customer.sales || [];
   const saleOrders = customer.saleOrders || [];
   const workOrders = customer.workOrders || [];

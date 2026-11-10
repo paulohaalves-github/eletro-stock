@@ -74,7 +74,7 @@ export async function assertInboxTeamAccess(session, teamId, { assign = false } 
     where: { teamId_userId: { teamId: Number(teamId), userId: session.id } },
   });
   if (!member) throw forbidden("Você não pertence a esta equipe.");
-  if (assign && member.role !== "SUPERVISOR" && !can(session.role, PERMISSIONS.INBOX_ASSIGN)) {
+  if (assign && member.role !== "SUPERVISOR" && !can(session, PERMISSIONS.INBOX_ASSIGN)) {
     throw forbidden("Você não pode transferir esta conversa.");
   }
   return member;

@@ -824,7 +824,7 @@ export async function lookupSoldProduct(query, session, { productId } = {}) {
 }
 
 export async function deleteWorkOrder(id, user) {
-  if (!can(user.role, PERMISSIONS.REPAIR_DELETE)) {
+  if (!can(user, PERMISSIONS.REPAIR_DELETE)) {
     throw forbidden("Só o gestor ou o administrador pode excluir uma ordem de serviço.");
   }
   const order = await prisma.workOrder.findUnique({

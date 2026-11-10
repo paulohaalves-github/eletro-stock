@@ -4,8 +4,9 @@ import { SALE_ORDER_CLOSED_STATUSES, SALE_ORDER_EVENT_TYPES, SALE_ORDER_ITEM_STA
 import { digitsOnly } from "../phone";
 import { formatDateTime } from "../format";
 import { can, canManageAllSaleOrders, PERMISSIONS } from "../permissions";
+import { attachEffectivePermissions } from "./permissions";
 import { requireActiveUnit } from "../units";
-import { createCustomer } from "./customers";
+import { createCustomer, findCustomerByDocument } from "./customers";
 import {
   addSaleOrderItem,
   addSaleOrderNote,
@@ -106,23 +107,10 @@ async function findOpenReservedSale(customerId, unitId, serials) {
   return { order: null, ambiguous: [] };
 }
 
-async function findCustomerByDocument(document) {
-  const doc = digitsOnly(document);
-  if (doc.length < 11) return null;
-  const candidates = await prisma.customer.findMany({
-    where: {
-      document: { not: null },
-      OR: [{ document: doc }, { document: { contains: doc } }],
-    },
-    select: { id: true, name: true, document: true },
-  });
-  return candidates.find((item) => digitsOnly(item.document) === doc) || null;
-}
-
 function matchSeller(name, users) {
   const needle = normalizeName(name);
   if (!needle) return { error: "A OV não tem usuário de aprovação da venda." };
-  const eligible = users.filter((user) => can(user.role, PERMISSIONS.SALE_CREATE));
+  const eligible = users.filter((user) => can(user, PERMISSIONS.SALE_CREATE));
   const exact = eligible.filter((user) => normalizeName(user.name) === needle);
   if (exact.length === 1) return { seller: exact[0] };
   if (exact.length > 1) return { error: `Mais de um usuário ativo tem o nome ${name.trim()}.` };
@@ -276,14 +264,16 @@ export async function careOvsAwaitingProducts() {
 }
 
 export async function importCareSales(entries, user, onStep = () => {}) {
-  if (!canManageAllSaleOrders(user.role) || !can(user.role, PERMISSIONS.SALE_CHECKOUT)) {
+  if (!canManageAllSaleOrders(user) || !can(user, PERMISSIONS.SALE_CHECKOUT)) {
     throw forbidden("Somente o gestor ou o administrador pode sincronizar as vendas do Care.");
   }
   const unitId = requireActiveUnit(user);
-  const users = await prisma.user.findMany({
-    where: { active: true },
-    select: { id: true, name: true, role: true },
-  });
+  const users = await attachEffectivePermissions(
+    await prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true, role: true },
+    }),
+  );
   const reservedUntil = holdUntilKey();
   const imported = [];
   const skipped = [];

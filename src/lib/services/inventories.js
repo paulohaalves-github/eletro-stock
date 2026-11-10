@@ -88,7 +88,7 @@ function serializeSummary(inventory, counts) {
 }
 
 function canManage(session) {
-  return can(session.role, PERMISSIONS.INVENTORY_MANAGE);
+  return can(session, PERMISSIONS.INVENTORY_MANAGE);
 }
 
 function assertCanRead(session, inventory) {

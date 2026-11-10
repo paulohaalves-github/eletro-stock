@@ -99,7 +99,7 @@ export default function ReparosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canCreate = me && can(me.role, PERMISSIONS.REPAIR_CREATE);
+  const canCreate = me && can(me, PERMISSIONS.REPAIR_CREATE);
 
   const kanbanColumns = useMemo(() => {
     const statuses = status ? [status] : KANBAN_STATUSES;

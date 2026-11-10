@@ -13,7 +13,7 @@ function back(request, message) {
 
 export async function GET(request) {
   const session = await getSession();
-  if (!session || !can(session.role, PERMISSIONS.INBOX_CHANNEL_MANAGE)) {
+  if (!session || !can(session, PERMISSIONS.INBOX_CHANNEL_MANAGE)) {
     return back(request, "Você não tem permissão para conectar o Instagram.");
   }
   const channelId = Number(new URL(request.url).searchParams.get("channelId"));

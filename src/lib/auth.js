@@ -8,6 +8,7 @@ import { unauthorized, forbidden } from "./errors";
 import { can } from "./permissions";
 import { resolveAllowedUnits, serializeUnit } from "./units";
 import { resolveInboxSupervisor } from "./services/inbox-access";
+import { getEffectivePermissions } from "./services/permissions";
 
 function getSecret() {
   const secret = process.env.AUTH_SECRET;
@@ -103,6 +104,7 @@ export const getSession = cache(async () => {
     const requestedId = Number(cookieStore.get(UNIT_COOKIE)?.value);
     const activeUnit = units.find((unit) => unit.id === requestedId) || units[0] || null;
     const inboxSupervisor = await resolveInboxSupervisor(user);
+    const permissions = await getEffectivePermissions(user);
 
     return {
       id: user.id,
@@ -110,6 +112,7 @@ export const getSession = cache(async () => {
       email: user.email,
       role: user.role,
       active: user.active,
+      permissions,
       units,
       activeUnit,
       activeUnitId: activeUnit?.id ?? null,
@@ -128,7 +131,7 @@ export async function requireAuth() {
 
 export async function requirePermission(permission) {
   const session = await requireAuth();
-  if (!can(session.role, permission)) throw forbidden();
+  if (!can(session, permission)) throw forbidden();
   return session;
 }
 
@@ -139,6 +142,7 @@ export function publicUser(user) {
     email: user.email,
     role: user.role,
     active: user.active !== false,
+    permissions: Array.isArray(user.permissions) ? user.permissions : undefined,
     units: (user.units || []).map(serializeUnit),
     activeUnit: serializeUnit(user.activeUnit),
     activeUnitId: user.activeUnitId ?? user.activeUnit?.id ?? null,

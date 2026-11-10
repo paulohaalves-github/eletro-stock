@@ -136,7 +136,7 @@ export async function buildSalesDetailReport(session, filters = {}) {
         soldAt: inRange,
         saleOrderItems: { none: {} },
         ...(condition ? { product: { condition } } : {}),
-        ...(canViewAllSaleOrders(session.role) ? {} : { createdById: Number(session.id) }),
+        ...(canViewAllSaleOrders(session) ? {} : { createdById: Number(session.id) }),
       },
       include: {
         createdBy: { select: { name: true } },
@@ -248,7 +248,7 @@ export async function buildModelTurnoverReport(session, filters = {}) {
         soldAt,
         saleOrderItems: { none: {} },
         ...(condition ? { product: productWhere } : {}),
-        ...(canViewAllSaleOrders(session.role) ? {} : { createdById: Number(session.id) }),
+        ...(canViewAllSaleOrders(session) ? {} : { createdById: Number(session.id) }),
       },
       include: {
         product: { select: productSelect },

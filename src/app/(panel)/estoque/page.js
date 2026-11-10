@@ -193,9 +193,9 @@ function EstoqueContent() {
 
   const allVisibleSelected = data.items.length > 0 && data.items.every((item) => selected.has(item.id));
   const hasMore = data.items.length < data.total;
-  const canTransfer = me ? can(me.role, PERMISSIONS.STOCK_TRANSFER) : false;
-  const canTrash = me ? can(me.role, PERMISSIONS.PRODUCT_TRASH) : false;
-  const canImportPrices = me ? can(me.role, PERMISSIONS.PRICE_IMPORT) : false;
+  const canTransfer = me ? can(me, PERMISSIONS.STOCK_TRANSFER) : false;
+  const canTrash = me ? can(me, PERMISSIONS.PRODUCT_TRASH) : false;
+  const canImportPrices = me ? can(me, PERMISSIONS.PRICE_IMPORT) : false;
 
   function searchNow(qValue) {
     const nextQ = qValue !== undefined ? qValue : q;

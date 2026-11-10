@@ -142,7 +142,7 @@ export default function EntradaPage() {
     }
   }
 
-  if (me && !can(me.role, PERMISSIONS.STOCK_ENTRY)) {
+  if (me && !can(me, PERMISSIONS.STOCK_ENTRY)) {
     return <p className="text-danger">Você não tem permissão para dar entrada no estoque.</p>;
   }
 

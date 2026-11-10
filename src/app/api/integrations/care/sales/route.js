@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export const POST = apiHandler(async (_request, { session }) => {
-  if (!canManageAllSaleOrders(session.role) || !can(session.role, PERMISSIONS.SALE_CHECKOUT)) {
+  if (!canManageAllSaleOrders(session) || !can(session, PERMISSIONS.SALE_CHECKOUT)) {
     throw forbidden("Somente o gestor ou o administrador pode sincronizar as vendas do Care.");
   }
   if (!await acquireCareSyncLock()) {

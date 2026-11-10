@@ -6,7 +6,7 @@ import { canAccessGestao } from "@/lib/permissions";
 
 export default async function DashboardsPage({ searchParams }) {
   const session = await getSession();
-  if (!canAccessGestao(session?.role)) redirect("/estoque");
+  if (!canAccessGestao(session)) redirect("/estoque");
   const views = availableDashboardViews(session);
   if (!views.length) redirect("/estoque");
   const params = await searchParams;

@@ -47,7 +47,7 @@ export default function SolicitacoesPecasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canStock = me && can(me.role, PERMISSIONS.PART_STOCK);
+  const canStock = me && can(me, PERMISSIONS.PART_STOCK);
 
   function openFulfill(item) {
     setActiveItem(item);

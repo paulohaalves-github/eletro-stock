@@ -4,6 +4,7 @@ import { createSessionToken, publicUser, setActiveUnitCookie, setSessionCookie, 
 import { jsonError, unauthorized, validationError } from "@/lib/errors";
 import { resolveAllowedUnits } from "@/lib/units";
 import { resolveInboxSupervisor } from "@/lib/services/inbox-access";
+import { getEffectivePermissions } from "@/lib/services/permissions";
 
 export async function POST(request) {
   try {
@@ -34,6 +35,7 @@ export async function POST(request) {
         activeUnit,
         activeUnitId: activeUnit?.id ?? null,
         inboxSupervisor: await resolveInboxSupervisor(user),
+        permissions: await getEffectivePermissions(user),
       }),
     });
   } catch (error) {

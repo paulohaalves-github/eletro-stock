@@ -81,6 +81,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/unidades", label: "Unidades", icon: Store, permission: PERMISSIONS.UNIT_MANAGE },
       { href: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSIONS.USER_MANAGE },
+      { href: "/permissoes", label: "Permissões", icon: Shield, permission: PERMISSIONS.USER_MANAGE },
       { href: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSIONS.USER_MANAGE },
       { href: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
     ],
@@ -140,11 +141,11 @@ function visibleGroups(user) {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
-      if (group.id === "gestao" && !canAccessGestao(user.role)) return false;
+      if (group.id === "gestao" && !canAccessGestao(user)) return false;
       if (item.anyDashboard) return canAccessAnyDashboard(user);
       if (item.anyAuthenticated) return true;
-      if (item.anyOf) return item.anyOf.some((permission) => can(user.role, permission));
-      if (!can(user.role, item.permission)) return false;
+      if (item.anyOf) return item.anyOf.some((permission) => can(user, permission));
+      if (!can(user, item.permission)) return false;
       if (item.supervisor && !user.inboxSupervisor) return false;
       return true;
     }),
@@ -254,10 +255,10 @@ export function AppShell({ user, children }) {
   }
 
   const mobileShortcuts = MOBILE_SHORTCUTS.filter((item) => {
-    if (item.anyDashboard) return canAccessGestao(user.role) && canAccessAnyDashboard(user);
+    if (item.anyDashboard) return canAccessGestao(user) && canAccessAnyDashboard(user);
     if (item.anyAuthenticated) return true;
-    if (item.anyOf) return item.anyOf.some((permission) => can(user.role, permission));
-    return can(user.role, item.permission);
+    if (item.anyOf) return item.anyOf.some((permission) => can(user, permission));
+    return can(user, item.permission);
   });
 
   const unitPicker = units.length ? (

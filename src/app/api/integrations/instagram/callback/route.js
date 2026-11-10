@@ -14,7 +14,7 @@ function destination(request) {
 export async function GET(request) {
   const session = await getSession();
   const back = destination(request);
-  if (!session || !can(session.role, PERMISSIONS.INBOX_CHANNEL_MANAGE)) {
+  if (!session || !can(session, PERMISSIONS.INBOX_CHANNEL_MANAGE)) {
     back.searchParams.set("instagramError", "Entre novamente e conecte o Instagram.");
     return NextResponse.redirect(back);
   }
