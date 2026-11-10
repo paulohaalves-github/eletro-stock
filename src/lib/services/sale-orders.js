@@ -31,6 +31,8 @@ const productSelect = {
   status: true,
   cashPrice: true,
   condition: true,
+  unitId: true,
+  locationId: true,
   catalogModel: { select: { commercialName: true } },
   category: { select: { id: true, name: true } },
   images: { where: { isPrimary: true }, take: 1, select: { fileUrl: true } },
@@ -876,6 +878,100 @@ export async function checkoutSaleOrder(orderId, payload, user) {
   return getSaleOrder(order.id, user);
 }
 
+function holdReservedUntil() {
+  const key = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const [year, month, day] = key.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + 365));
+  const nextMonth = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(shifted.getUTCDate()).padStart(2, "0");
+  return new Date(`${shifted.getUTCFullYear()}-${nextMonth}-${nextDay}T23:59:59.999-03:00`);
+}
+
+async function assertNoWorkOrderOnSoldItems(order, soldItems) {
+  const soldSales = [];
+  for (const item of soldItems) {
+    soldSales.push({ item, sale: await saleLinkedToSoldItem(item) });
+  }
+  const saleIds = soldSales.map((row) => row.sale?.id).filter(Boolean);
+  const productIds = soldItems.map((item) => item.productId);
+  if (!saleIds.length && !productIds.length) return soldSales;
+  const blockers = await prisma.workOrder.findMany({
+    where: {
+      OR: [
+        ...(saleIds.length ? [{ saleId: { in: saleIds } }] : []),
+        ...(productIds.length ? [{
+          productId: { in: productIds },
+          status: { notIn: WORK_ORDER_CLOSED_STATUSES },
+        }] : []),
+      ],
+    },
+    select: { number: true },
+  });
+  if (blockers.length) {
+    const numbers = [...new Set(blockers.map((row) => row.number))].join(", ");
+    throw conflict(`Não é possível alterar esta venda. A ordem de serviço ${numbers} está ligada a um produto já baixado.`);
+  }
+  return soldSales;
+}
+
+async function releaseReservedItems(order, user, note) {
+  const toRelease = order.items.filter((item) =>
+    [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
+  );
+  if (!toRelease.length) return;
+  const { unreserveProduct } = await import("./stock");
+  for (const item of toRelease) {
+    await prisma.saleOrderItem.update({
+      where: { id: item.id },
+      data: clearReservationData(),
+    });
+    if (item.product?.status === STATUSES.RESERVED) {
+      await unreserveProduct(item.productId, `${note} · ${order.number}`, user, { fromSaleOrder: true });
+    }
+  }
+}
+
+async function returnSoldItemsToAvailable(order, soldSales, user, note) {
+  const unitIds = soldSales
+    .filter(({ item }) => item.product?.status === STATUSES.SOLD)
+    .map(({ item }) => item.product.unitId);
+  await assertNoOpenInventory(unitIds);
+  for (const { item, sale } of soldSales) {
+    if (item.product?.status === STATUSES.SOLD) {
+      await prisma.product.update({
+        where: { id: item.productId },
+        data: { status: STATUSES.AVAILABLE },
+      });
+      await writeMovement({
+        productId: item.productId,
+        type: MOVEMENT_TYPES.UPDATE,
+        previousStatus: STATUSES.SOLD,
+        newStatus: STATUSES.AVAILABLE,
+        observation: note,
+        previousLocationId: item.product.locationId,
+        newLocationId: item.product.locationId,
+        ...movementUnitFields(item.product),
+        userId: user.id,
+      });
+    }
+    if (sale) await prisma.sale.delete({ where: { id: sale.id } });
+    await prisma.saleOrderItem.update({
+      where: { id: item.id },
+      data: {
+        status: SALE_ORDER_ITEM_STATUSES.INTEREST,
+        saleId: null,
+        warrantyMonths: null,
+        invoiceNumber: null,
+        reservedAt: null,
+        reservedUntil: null,
+        soldAt: null,
+        soldById: null,
+      },
+    });
+    await syncProductWaitlist(item.productId);
+  }
+}
+
 export async function closeSaleOrder(orderId, payload, user) {
   const order = await getRawOrder(orderId, user);
   assertCanOperate(user, order);
@@ -886,19 +982,11 @@ export async function closeSaleOrder(orderId, payload, user) {
   }
   const note = emptyToNull(payload.message) || (reason === SALE_ORDER_STATUSES.LOST ? "Venda perdida." : "Venda cancelada.");
 
-  const toRelease = order.items.filter((item) =>
-    [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
-  );
-  if (toRelease.length) {
-    const { unreserveProduct } = await import("./stock");
-    for (const item of toRelease) {
-      await prisma.saleOrderItem.update({
-        where: { id: item.id },
-        data: clearReservationData(),
-      });
-      await unreserveProduct(item.productId, `${note} · ${order.number}`, user, { fromSaleOrder: true });
-    }
+  if (reason === SALE_ORDER_STATUSES.CANCELLED) {
+    return cancelSaleOrder(order.id, user, { message: note });
   }
+
+  await releaseReservedItems(order, user, note);
 
   const sold = order.items.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD);
   const nextStatus = sold.length ? SALE_ORDER_STATUSES.PARTIAL : reason;
@@ -924,6 +1012,115 @@ export async function closeSaleOrder(orderId, payload, user) {
     entity: "sale_order",
     entityId: order.id,
     newData: { status: nextStatus },
+  });
+  return getSaleOrder(order.id, user);
+}
+
+export async function updateSaleOrderSoldAt(orderId, soldAtValue, user) {
+  if (!canManageAllSaleOrders(user) && !can(user, PERMISSIONS.SALE_CHECKOUT)) {
+    throw forbidden("Somente o caixa, o gestor ou o administrador pode alterar a data da venda.");
+  }
+  const order = await getRawOrder(orderId, user);
+  const soldItems = order.items.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD);
+  if (!soldItems.length) throw validationError("Esta venda ainda não tem produtos baixados.");
+  const soldAt = parseSoldAt(soldAtValue);
+  const saleIds = soldItems.map((item) => item.saleId).filter(Boolean);
+  if (saleIds.length) {
+    await prisma.sale.updateMany({ where: { id: { in: saleIds } }, data: { soldAt } });
+  }
+  await prisma.saleOrderItem.updateMany({
+    where: { id: { in: soldItems.map((item) => item.id) } },
+    data: { soldAt },
+  });
+  await addEvent(prisma, {
+    saleOrderId: order.id,
+    type: SALE_ORDER_EVENT_TYPES.NOTE,
+    message: `Data da venda alterada para ${formatDate(soldAt)}.`,
+    userId: user.id,
+  });
+  await writeAudit({
+    userId: user.id,
+    action: "SALE_ORDER_SOLD_AT_UPDATED",
+    entity: "sale_order",
+    entityId: order.id,
+    newData: { soldAt },
+  });
+  return getSaleOrder(order.id, user);
+}
+
+export async function revertSaleOrderToReserved(orderId, user) {
+  if (!canManageAllSaleOrders(user)) {
+    throw forbidden("Só o gestor ou o administrador pode retroagir uma venda concretizada.");
+  }
+  const order = await getRawOrder(orderId, user);
+  if (![SALE_ORDER_STATUSES.COMPLETED, SALE_ORDER_STATUSES.PARTIAL].includes(order.status)) {
+    throw conflict("Só é possível retroagir vendas concretizadas ou parcialmente concretizadas.");
+  }
+  const soldItems = order.items.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD);
+  if (!soldItems.length) throw validationError("Não há produtos baixados para retroagir.");
+  const soldSales = await assertNoWorkOrderOnSoldItems(order, soldItems);
+  const unitIds = soldSales
+    .filter(({ item }) => item.product?.status === STATUSES.SOLD)
+    .map(({ item }) => item.product.unitId);
+  await assertNoOpenInventory(unitIds);
+
+  const reservedUntil = holdReservedUntil();
+  for (const { item, sale } of soldSales) {
+    if (sale) await prisma.sale.delete({ where: { id: sale.id } });
+    if (item.product?.status === STATUSES.SOLD) {
+      await prisma.product.update({
+        where: { id: item.productId },
+        data: { status: STATUSES.RESERVED },
+      });
+      await writeMovement({
+        productId: item.productId,
+        type: MOVEMENT_TYPES.RESERVE,
+        previousStatus: STATUSES.SOLD,
+        newStatus: STATUSES.RESERVED,
+        observation: `Retornou para reservado ao retroagir a venda ${order.number}.`,
+        previousLocationId: item.product.locationId,
+        newLocationId: item.product.locationId,
+        ...movementUnitFields(item.product),
+        userId: user.id,
+      });
+    } else if (item.product?.status === STATUSES.AVAILABLE) {
+      const { reserveProduct } = await import("./stock");
+      await reserveProduct(item.productId, `Reservado ao retroagir a venda ${order.number}.`, user, { fromSaleOrder: true });
+    } else if (item.product?.status !== STATUSES.RESERVED) {
+      throw conflict(`O produto ${formatProductId(item.productId)} está ${item.product?.status || "indisponível"} e não pode voltar para reservado.`);
+    }
+    await prisma.saleOrderItem.update({
+      where: { id: item.id },
+      data: {
+        status: SALE_ORDER_ITEM_STATUSES.RESERVED,
+        saleId: null,
+        warrantyMonths: null,
+        invoiceNumber: null,
+        reservedAt: new Date(),
+        reservedUntil,
+        soldAt: null,
+        soldById: null,
+      },
+    });
+  }
+
+  await prisma.saleOrder.update({
+    where: { id: order.id },
+    data: { closedAt: null, orderedAt: null },
+  });
+  await addEvent(prisma, {
+    saleOrderId: order.id,
+    type: SALE_ORDER_EVENT_TYPES.STATUS,
+    message: `Venda retroagida: ${soldItems.length} produto(s) voltaram para reservado.`,
+    userId: user.id,
+  });
+  await persistDerivedStatus(prisma, order.id, user.id);
+  await writeAudit({
+    userId: user.id,
+    action: "SALE_ORDER_REVERTED",
+    entity: "sale_order",
+    entityId: order.id,
+    newData: { status: SALE_ORDER_STATUSES.RESERVED, products: soldItems.map((item) => item.productId) },
   });
   return getSaleOrder(order.id, user);
 }
@@ -1079,109 +1276,70 @@ async function saleLinkedToSoldItem(item) {
   return found[0] || null;
 }
 
-export async function deleteSaleOrder(id, user) {
-  if (!canManageAllSaleOrders(user)) throw forbidden("Só o gestor ou o administrador pode excluir uma venda.");
-  const order = await prisma.saleOrder.findUnique({
-    where: { id: Number(id) },
-    include: {
-      items: {
-        select: {
-          id: true,
-          status: true,
-          productId: true,
-          saleId: true,
-          product: { select: { id: true, status: true, unitId: true, locationId: true } },
-        },
-      },
-    },
-  });
-  if (!order) throw notFound("Venda não encontrada.");
+export async function cancelSaleOrder(id, user, { message } = {}) {
+  const order = await getRawOrder(id, user);
+  if (order.status === SALE_ORDER_STATUSES.CANCELLED || order.status === SALE_ORDER_STATUSES.LOST) {
+    throw conflict("Esta venda já está encerrada.");
+  }
+  if (isSaleOrderClosed(order) || order.status === SALE_ORDER_STATUSES.COMPLETED || order.status === SALE_ORDER_STATUSES.PARTIAL) {
+    if (!canManageAllSaleOrders(user)) {
+      throw forbidden("Só o gestor ou o administrador pode cancelar uma venda já baixada.");
+    }
+  } else {
+    assertCanOperate(user, order);
+  }
 
+  const note = emptyToNull(message) || `Venda ${order.number} cancelada.`;
   const soldItems = order.items.filter((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD);
-  const soldSales = [];
-  for (const item of soldItems) {
-    soldSales.push({ item, sale: await saleLinkedToSoldItem(item) });
-  }
-  const saleIds = soldSales.map((row) => row.sale?.id).filter(Boolean);
-  const productIds = soldItems.map((item) => item.productId);
-  if (saleIds.length || productIds.length) {
-    const blockers = await prisma.workOrder.findMany({
-      where: {
-        OR: [
-          ...(saleIds.length ? [{ saleId: { in: saleIds } }] : []),
-          ...(productIds.length ? [{
-            productId: { in: productIds },
-            status: { notIn: WORK_ORDER_CLOSED_STATUSES },
-          }] : []),
-        ],
-      },
-      select: { number: true },
-    });
-    if (blockers.length) {
-      const numbers = [...new Set(blockers.map((row) => row.number))].join(", ");
-      throw conflict(`Não é possível excluir esta venda. A ordem de serviço ${numbers} está ligada a um produto já baixado.`);
-    }
+  const soldSales = await assertNoWorkOrderOnSoldItems(order, soldItems);
+
+  await releaseReservedItems(order, user, note);
+  if (soldSales.length) {
+    await returnSoldItemsToAvailable(order, soldSales, user, `Disponível ao cancelar a venda ${order.number}.`);
   }
 
-  const reverted = [];
-  const returningUnitIds = soldSales
-    .filter(({ item }) => item.product?.status === STATUSES.SOLD)
-    .map(({ item }) => item.product.unitId);
-  await assertNoOpenInventory(returningUnitIds);
-  await prisma.$transaction(async (tx) => {
-    for (const item of order.items) {
-      const locked = item.status === SALE_ORDER_ITEM_STATUSES.RESERVED || item.status === SALE_ORDER_ITEM_STATUSES.ORDERED;
-      if (!locked || item.product?.status !== STATUSES.RESERVED) continue;
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { status: STATUSES.AVAILABLE },
-      });
-      await writeMovement({
-        productId: item.productId,
-        type: MOVEMENT_TYPES.UNRESERVE,
-        previousStatus: STATUSES.RESERVED,
-        newStatus: STATUSES.AVAILABLE,
-        observation: `Liberado ao excluir a venda ${order.number}.`,
-        ...movementUnitFields(item.product),
-        userId: user.id,
-      }, tx);
-    }
-    for (const { item, sale } of soldSales) {
-      if (item.product?.status === STATUSES.SOLD) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { status: STATUSES.AVAILABLE },
-        });
-        await writeMovement({
-          productId: item.productId,
-          type: MOVEMENT_TYPES.UPDATE,
-          previousStatus: STATUSES.SOLD,
-          newStatus: STATUSES.AVAILABLE,
-          observation: `Disponível ao excluir a venda ${order.number}.`,
-          previousLocationId: item.product.locationId,
-          newLocationId: item.product.locationId,
-          ...movementUnitFields(item.product),
-          userId: user.id,
-        }, tx);
-        reverted.push(item.productId);
-      }
-      if (sale) await tx.sale.delete({ where: { id: sale.id } });
-    }
-    await tx.saleOrder.delete({ where: { id: order.id } });
+  await prisma.saleOrder.update({
+    where: { id: order.id },
+    data: { status: SALE_ORDER_STATUSES.CANCELLED, closedAt: new Date(), orderedAt: order.orderedAt },
   });
+  await addEvent(prisma, {
+    saleOrderId: order.id,
+    type: SALE_ORDER_EVENT_TYPES.CLOSE,
+    message: note,
+    userId: user.id,
+  });
+  if (order.conversationId) {
+    await syncLeadStageWithSales(prisma, order.conversationId, { userId: user.id, prefer: "lost" });
+  }
+  await writeAudit({
+    userId: user.id,
+    action: "SALE_ORDER_CANCELLED",
+    entity: "sale_order",
+    entityId: order.id,
+    oldData: { status: order.status },
+    newData: { status: SALE_ORDER_STATUSES.CANCELLED, returnedSold: soldItems.map((item) => item.productId) },
+  });
+  return getSaleOrder(order.id, user);
+}
 
+export async function discardSaleOrder(id, user) {
+  const order = await getRawOrder(id, user);
+  if (order.items.some((item) => item.status === SALE_ORDER_ITEM_STATUSES.SOLD)) {
+    throw conflict("Não é possível descartar uma venda com produtos já baixados. Cancele a venda.");
+  }
+  await releaseReservedItems(order, user, `Descartada a venda ${order.number}.`);
+  await prisma.saleOrder.delete({ where: { id: order.id } });
   for (const item of order.items) {
     await syncProductWaitlist(item.productId);
   }
-
   if (order.conversationId) {
     await syncLeadStageWithSales(prisma, order.conversationId, { userId: user.id });
   }
   await writeAudit({
     userId: user.id,
-    action: "SALE_ORDER_DELETED",
+    action: "SALE_ORDER_DISCARDED",
     entity: "sale_order",
     entityId: order.id,
-    oldData: { number: order.number, status: order.status, revertedProducts: reverted, removedSales: saleIds },
+    oldData: { number: order.number, status: order.status },
   });
 }

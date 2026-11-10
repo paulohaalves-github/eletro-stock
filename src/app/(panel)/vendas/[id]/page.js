@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
@@ -12,14 +12,13 @@ import { ScanField } from "@/components/scan-field";
 import { SaleOrderItemBadge, SaleOrderStatusBadge, StatusBadge } from "@/components/badges";
 import { SaleOrderTimeline } from "@/components/sale-order-timeline";
 import { SALE_ORDER_ITEM_STATUSES, SALE_ORDER_STATUSES, WARRANTY_MONTHS } from "@/lib/constants";
-import { formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
+import { calendarDayKey, formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
-import { can, PERMISSIONS } from "@/lib/permissions";
+import { can, canManageAllSaleOrders, PERMISSIONS } from "@/lib/permissions";
 
 export default function VendaDetailPage() {
   const { id } = useParams();
-  const router = useRouter();
   const [order, setOrder] = useState(null);
   const [me, setMe] = useState(null);
   const [query, setQuery] = useState("");
@@ -34,7 +33,10 @@ export default function VendaDetailPage() {
   const [warranties, setWarranties] = useState({});
   const [reserveItem, setReserveItem] = useState(null);
   const [reservedUntil, setReservedUntil] = useState("");
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [soldAtOpen, setSoldAtOpen] = useState(false);
+  const [editSoldAt, setEditSoldAt] = useState("");
   const [orderOpen, setOrderOpen] = useState(false);
   const [sellers, setSellers] = useState([]);
   const [sellerId, setSellerId] = useState("");
@@ -62,7 +64,16 @@ export default function VendaDetailPage() {
   const canCreate = me && can(me, PERMISSIONS.SALE_CREATE) && order && !order.closed && order.canOperate;
   const canCheckout = me && can(me, PERMISSIONS.SALE_CHECKOUT) && order && !order.closed;
   const canNote = me && can(me, PERMISSIONS.SALE_CREATE) && order?.canOperate;
-  const canDelete = me && can(me, PERMISSIONS.SALE_DELETE);
+  const canManageSales = me && canManageAllSaleOrders(me);
+  const canCancelClosed = canManageSales && order && (
+    order.status === SALE_ORDER_STATUSES.COMPLETED || order.status === SALE_ORDER_STATUSES.PARTIAL
+  );
+  const canRevert = canManageSales && order && (
+    order.status === SALE_ORDER_STATUSES.COMPLETED || order.status === SALE_ORDER_STATUSES.PARTIAL
+  ) && (order.itemCounts?.sold || 0) > 0;
+  const canEditSoldAt = me && order?.soldAt && (
+    canManageSales || can(me, PERMISSIONS.SALE_CHECKOUT)
+  );
   const readyForOrder = items.some((item) =>
     [SALE_ORDER_ITEM_STATUSES.RESERVED, SALE_ORDER_ITEM_STATUSES.ORDERED].includes(item.status),
   );
@@ -212,8 +223,27 @@ export default function VendaDetailPage() {
             {canCheckout && orderGenerated && checkoutItems.length ? (
               <Button disabled={saving} onClick={openCheckout}>Dar baixa no caixa</Button>
             ) : null}
-            {canDelete ? (
-              <Button variant="danger" disabled={saving} onClick={() => setDeleteOpen(true)}>Excluir</Button>
+            {canEditSoldAt ? (
+              <Button
+                variant="secondary"
+                disabled={saving}
+                onClick={() => {
+                  setEditSoldAt(calendarDayKey(order.soldAt));
+                  setSoldAtOpen(true);
+                }}
+              >
+                Alterar data da venda
+              </Button>
+            ) : null}
+            {canRevert ? (
+              <Button variant="secondary" disabled={saving} onClick={() => setRevertOpen(true)}>
+                Retroagir para reservada
+              </Button>
+            ) : null}
+            {canCancelClosed ? (
+              <Button variant="danger" disabled={saving} onClick={() => setCancelOpen(true)}>
+                Cancelar venda
+              </Button>
             ) : null}
           </>
         }
@@ -252,7 +282,10 @@ export default function VendaDetailPage() {
             />
           ) : null}
           <Info label="Aberto por" value={order.createdBy?.name} />
-          <Info label="Vendida em" value={order.soldAt ? formatDateTime(order.soldAt) : "—"} />
+          <Info
+            label="Vendida em"
+            value={order.soldAt ? formatDateTime(order.soldAt) : "—"}
+          />
           {order.conversation?.id ? (
             <Info
               label="Conversa"
@@ -273,6 +306,11 @@ export default function VendaDetailPage() {
             <Button variant="secondary" disabled={saving} onClick={() => setCloseOpen("PERDIDA")}>Marcar como perdida</Button>
             <Button variant="ghost" disabled={saving} onClick={() => setCloseOpen("CANCELADA")}>Cancelar venda</Button>
           </div>
+        ) : null}
+        {canCancelClosed && !canCreate ? (
+          <p className="text-sm text-muted">
+            Cancelar devolve os produtos ao estoque e mantém esta venda como cancelada na lista.
+          </p>
         ) : null}
       </Card>
 
@@ -517,30 +555,90 @@ export default function VendaDetailPage() {
       </Modal>
 
       <ConfirmDialog
-        open={deleteOpen}
-        title="Excluir esta venda?"
-        message="A venda sai da lista. Produtos reservados ou já baixados voltam a ficar disponíveis, e a baixa sai do histórico. Se houver uma ordem de serviço nesse produto, a exclusão é bloqueada."
-        confirmLabel="Excluir venda"
+        open={cancelOpen}
+        title="Cancelar esta venda?"
+        message="A venda permanece na lista como Cancelada. Produtos reservados ou já baixados voltam a ficar disponíveis, e a baixa sai do histórico. Se houver ordem de serviço aberta no produto, o cancelamento é bloqueado."
+        confirmLabel="Cancelar venda"
         danger
         loading={saving}
-        onClose={() => setDeleteOpen(false)}
+        onClose={() => setCancelOpen(false)}
         onConfirm={async () => {
           setSaving(true);
           try {
             const data = await api(`/api/sale-orders/${order.id}`, { method: "DELETE" });
-            toast.success(data.message);
-            router.push("/vendas");
+            toast.success(data.message || "Venda cancelada.");
+            setCancelOpen(false);
+            await load();
           } catch (error) {
             toast.error(error.message);
+          } finally {
             setSaving(false);
           }
         }}
       />
 
       <ConfirmDialog
+        open={revertOpen}
+        title="Retroagir para reservada?"
+        message="Os produtos baixados voltam para Reservado nesta mesma venda. A baixa sai do histórico e a venda deixa de ficar concretizada."
+        confirmLabel="Retroagir venda"
+        danger
+        loading={saving}
+        onClose={() => setRevertOpen(false)}
+        onConfirm={async () => {
+          const data = await run(`/api/sale-orders/${order.id}/revert`, {}, "Venda retroagida para reservada.");
+          if (data) setRevertOpen(false);
+        }}
+      />
+
+      <Modal
+        open={soldAtOpen}
+        title="Alterar data da venda"
+        onClose={() => !saving && setSoldAtOpen(false)}
+        className="max-w-md"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setSoldAtOpen(false)} disabled={saving}>Fechar</Button>
+            <Button
+              type="button"
+              disabled={saving || !editSoldAt}
+              onClick={() => {
+                void (async () => {
+                  setSaving(true);
+                  try {
+                    const data = await api(`/api/sale-orders/${order.id}`, {
+                      method: "PATCH",
+                      json: { soldAt: editSoldAt },
+                    });
+                    toast.success(data.message);
+                    setSoldAtOpen(false);
+                    await load();
+                  } catch (error) {
+                    toast.error(error.message);
+                  } finally {
+                    setSaving(false);
+                  }
+                })();
+              }}
+            >
+              {saving ? "Salvando..." : "Salvar data"}
+            </Button>
+          </>
+        }
+      >
+        <Field label="Data da venda" required>
+          <Input type="date" max={todayDate()} value={editSoldAt} onChange={(e) => setEditSoldAt(e.target.value)} />
+        </Field>
+      </Modal>
+
+      <ConfirmDialog
         open={Boolean(closeOpen)}
         title={closeOpen === "PERDIDA" ? "Marcar venda como perdida?" : "Cancelar esta venda?"}
-        message="Produtos reservados voltam a ficar disponíveis. O histórico da venda é mantido."
+        message={
+          closeOpen === "PERDIDA"
+            ? "Produtos reservados voltam a ficar disponíveis. O histórico da venda é mantido."
+            : "A venda permanece na lista como Cancelada. Produtos reservados ou já baixados voltam a ficar disponíveis."
+        }
         confirmLabel={closeOpen === "PERDIDA" ? "Marcar perdida" : "Cancelar venda"}
         danger
         loading={saving}

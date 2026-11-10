@@ -12,7 +12,7 @@ import {
   addSaleOrderNote,
   checkoutSaleOrder,
   createSaleOrder,
-  deleteSaleOrder,
+  discardSaleOrder,
   generateSaleOrder,
   releaseInterestForCareImport,
   releaseReservationForCareImport,
@@ -395,7 +395,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
             data: { ov, paymentMethod, installmentCount },
           });
         } catch (error) {
-          await deleteSaleOrder(order.id, user);
+          await discardSaleOrder(order.id, user);
           order = null;
           createdNow = false;
           if (error?.code === "P2002") {
@@ -449,7 +449,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
       const absent = careSerials.filter((serial) => !present.has(serial));
 
       if (!added.length && createdNow) {
-        await deleteSaleOrder(order.id, user);
+        await discardSaleOrder(order.id, user);
         order = null;
         createdNow = false;
         const reason = reasons.join("; ") || "Nenhum produto pôde ser incluído.";
@@ -579,7 +579,7 @@ export async function importCareSales(entries, user, onStep = () => {}) {
         onStep(`OV ${ov} ficou como ${order.number}, mas a baixa não foi concluída: ${reason}`);
         continue;
       }
-      if (order?.id && createdNow) await deleteSaleOrder(order.id, user).catch(() => {});
+      if (order?.id && createdNow) await discardSaleOrder(order.id, user).catch(() => {});
       skipped.push({ ov, reason });
       onStep(`OV ${ov} ignorada: ${reason}`);
     }

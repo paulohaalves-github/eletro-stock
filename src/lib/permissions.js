@@ -75,7 +75,7 @@ export const PERMISSION_LABELS = {
   [PERMISSIONS.SALE_VIEW]: "Ver vendas",
   [PERMISSIONS.SALE_CREATE]: "Abrir / operar venda",
   [PERMISSIONS.SALE_CHECKOUT]: "Baixa no caixa",
-  [PERMISSIONS.SALE_DELETE]: "Excluir vendas",
+  [PERMISSIONS.SALE_DELETE]: "Cancelar e retroagir vendas",
   [PERMISSIONS.REPAIR_VIEW]: "Ver reparos",
   [PERMISSIONS.REPAIR_CREATE]: "Criar reparos",
   [PERMISSIONS.REPAIR_UPDATE]: "Atualizar reparos",
