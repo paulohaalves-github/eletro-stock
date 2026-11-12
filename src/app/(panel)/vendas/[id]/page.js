@@ -11,7 +11,13 @@ import { ConfirmDialog, Modal } from "@/components/modal";
 import { ScanField } from "@/components/scan-field";
 import { SaleOrderItemBadge, SaleOrderStatusBadge, StatusBadge } from "@/components/badges";
 import { SaleOrderTimeline } from "@/components/sale-order-timeline";
-import { SALE_ORDER_ITEM_STATUSES, SALE_ORDER_STATUSES, WARRANTY_MONTHS } from "@/lib/constants";
+import {
+  SALE_INSTALLMENT_COUNTS,
+  SALE_ORDER_ITEM_STATUSES,
+  SALE_ORDER_STATUSES,
+  SALE_PAYMENT_METHODS,
+  WARRANTY_MONTHS,
+} from "@/lib/constants";
 import { formatCurrency, formatDate, formatDateTime, formatProductId } from "@/lib/format";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
@@ -32,6 +38,8 @@ export default function VendaDetailPage() {
   const [ov, setOv] = useState("");
   const [warranties, setWarranties] = useState({});
   const [prices, setPrices] = useState({});
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [installmentCount, setInstallmentCount] = useState("1");
   const [reserveItem, setReserveItem] = useState(null);
   const [reservedUntil, setReservedUntil] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -173,12 +181,24 @@ export default function VendaDetailPage() {
     setInvoiceNumber(checkoutItems.find((item) => item.invoiceNumber)?.invoiceNumber || "");
     setSoldAt(todayDate());
     setOv(order?.ov || "");
+    setPaymentMethod(order?.paymentMethod || "");
+    setInstallmentCount(order?.installmentCount ? String(order.installmentCount) : "1");
     setCheckoutOpen(true);
   }
 
   async function confirmCheckout() {
     if (!soldAt) {
       toast.error("Informe a data da venda.");
+      return;
+    }
+    const method = String(paymentMethod || "").trim();
+    if (!method) {
+      toast.error("Informe a forma de pagamento.");
+      return;
+    }
+    const parcels = Number(installmentCount);
+    if (!Number.isInteger(parcels) || parcels < 1) {
+      toast.error("Informe a quantidade de parcelas.");
       return;
     }
     for (const item of checkoutItems) {
@@ -193,11 +213,15 @@ export default function VendaDetailPage() {
       invoiceNumber,
       soldAt,
       ov,
+      paymentMethod: method,
+      installmentCount: parcels,
       items: checkoutItems.map((item) => ({
         itemId: item.id,
         warrantyMonths: Number(warranties[item.id] || 3),
         invoiceNumber,
         cashPrice: Number(String(prices[item.id]).trim().replace(",", ".")),
+        paymentMethod: method,
+        installmentCount: parcels,
       })),
     };
     const data = await run(`/api/sale-orders/${order.id}/checkout`, payload);
@@ -463,11 +487,28 @@ export default function VendaDetailPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Informe a data da venda, o valor vendido de cada produto e, se houver, a OV do Care e a NF. O status do produto só muda para Vendido nesta etapa.
+            Informe a data da venda, forma de pagamento, valor vendido de cada produto e, se houver, a OV do Care e a NF. O status do produto só muda para Vendido nesta etapa.
           </p>
           <Field label="Data da venda" required>
             <Input type="date" max={todayDate()} value={soldAt} onChange={(e) => setSoldAt(e.target.value)} />
           </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Forma de pagamento" required>
+              <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                <option value="">Selecione</option>
+                {SALE_PAYMENT_METHODS.map((method) => (
+                  <option key={method} value={method}>{method}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Parcelas" required hint="1x = à vista; 2x ou mais = a prazo.">
+              <Select value={installmentCount} onChange={(e) => setInstallmentCount(e.target.value)}>
+                {SALE_INSTALLMENT_COUNTS.map((count) => (
+                  <option key={count} value={String(count)}>{count}x</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
           <Field label="OV do Care">
             <Input value={ov} maxLength={40} onChange={(e) => setOv(e.target.value)} placeholder="Ex.: 667501" />
           </Field>

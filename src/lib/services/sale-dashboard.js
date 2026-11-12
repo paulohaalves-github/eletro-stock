@@ -15,11 +15,21 @@ function soldAmount(value) {
   return Number.isFinite(amount) ? amount : null;
 }
 
+function money(value) {
+  const amount = soldAmount(value);
+  return amount == null ? 0 : Math.round(amount * 100) / 100;
+}
+
 function amountOf(item) {
   const fromSale = soldAmount(item.sale?.cashPrice);
   if (fromSale != null) return fromSale;
   const fromItem = soldAmount(item.cashPrice);
   return fromItem != null ? fromItem : 0;
+}
+
+function paymentMethodName(method) {
+  const name = String(method || "").trim();
+  return name || "Não informado";
 }
 
 function paymentLabel(method, count) {
@@ -30,6 +40,29 @@ function paymentLabel(method, count) {
   if (name) return name;
   if (hasParcels) return `${parcels}x`;
   return "Não informado";
+}
+
+/** @returns {"cash"|"installment"|null} */
+export function paymentKind(paymentMethod, installmentCount) {
+  const parcels = Number(installmentCount);
+  if (Number.isInteger(parcels) && parcels > 1) return "installment";
+  if (Number.isInteger(parcels) && parcels === 1) return "cash";
+  const method = String(paymentMethod || "").toLocaleLowerCase("pt-BR");
+  if (!method) return null;
+  if (/pix|dinheiro|d[eé]bito|transfer/.test(method)) return "cash";
+  if (/cr[eé]dito|boleto|parcel/.test(method)) return "installment";
+  return null;
+}
+
+function referenceOf(product, kind) {
+  if (kind === "cash") return soldAmount(product?.cashPrice);
+  if (kind === "installment") return soldAmount(product?.installmentPrice);
+  return null;
+}
+
+function discountOf(sold, reference) {
+  if (reference == null) return null;
+  return Math.round((reference - sold) * 100) / 100;
 }
 
 function bump(map, key, name, amount) {
@@ -50,6 +83,48 @@ function ranked(map, total) {
 
 function emptyDays(start, end) {
   return eachSaoPauloDay(start, end).map((day) => ({ ...day, amount: 0, count: 0 }));
+}
+
+const productCommercialSelect = {
+  id: true,
+  serialOnyx: true,
+  cashPrice: true,
+  installmentPrice: true,
+  catalogModel: { select: { commercialName: true } },
+  category: { select: { id: true, name: true } },
+  images: { where: { isPrimary: true }, take: 1, select: { fileUrl: true } },
+};
+
+function enrichRow({
+  id,
+  soldAt,
+  amount,
+  paymentMethod,
+  installmentCount,
+  product,
+  ...rest
+}) {
+  const kind = paymentKind(paymentMethod, installmentCount);
+  const listPrice = referenceOf(product, kind);
+  const discount = discountOf(amount, listPrice);
+  return {
+    id,
+    soldAt,
+    amount,
+    paymentMethod,
+    installmentCount,
+    paymentKind: kind,
+    listPrice,
+    discount,
+    discountGranted: discount != null && discount > 0 ? discount : 0,
+    categoryId: product?.category?.id || 0,
+    categoryName: product?.category?.name || "Sem categoria",
+    productId: product?.id,
+    serialOnyx: product?.serialOnyx || "—",
+    commercialName: product?.catalogModel?.commercialName || product?.serialOnyx || "Produto",
+    imageUrl: product?.images?.[0]?.fileUrl || null,
+    ...rest,
+  };
 }
 
 export async function listSoldCommercialRows(session, range) {
@@ -79,15 +154,7 @@ export async function listSoldCommercialRows(session, range) {
           },
         },
         soldBy: { select: { id: true, name: true } },
-        product: {
-          select: {
-            id: true,
-            serialOnyx: true,
-            catalogModel: { select: { commercialName: true } },
-            category: { select: { id: true, name: true } },
-            images: { where: { isPrimary: true }, take: 1, select: { fileUrl: true } },
-          },
-        },
+        product: { select: productCommercialSelect },
       },
       orderBy: { soldAt: "desc" },
     }),
@@ -101,64 +168,50 @@ export async function listSoldCommercialRows(session, range) {
       include: {
         createdBy: { select: { id: true, name: true } },
         customer: { select: { id: true, name: true } },
-        product: {
-          select: {
-            id: true,
-            serialOnyx: true,
-            catalogModel: { select: { commercialName: true } },
-            category: { select: { id: true, name: true } },
-            images: { where: { isPrimary: true }, take: 1, select: { fileUrl: true } },
-          },
-        },
+        product: { select: productCommercialSelect },
       },
       orderBy: { soldAt: "desc" },
     }),
   ]);
 
   return [
-    ...items.map((item) => ({
-      id: `item-${item.id}`,
-      soldAt: item.soldAt,
-      amount: amountOf(item),
-      categoryId: item.product?.category?.id || 0,
-      categoryName: item.product?.category?.name || "Sem categoria",
-      sellerId: item.saleOrder?.sellerId || 0,
-      sellerName: item.saleOrder?.seller?.name || "Sem vendedor",
-      attendantId: item.soldBy?.id || 0,
-      attendantName: item.soldBy?.name || "Sem atendente",
-      saleNumber: item.saleOrder?.number || null,
-      invoiceNumber: item.invoiceNumber || item.sale?.invoiceNumber || null,
-      paymentMethod: item.sale?.paymentMethod || item.saleOrder?.paymentMethod || null,
-      installmentCount: item.sale?.installmentCount ?? item.saleOrder?.installmentCount ?? null,
-      paymentLabel: paymentLabel(item.sale?.paymentMethod || item.saleOrder?.paymentMethod, item.sale?.installmentCount ?? item.saleOrder?.installmentCount),
-      customerName: item.saleOrder?.customer?.name || "—",
-      origin: "Comercial",
-      productId: item.product?.id,
-      serialOnyx: item.product?.serialOnyx || "—",
-      commercialName: item.product?.catalogModel?.commercialName || item.product?.serialOnyx || "Produto",
-      imageUrl: item.product?.images?.[0]?.fileUrl || null,
-    })),
-    ...standaloneSales.map((sale) => ({
+    ...items.map((item) => {
+      const paymentMethod = item.sale?.paymentMethod || item.saleOrder?.paymentMethod || null;
+      const installmentCount = item.sale?.installmentCount ?? item.saleOrder?.installmentCount ?? null;
+      return enrichRow({
+        id: `item-${item.id}`,
+        soldAt: item.soldAt,
+        amount: amountOf(item),
+        paymentMethod,
+        installmentCount,
+        paymentLabel: paymentLabel(paymentMethod, installmentCount),
+        sellerId: item.saleOrder?.sellerId || 0,
+        sellerName: item.saleOrder?.seller?.name || "Sem vendedor",
+        attendantId: item.soldBy?.id || 0,
+        attendantName: item.soldBy?.name || "Sem atendente",
+        saleNumber: item.saleOrder?.number || null,
+        invoiceNumber: item.invoiceNumber || item.sale?.invoiceNumber || null,
+        customerName: item.saleOrder?.customer?.name || "—",
+        origin: "Comercial",
+        product: item.product,
+      });
+    }),
+    ...standaloneSales.map((sale) => enrichRow({
       id: `sale-${sale.id}`,
       soldAt: sale.soldAt,
       amount: soldAmount(sale.cashPrice) ?? 0,
-      categoryId: sale.product?.category?.id || 0,
-      categoryName: sale.product?.category?.name || "Sem categoria",
+      paymentMethod: sale.paymentMethod || null,
+      installmentCount: sale.installmentCount ?? null,
+      paymentLabel: paymentLabel(sale.paymentMethod, sale.installmentCount),
       sellerId: sale.createdBy?.id || 0,
       sellerName: sale.createdBy?.name || "Sem vendedor",
       attendantId: sale.createdBy?.id || 0,
       attendantName: sale.createdBy?.name || "Sem atendente",
       saleNumber: null,
       invoiceNumber: sale.invoiceNumber || null,
-      paymentMethod: sale.paymentMethod || null,
-      installmentCount: sale.installmentCount ?? null,
-      paymentLabel: paymentLabel(sale.paymentMethod, sale.installmentCount),
       customerName: sale.customer?.name || "—",
       origin: "Baixa avulsa",
-      productId: sale.product?.id,
-      serialOnyx: sale.product?.serialOnyx || "—",
-      commercialName: sale.product?.catalogModel?.commercialName || sale.product?.serialOnyx || "Produto",
-      imageUrl: sale.product?.images?.[0]?.fileUrl || null,
+      product: sale.product,
     })),
   ].sort((a, b) => new Date(b.soldAt) - new Date(a.soldAt));
 }
@@ -194,6 +247,9 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
   const totalCount = rows.length;
   const orderIds = new Set(rows.map((row) => row.saleNumber).filter(Boolean));
   const standaloneCount = rows.filter((row) => !row.saleNumber).length;
+  const pricedRows = rows.filter((row) => row.listPrice != null);
+  const totalListPrice = pricedRows.reduce((sum, row) => sum + money(row.listPrice), 0);
+  const totalDiscount = pricedRows.reduce((sum, row) => sum + (row.discountGranted || 0), 0);
 
   const byType = new Map();
   const bySeller = new Map();
@@ -206,7 +262,8 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
     bump(byType, row.categoryId, row.categoryName, row.amount);
     bump(bySeller, row.sellerId, row.sellerName, row.amount);
     bump(byAttendant, row.attendantId, row.attendantName, row.amount);
-    bump(byPayment, row.paymentLabel, row.paymentLabel, row.amount);
+    const methodName = paymentMethodName(row.paymentMethod);
+    bump(byPayment, methodName.toLocaleLowerCase("pt-BR"), methodName, row.amount);
     const key = row.soldAt ? dayKey(row.soldAt) : null;
     if (key && dayMap[key]) {
       dayMap[key].amount += row.amount;
@@ -223,6 +280,9 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
       count: totalCount,
       ticket: totalCount ? totalAmount / totalCount : 0,
       orders: orderIds.size + standaloneCount,
+      listPrice: totalListPrice,
+      discount: totalDiscount,
+      pricedCount: pricedRows.length,
     },
     pipeline: pipeline
       .map((row) => ({
@@ -264,7 +324,10 @@ export function commercialReportRows(rows) {
       "NF",
       "Forma de pagamento",
       "Parcelas",
+      "Tipo preço",
       "Valor vendido",
+      "Preço referência",
+      "Desconto",
     ],
     rows: rows.map((row) => [
       formatDateTime(row.soldAt),
@@ -280,14 +343,23 @@ export function commercialReportRows(rows) {
       row.invoiceNumber || "—",
       row.paymentMethod || "—",
       row.installmentCount || "—",
+      row.paymentKind === "cash" ? "À vista" : row.paymentKind === "installment" ? "A prazo" : "—",
       formatCurrency(row.amount),
+      row.listPrice == null ? "—" : formatCurrency(row.listPrice),
+      row.discount == null ? "—" : formatCurrency(row.discount),
     ]),
-    summary: {
-      count: rows.length,
-      cash: rows.reduce((sum, row) => sum + row.amount, 0),
-      installment: 0,
-      market: 0,
-      priceLabel: "valor vendido",
-    },
+    summary: (() => {
+      const priced = rows.filter((row) => row.listPrice != null);
+      const listTotal = priced.reduce((sum, row) => sum + money(row.listPrice), 0);
+      const discountTotal = priced.reduce((sum, row) => sum + (row.discountGranted || 0), 0);
+      return {
+        count: rows.length,
+        cash: rows.reduce((sum, row) => sum + row.amount, 0),
+        installment: 0,
+        market: 0,
+        priceLabel: "valor vendido",
+        note: `Referência ${formatCurrency(listTotal)} · desconto ${formatCurrency(discountTotal)} (${priced.length} classificados). Compara à vista (1x) ou parcelado (2x+).`,
+      };
+    })(),
   };
 }

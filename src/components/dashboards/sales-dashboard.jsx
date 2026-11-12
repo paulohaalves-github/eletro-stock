@@ -84,6 +84,8 @@ export function SalesDashboard({ embedded = false }) {
 
   const cards = [
     ["Faturamento", formatCurrency(data.cards.amount)],
+    ["Referência tabela", formatCurrency(data.cards.listPrice || 0)],
+    ["Desconto concedido", formatCurrency(data.cards.discount || 0)],
     ["Produtos baixados", data.cards.count],
     ["Ticket médio", formatCurrency(data.cards.ticket)],
     ["Vendas com baixa", data.cards.orders],
@@ -96,7 +98,7 @@ export function SalesDashboard({ embedded = false }) {
         title={embedded ? null : "Dashboard comercial"}
         subtitle={
           data.unit
-            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa. Forma de pagamento e parcelas vêm do recebimento.`
+            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Desconto compara com à vista (1x) ou parcelado (2x+), conforme o recebimento. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa.`
             : "Faturamento pelo valor vendido na baixa."
         }
         actions={
@@ -134,11 +136,19 @@ export function SalesDashboard({ embedded = false }) {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map(([label, value]) => (
           <Card key={label} className="p-4">
             <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+            {label === "Referência tabela" && data.cards.pricedCount != null ? (
+              <p className="mt-1 text-xs text-muted">
+                {data.cards.pricedCount} de {data.cards.count} com pagamento classificado
+              </p>
+            ) : null}
+            {label === "Desconto concedido" ? (
+              <p className="mt-1 text-xs text-muted">Só valores vendidos abaixo da tabela</p>
+            ) : null}
           </Card>
         ))}
       </div>
@@ -199,7 +209,20 @@ export function SalesDashboard({ embedded = false }) {
                   {item.paymentLabel && item.paymentLabel !== "Não informado" ? ` · ${item.paymentLabel}` : ""}
                 </p>
               </div>
-              <p className="text-sm font-semibold tabular-nums">{formatCurrency(item.amount)}</p>
+              <div className="text-right">
+                <p className="text-sm font-semibold tabular-nums">{formatCurrency(item.amount)}</p>
+                {item.discount != null ? (
+                  <p className={`text-xs tabular-nums ${item.discount > 0 ? "text-accent" : "text-muted"}`}>
+                    {item.discount > 0
+                      ? `−${formatCurrency(item.discount)}`
+                      : item.discount < 0
+                        ? `+${formatCurrency(Math.abs(item.discount))} acima`
+                        : "sem desconto"}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted">sem referência</p>
+                )}
+              </div>
             </Link>
           ))}
           {!data.recent?.length ? <p className="text-sm text-muted">Nenhum produto baixado neste período.</p> : null}

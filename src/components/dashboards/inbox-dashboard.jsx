@@ -4,15 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { Funnel, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Button, Card, Field, PageHeader, Select } from "@/components/ui";
-import { cn } from "@/lib/format";
+import { cn, formatCurrency } from "@/lib/format";
+import { formatPhone } from "@/lib/phone";
 
-function Metric({ label, value }) {
+function Metric({ label, value, hint }) {
   return (
     <Card className="p-4">
       <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
     </Card>
   );
+}
+
+function percent(value) {
+  return `${((Number(value) || 0) * 100).toFixed(1).replace(".", ",")}%`;
 }
 
 function CountTable({ title, columns, rows, empty }) {
@@ -181,12 +187,17 @@ export function InboxDashboard({ embedded = false }) {
     return <p className="text-muted">Não foi possível carregar o dashboard.</p>;
   }
 
-  const channelName = (data.channels || []).find((channel) => String(channel.id) === String(applied.channelId))?.name;
+  const selectedChannel = (data.channels || []).find((channel) => String(channel.id) === String(applied.channelId));
+  const channelChipLabel = selectedChannel
+    ? selectedChannel.phoneNumber
+      ? `${selectedChannel.name} · ${formatPhone(selectedChannel.phoneNumber)}`
+      : selectedChannel.name
+    : null;
   const periodLabel = periodChipText(applied);
   const chips = [
     applied.rangeType === "closed" ? { key: "range", label: "Encerradas", patch: { rangeType: "started" } } : null,
     periodLabel ? { key: "period", label: periodLabel, patch: { period: "all", from: "", to: "" } } : null,
-    channelName ? { key: "channel", label: `Canal: ${channelName}`, patch: { channelId: "" } } : null,
+    channelChipLabel ? { key: "channel", label: channelChipLabel, patch: { channelId: "" } } : null,
   ].filter(Boolean);
 
   return (
@@ -194,7 +205,7 @@ export function InboxDashboard({ embedded = false }) {
       <PageHeader
         kicker={embedded ? null : "Eletro-Stock"}
         title={embedded ? null : "Dashboard"}
-        subtitle="Contagem das conversas por fila, canal, atendente e status."
+        subtitle="Conversas por fila, canal e atendente, com origem e conversão dos leads."
       />
 
       <div className="relative mx-auto mb-6 w-full max-w-2xl" ref={filterRef}>
@@ -226,11 +237,15 @@ export function InboxDashboard({ embedded = false }) {
         {open ? (
           <div className="absolute left-1/2 z-20 mt-2 w-[min(100%,28rem)] -translate-x-1/2 rounded-2xl border border-border bg-surface p-5 shadow-2xl">
             <div className="space-y-4">
-              <Field label="Canal">
+              <Field label="Canal / número de origem">
                 <Select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
                   <option value="">Todos os canais</option>
                   {(data.channels || []).map((channel) => (
-                    <option key={channel.id} value={channel.id}>{channel.name}</option>
+                    <option key={channel.id} value={channel.id}>
+                      {channel.phoneNumber
+                        ? `${channel.name} · ${formatPhone(channel.phoneNumber)}`
+                        : channel.name}
+                    </option>
                   ))}
                 </Select>
               </Field>
@@ -269,6 +284,20 @@ export function InboxDashboard({ embedded = false }) {
       </div>
 
       <div className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-4", loading ? "opacity-70" : "")}>
+        <Metric label="Leads" value={data.cards.leads ?? 0} hint="Conversas no filtro" />
+        <Metric label="Convertidos" value={data.cards.converted ?? 0} hint="Etapa Convertida" />
+        <Metric
+          label="Valor convertido"
+          value={formatCurrency(data.cards.convertedAmount || 0)}
+          hint="Vendas vinculadas ao inbox"
+        />
+        <Metric
+          label="Ticket médio"
+          value={formatCurrency(data.cards.ticket || 0)}
+          hint="Valor ÷ leads convertidos"
+        />
+        <Metric label="Em venda" value={data.cards.inSale ?? 0} />
+        <Metric label="Taxa de conversão" value={percent(data.cards.conversionRate)} hint={`${data.cards.lost ?? 0} sem retorno/descartados`} />
         <Metric label="Abertas" value={data.cards.open} />
         <Metric label="Aguardando agente" value={data.cards.waiting} />
         <Metric label="Agente respondeu" value={data.cards.replied} />
@@ -279,6 +308,38 @@ export function InboxDashboard({ embedded = false }) {
       </div>
 
       <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        <CountTable
+          title="Leads por canal"
+          columns={["Canal", "Origem", "Leads", "Convertidos", "Valor", "Ticket", "Em venda", "Abertos", "Perdidos", "Conversão"]}
+          empty="Nenhum lead no período."
+          rows={(data.leadsByChannel || []).map((channel) => ({
+            id: `lead-channel-${channel.id}`,
+            cells: [
+              channel.name,
+              channel.providerLabel,
+              channel.leads,
+              channel.converted,
+              formatCurrency(channel.amount || 0),
+              formatCurrency(channel.ticket || 0),
+              channel.inSale,
+              channel.open,
+              channel.lost,
+              percent(channel.conversionRate),
+            ],
+          }))}
+        />
+        <CountTable
+          title="Leads por etapa"
+          columns={["Etapa", "Leads"]}
+          empty="Nenhum lead no período."
+          rows={(data.byLeadStage || []).filter((item) => item.count > 0).map((item) => ({
+            id: item.stage,
+            cells: [item.label, item.count],
+          }))}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <CountTable
           title="Por fila"
           columns={["Fila", "Abertas", "Aguardando", "Respondidas", "Sem agente", "Encerradas"]}
@@ -299,7 +360,7 @@ export function InboxDashboard({ embedded = false }) {
           }))}
         />
         <CountTable
-          title="Por canal"
+          title="Por canal (atendimento)"
           columns={["Canal", "Origem", "Abertas", "Aguardando", "Respondidas", "Encerradas"]}
           empty="Nenhum canal nas filas supervisionadas."
           rows={(data.byChannel || []).map((channel) => ({

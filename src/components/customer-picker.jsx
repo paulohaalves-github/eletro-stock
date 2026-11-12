@@ -8,6 +8,7 @@ import { LoadMore, SearchActions } from "@/components/paged-list";
 import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { CustomerPhonesFields, emptyPhoneRow } from "@/components/customer-phones";
+import { CustomerAddressFields } from "@/components/customer-address-fields";
 
 function emptyCustomerForm() {
   return { name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "", notes: "" };
@@ -213,10 +214,14 @@ export function CustomerPicker({ value, onChange, allowCreate = true }) {
             <div className="sm:col-span-2">
               <CustomerPhonesFields value={form.phones} onChange={(phones) => setForm({ ...form, phones })} />
             </div>
-            <Field label="CPF/CNPJ"><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></Field>
+            <Field label="CPF/CNPJ" required><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} placeholder="Somente números" /></Field>
             <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
             <div className="sm:col-span-2">
-              <Field label="Endereço" required><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número, bairro, cidade" /></Field>
+              <CustomerAddressFields
+                address={form.address}
+                onAddressChange={(address) => setForm({ ...form, address })}
+                disabled={careLoading}
+              />
             </div>
             {form.notes ? (
               <div className="sm:col-span-2">

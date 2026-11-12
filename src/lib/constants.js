@@ -248,6 +248,17 @@ export function canOperateStock(status) {
 
 export const WARRANTY_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
+export const SALE_PAYMENT_METHODS = [
+  "Pix",
+  "Dinheiro",
+  "Cartão de crédito",
+  "Cartão de débito",
+  "Boleto",
+  "Transferência",
+];
+
+export const SALE_INSTALLMENT_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
 export const SALE_ORDER_STATUSES = {
   INTEREST: "INTERESSE",
   RESERVED: "RESERVADA",

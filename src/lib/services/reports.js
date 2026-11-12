@@ -143,7 +143,33 @@ export async function buildReport(type, filters = {}, session) {
 
   const products = await prisma.product.findMany({
     where: extraWhere,
-    include: { category: true, line: true, catalogModel: true, unit: true },
+    include: {
+      category: true,
+      line: true,
+      catalogModel: true,
+      unit: true,
+      ...(type === "sold"
+        ? {
+            sales: {
+              orderBy: { soldAt: "desc" },
+              take: 1,
+              select: {
+                cashPrice: true,
+                createdBy: { select: { name: true } },
+                saleOrderItems: {
+                  take: 1,
+                  orderBy: { id: "desc" },
+                  select: {
+                    saleOrder: {
+                      select: { seller: { select: { name: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          }
+        : {}),
+    },
     orderBy: { id: "asc" },
   });
 
@@ -154,6 +180,18 @@ export async function buildReport(type, filters = {}, session) {
     category: "Produtos por categoria",
     value: "Valor total do estoque",
   };
+
+  function soldMeta(item) {
+    const sale = Array.isArray(item.sales) ? item.sales[0] : null;
+    const seller =
+      sale?.saleOrderItems?.[0]?.saleOrder?.seller?.name
+      || sale?.createdBy?.name
+      || null;
+    return {
+      soldPrice: sale?.cashPrice == null ? null : Number(sale.cashPrice),
+      sellerName: seller,
+    };
+  }
 
   return {
     title: titles[type] || "Relatório de produtos",
@@ -173,26 +211,36 @@ export async function buildReport(type, filters = {}, session) {
       "À vista",
       "Parcelado",
       "Mercado",
+      ...(type === "sold" ? ["Valor vendido", "Vendedor"] : []),
       "Entrada",
     ],
-    rows: products.map((item) => [
-      item.id,
-      item.unit?.name || "—",
-      item.serialOnyx || "—",
-      item.category?.name || "—",
-      item.line?.name || "—",
-      item.supplierModelCode || "—",
-      item.catalogModel?.commercialName || "—",
-      item.ean || "—",
-      item.capacitySizeType || "—",
-      VOLTAGE_LABELS[item.voltage] || item.voltage || "—",
-      CONDITION_LABELS[item.condition] || item.condition,
-      STATUS_LABELS[item.status] || item.status,
-      formatCurrency(item.cashPrice),
-      formatCurrency(item.installmentPrice),
-      formatCurrency(item.marketPrice),
-      formatDateTime(item.entryDate),
-    ]),
+    rows: products.map((item) => {
+      const meta = type === "sold" ? soldMeta(item) : null;
+      return [
+        item.id,
+        item.unit?.name || "—",
+        item.serialOnyx || "—",
+        item.category?.name || "—",
+        item.line?.name || "—",
+        item.supplierModelCode || "—",
+        item.catalogModel?.commercialName || "—",
+        item.ean || "—",
+        item.capacitySizeType || "—",
+        VOLTAGE_LABELS[item.voltage] || item.voltage || "—",
+        CONDITION_LABELS[item.condition] || item.condition,
+        STATUS_LABELS[item.status] || item.status,
+        formatCurrency(item.cashPrice),
+        formatCurrency(item.installmentPrice),
+        formatCurrency(item.marketPrice),
+        ...(type === "sold"
+          ? [
+              meta.soldPrice == null ? "—" : formatCurrency(meta.soldPrice),
+              meta.sellerName || "—",
+            ]
+          : []),
+        formatDateTime(item.entryDate),
+      ];
+    }),
     summary:
       type === "value"
         ? {
@@ -201,7 +249,18 @@ export async function buildReport(type, filters = {}, session) {
             market: products.reduce((sum, item) => sum + (item.marketPrice || 0), 0),
             count: products.length,
           }
-        : null,
+        : type === "sold"
+          ? {
+              count: products.length,
+              cash: products.reduce((sum, item) => {
+                const price = soldMeta(item).soldPrice;
+                return sum + (price || 0);
+              }, 0),
+              installment: 0,
+              market: 0,
+              priceLabel: "valor vendido",
+            }
+          : null,
   };
 }
 

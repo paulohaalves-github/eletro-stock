@@ -78,7 +78,8 @@ export default function ProductDetailPage() {
   const canDeletePhoto = can(me, PERMISSIONS.PHOTO_DELETE);
   const canTransfer = can(me, PERMISSIONS.STOCK_TRANSFER);
   const canRepair = can(me, PERMISSIONS.REPAIR_CREATE) || can(me, PERMISSIONS.REPAIR_VIEW);
-  const canOpenSale = can(me, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, product.openSaleOrder);
+  const linkedSaleOrder = product.saleOrder || product.openSaleOrder || null;
+  const canOpenSale = can(me, PERMISSIONS.SALE_VIEW) && canAccessSaleOrderRecord(me, linkedSaleOrder);
   const canTrash = can(me, PERMISSIONS.PRODUCT_TRASH);
   const inTrash = Boolean(product.deletedAt);
   const closed = CLOSED_STATUSES.includes(product.status);
@@ -193,7 +194,7 @@ export default function ProductDetailPage() {
                 canTransfer && incomingHere && !inTrash ? { label: "Receber", onClick: () => setReceiveOpen(true) } : null,
                 can(me, PERMISSIONS.REPAIR_CREATE) && !inTrash && !product.openWorkOrder ? { label: "Abrir OS", onClick: () => router.push(`/reparos/novo?productId=${product.id}`) } : null,
                 canRepair && product.openWorkOrder ? { label: `Ver OS ${product.openWorkOrder.number}`, onClick: () => router.push(`/reparos/${product.openWorkOrder.id}`) } : null,
-                canOpenSale ? { label: `Ver venda ${product.openSaleOrder.number}`, onClick: () => router.push(`/vendas/${product.openSaleOrder.id}`) } : null,
+                canOpenSale ? { label: `Ver venda ${linkedSaleOrder.number}`, onClick: () => router.push(`/vendas/${linkedSaleOrder.id}`) } : null,
                 canTrash && inActiveUnit && !inTrash ? { label: "Mover para a lixeira", danger: true, onClick: () => setTrashOpen(true) } : null,
                 canTrash && inActiveUnit && inTrash ? { label: "Restaurar", onClick: () => setRestoreOpen(true) } : null,
               ]}
@@ -243,15 +244,26 @@ export default function ProductDetailPage() {
               <Info label="Localização" value={product.location?.name} />
               <Info label="Entrada" value={formatDateTime(product.entryDate)} />
               <Info label="Cadastrado por" value={product.createdBy?.name} />
-              {product.openSaleOrder ? (
+              {linkedSaleOrder ? (
                 <Info
-                  label="Venda em andamento"
+                  label={product.openSaleOrder ? "Venda em andamento" : "Venda"}
                   value={
-                    canOpenSale
-                      ? `${product.openSaleOrder.number}${product.openSaleOrder.reservedUntil ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}` : product.openSaleOrder.itemStatus === "INTERESSE" ? " · em negociação" : ""}`
-                      : product.openSaleOrder.reservedUntil
-                        ? `Reservado até ${formatDate(product.openSaleOrder.reservedUntil)}`
-                        : "Em outra venda"
+                    canOpenSale ? (
+                      <Link href={`/vendas/${linkedSaleOrder.id}`} className="text-accent hover:underline">
+                        {linkedSaleOrder.number}
+                        {product.openSaleOrder?.reservedUntil
+                          ? ` · reserva até ${formatDate(product.openSaleOrder.reservedUntil)}`
+                          : product.openSaleOrder?.itemStatus === "INTERESSE"
+                            ? " · em negociação"
+                            : ""}
+                      </Link>
+                    ) : product.openSaleOrder?.reservedUntil ? (
+                      `Reservado até ${formatDate(product.openSaleOrder.reservedUntil)}`
+                    ) : product.openSaleOrder ? (
+                      "Em outra venda"
+                    ) : (
+                      linkedSaleOrder.number
+                    )
                   }
                 />
               ) : null}

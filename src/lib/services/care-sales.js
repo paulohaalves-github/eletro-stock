@@ -137,11 +137,7 @@ async function resolveCustomer(entry, user, warnings) {
   const phone = customer.phones?.[0]?.phone;
   if (!phone) return { error: "A OV não trouxe o telefone do cliente." };
 
-  let address = String(customer.address || "").trim();
-  if (!address) {
-    address = "Não informado no Care";
-    warnings.push(`OV ${entry.ov}: cliente cadastrado sem endereço no Care.`);
-  }
+  const address = String(customer.address || "").trim() || null;
 
   const created = await createCustomer({
     name,

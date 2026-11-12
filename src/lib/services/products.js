@@ -24,6 +24,7 @@ import {
 export const PRODUCT_ACTIVE_WHERE = { deletedAt: null };
 
 const locationInclude = { locationType: true };
+const saleOrderLinkSelect = { id: true, number: true, status: true, sellerId: true };
 
 const openSaleOrderItemsInclude = {
   saleOrderItems: {
@@ -33,7 +34,7 @@ const openSaleOrderItemsInclude = {
     },
     orderBy: { createdAt: "desc" },
     take: 5,
-    include: { saleOrder: { select: { id: true, number: true, status: true, sellerId: true } } },
+    include: { saleOrder: { select: saleOrderLinkSelect } },
   },
 };
 
@@ -41,7 +42,17 @@ const latestSaleInclude = {
   sales: {
     orderBy: { soldAt: "desc" },
     take: 1,
-    select: { id: true, cashPrice: true, soldAt: true, invoiceNumber: true },
+    select: {
+      id: true,
+      cashPrice: true,
+      soldAt: true,
+      invoiceNumber: true,
+      saleOrderItems: {
+        take: 1,
+        orderBy: { id: "desc" },
+        select: { saleOrder: { select: saleOrderLinkSelect } },
+      },
+    },
   },
 };
 
@@ -115,6 +126,10 @@ function serializeProduct(product) {
   const { workOrders, saleOrderItems, sales, ...rest } = product;
   const openItem = pickOpenSaleItem(saleOrderItems);
   const latestSale = Array.isArray(sales) ? sales[0] || null : null;
+  const openSaleOrder = openItem
+    ? { ...openItem.saleOrder, reservedUntil: openItem.reservedUntil, itemStatus: openItem.status }
+    : null;
+  const completedSaleOrder = latestSale?.saleOrderItems?.[0]?.saleOrder || null;
   return {
     ...rest,
     commercialName: product.catalogModel?.commercialName || null,
@@ -122,9 +137,8 @@ function serializeProduct(product) {
     primaryImage: primary,
     locationPath: formatLocationPath(product.location),
     openWorkOrder: Array.isArray(workOrders) ? workOrders[0] || null : null,
-    openSaleOrder: openItem
-      ? { ...openItem.saleOrder, reservedUntil: openItem.reservedUntil, itemStatus: openItem.status }
-      : null,
+    openSaleOrder,
+    saleOrder: openSaleOrder || completedSaleOrder,
   };
 }
 

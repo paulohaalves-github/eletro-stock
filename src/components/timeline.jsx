@@ -1,5 +1,26 @@
+import Link from "next/link";
 import { MOVEMENT_TYPE_LABELS, STATUS_LABELS } from "@/lib/constants";
 import { formatDateTime, formatLocationPath } from "@/lib/format";
+
+const SALE_ORDER_PATTERN = /(VD-\d{6,})/gi;
+
+function ObservationText({ text }) {
+  const value = String(text || "");
+  const parts = value.split(SALE_ORDER_PATTERN);
+  if (parts.length === 1) return value;
+
+  return parts.map((part, index) => {
+    const match = part.match(/^VD-(\d{6,})$/i);
+    if (!match) return <span key={`${index}-${part}`}>{part}</span>;
+    const saleId = Number(match[1]);
+    if (!Number.isInteger(saleId) || saleId <= 0) return <span key={`${index}-${part}`}>{part}</span>;
+    return (
+      <Link key={`${index}-${part}`} href={`/vendas/${saleId}`} className="font-medium text-accent hover:underline">
+        {part.toUpperCase()}
+      </Link>
+    );
+  });
+}
 
 export function Timeline({ items = [] }) {
   if (!items.length) {
@@ -29,7 +50,11 @@ export function Timeline({ items = [] }) {
               {STATUS_LABELS[item.previousStatus] || item.previousStatus || "—"} → {STATUS_LABELS[item.newStatus] || item.newStatus || "—"}
             </p>
           ) : null}
-          {item.observation && item.type !== "ALTERACAO_LOCALIZACAO" ? <p className="mt-1 text-sm">{item.observation}</p> : null}
+          {item.observation && item.type !== "ALTERACAO_LOCALIZACAO" ? (
+            <p className="mt-1 text-sm">
+              <ObservationText text={item.observation} />
+            </p>
+          ) : null}
         </li>
       ))}
     </ol>

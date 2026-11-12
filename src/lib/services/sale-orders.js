@@ -825,6 +825,7 @@ export async function checkoutSaleOrder(orderId, payload, user) {
     return { entry, item };
   });
 
+  const orderPatch = {};
   if (payload.ov !== undefined) {
     const ov = emptyToNull(payload.ov);
     if (ov && ov.length > 40) throw validationError("A OV do Care deve ter no máximo 40 caracteres.");
@@ -835,7 +836,17 @@ export async function checkoutSaleOrder(orderId, payload, user) {
       });
       if (taken) throw conflict(`A OV ${ov} já está na venda ${taken.number}.`);
     }
-    await prisma.saleOrder.update({ where: { id: order.id }, data: { ov } });
+    orderPatch.ov = ov;
+  }
+
+  const payloadMethod = emptyToNull(payload.paymentMethod);
+  const payloadParcels = Number(payload.installmentCount);
+  const hasPayloadParcels = Number.isInteger(payloadParcels) && payloadParcels > 0;
+  if (payloadMethod) orderPatch.paymentMethod = payloadMethod;
+  if (hasPayloadParcels) orderPatch.installmentCount = payloadParcels;
+
+  if (Object.keys(orderPatch).length) {
+    await prisma.saleOrder.update({ where: { id: order.id }, data: orderPatch });
   }
 
   const invoiceFallback = String(payload.invoiceNumber || "").trim();
@@ -848,6 +859,13 @@ export async function checkoutSaleOrder(orderId, payload, user) {
     const soldPrice = entry.cashPrice == null || entry.cashPrice === "" || !Number.isFinite(quoted) || quoted < 0
       ? liveProduct.cashPrice
       : Math.round(quoted * 100) / 100;
+    const entryMethod = emptyToNull(entry.paymentMethod) || payloadMethod || order.paymentMethod || null;
+    const entryParcelsRaw = Number(entry.installmentCount);
+    const entryParcels = Number.isInteger(entryParcelsRaw) && entryParcelsRaw > 0
+      ? entryParcelsRaw
+      : hasPayloadParcels
+        ? payloadParcels
+        : order.installmentCount || null;
     await prisma.saleOrderItem.update({
       where: { id: item.id },
       data: { cashPrice: soldPrice },
@@ -861,17 +879,20 @@ export async function checkoutSaleOrder(orderId, payload, user) {
       invoiceNumber,
       soldAt,
       cashPrice: soldPrice,
-      paymentMethod: entry.paymentMethod,
-      installmentCount: entry.installmentCount,
+      paymentMethod: entryMethod,
+      installmentCount: entryParcels,
       user,
       fromSaleOrder: true,
     });
   }
 
+  const paymentNote = payloadMethod && hasPayloadParcels
+    ? ` ${payloadMethod}, ${payloadParcels}x.`
+    : "";
   await addEvent(prisma, {
     saleOrderId: order.id,
     type: SALE_ORDER_EVENT_TYPES.CHECKOUT,
-    message: `Caixa deu baixa em ${requested.length} produto(s).`,
+    message: `Caixa deu baixa em ${requested.length} produto(s).${paymentNote}`,
     userId: user.id,
   });
   await persistDerivedStatus(prisma, order.id, user.id);

@@ -83,6 +83,10 @@ function validateCustomerPayload(payload, { partial = false } = {}) {
   }
   if (!partial || payload.document !== undefined) {
     data.document = normalizeDocument(payload.document);
+    if (!data.document) throw validationError("Informe o CPF ou CNPJ do cliente.");
+    if (data.document.length !== 11 && data.document.length !== 14) {
+      throw validationError("CPF/CNPJ inválido. Informe 11 dígitos (CPF) ou 14 (CNPJ).");
+    }
   }
   if (!partial || payload.email !== undefined) {
     data.email = emptyToNull(payload.email);
@@ -92,7 +96,6 @@ function validateCustomerPayload(payload, { partial = false } = {}) {
   }
   if (!partial || payload.address !== undefined) {
     data.address = emptyToNull(payload.address);
-    if (!partial && !data.address) throw validationError("Informe o endereço do cliente.");
   }
   if (!partial || payload.notes !== undefined) {
     data.notes = emptyToNull(payload.notes);

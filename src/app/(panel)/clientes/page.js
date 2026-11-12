@@ -12,6 +12,7 @@ import { listQuery } from "@/lib/pagination";
 import { usePagedList } from "@/hooks/use-paged-list";
 import { can, PERMISSIONS } from "@/lib/permissions";
 import { CustomerPhonesFields, emptyPhoneRow } from "@/components/customer-phones";
+import { CustomerAddressFields } from "@/components/customer-address-fields";
 
 const empty = { name: "", phones: [emptyPhoneRow()], document: "", email: "", address: "", notes: "" };
 
@@ -139,9 +140,13 @@ export default function ClientesPage() {
         <form id="customer-form" onSubmit={create} className="space-y-3">
           <Field label="Nome" required><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <CustomerPhonesFields value={form.phones} onChange={(phones) => setForm({ ...form, phones })} />
-          <Field label="CPF/CNPJ"><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} /></Field>
+          <Field label="CPF/CNPJ" required><Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} placeholder="Somente números" /></Field>
           <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Endereço" required><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número, bairro, cidade" /></Field>
+          <CustomerAddressFields
+            address={form.address}
+            onAddressChange={(address) => setForm({ ...form, address })}
+            disabled={saving}
+          />
           <Field label="Observação"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
         </form>
       </Modal>

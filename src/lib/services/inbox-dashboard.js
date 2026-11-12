@@ -1,5 +1,12 @@
 import { prisma } from "../db";
-import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUSES, INBOX_PROVIDER_LABELS } from "../constants";
+import {
+  CONVERSATION_STATUS_LABELS,
+  CONVERSATION_STATUSES,
+  INBOX_PROVIDER_LABELS,
+  LEAD_STAGE_LABELS,
+  LEAD_STAGES,
+  SALE_ORDER_ITEM_STATUSES,
+} from "../constants";
 import { formatDuration, periodRange } from "../format";
 import { assertInboxSupervisor } from "./inbox-access";
 
@@ -15,8 +22,42 @@ const STATUS_SHORT_LABELS = {
   [CONVERSATION_STATUSES.CLOSED]: "Encerrada",
 };
 
+const LEAD_STAGE_ORDER = [
+  LEAD_STAGES.NEW,
+  LEAD_STAGES.QUALIFYING,
+  LEAD_STAGES.INTERESTED,
+  LEAD_STAGES.WAITLIST,
+  LEAD_STAGES.IN_SALE,
+  LEAD_STAGES.CONVERTED,
+  LEAD_STAGES.AFTER_SALES,
+  LEAD_STAGES.NO_REPLY,
+  LEAD_STAGES.DISCARDED,
+];
+
 function emptyCounts() {
   return { waiting: 0, replied: 0, closed: 0, unassigned: 0, total: 0, open: 0 };
+}
+
+function emptyLeadCounts() {
+  return { leads: 0, converted: 0, inSale: 0, open: 0, lost: 0, amount: 0, soldItems: 0 };
+}
+
+function soldAmount(value) {
+  if (value == null || value === "") return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function itemSoldAmount(item) {
+  const fromSale = soldAmount(item.sale?.cashPrice);
+  if (fromSale != null) return fromSale;
+  const fromItem = soldAmount(item.cashPrice);
+  return fromItem != null ? fromItem : 0;
+}
+
+function averageTicket(amount, converted) {
+  if (!converted) return 0;
+  return amount / converted;
 }
 
 function bump(bucket, status, agentId) {
@@ -26,6 +67,24 @@ function bump(bucket, status, agentId) {
   else if (status === CONVERSATION_STATUSES.CLOSED) bucket.closed += 1;
   if (status !== CONVERSATION_STATUSES.CLOSED) bucket.open += 1;
   if (!agentId && status !== CONVERSATION_STATUSES.CLOSED) bucket.unassigned += 1;
+}
+
+function classifyLead(stage) {
+  if (stage === LEAD_STAGES.CONVERTED) return "converted";
+  if (stage === LEAD_STAGES.IN_SALE) return "inSale";
+  if (stage === LEAD_STAGES.DISCARDED || stage === LEAD_STAGES.NO_REPLY) return "lost";
+  return "open";
+}
+
+function bumpLead(bucket, stage) {
+  bucket.leads += 1;
+  const kind = classifyLead(stage);
+  bucket[kind] += 1;
+}
+
+function conversionRate(converted, leads) {
+  if (!leads) return 0;
+  return converted / leads;
 }
 
 function startOfToday(now) {
@@ -44,15 +103,28 @@ function emptyDashboard(channels = []) {
       unassigned: 0,
       closedToday: 0,
       avgWait: "—",
+      leads: 0,
+      converted: 0,
+      inSale: 0,
+      lost: 0,
+      conversionRate: 0,
+      convertedAmount: 0,
+      ticket: 0,
     },
     byStatus: STATUS_ORDER.map((status) => ({
       status,
       label: STATUS_SHORT_LABELS[status] || CONVERSATION_STATUS_LABELS[status],
       count: 0,
     })),
+    byLeadStage: LEAD_STAGE_ORDER.map((stage) => ({
+      stage,
+      label: LEAD_STAGE_LABELS[stage] || stage,
+      count: 0,
+    })),
     byTeam: [],
     byAgent: [],
     byChannel: [],
+    leadsByChannel: [],
     channels,
   };
 }
@@ -67,6 +139,7 @@ function serializeChannel(channel) {
   return {
     id: channel.id,
     name: channel.name,
+    phoneNumber: channel.phoneNumber || null,
     provider: channel.provider,
     providerLabel: INBOX_PROVIDER_LABELS[channel.provider] || channel.provider,
   };
@@ -102,14 +175,16 @@ export async function getInboxDashboard(session, filters = {}) {
     prisma.inboxConversation.findMany({
       where: conversationWhere({ teamIds, channelId, rangeType, period, from: filters.from, to: filters.to }),
       select: {
+        id: true,
         teamId: true,
         agentId: true,
         channelId: true,
         status: true,
+        commercialStage: true,
         waitingSince: true,
         closedAt: true,
         agent: { select: { id: true, name: true } },
-        channel: { select: { id: true, name: true, provider: true } },
+        channel: { select: { id: true, name: true, phoneNumber: true, provider: true } },
       },
     }),
     prisma.inboxTeam.findMany({
@@ -128,7 +203,7 @@ export async function getInboxDashboard(session, filters = {}) {
           { conversations: { some: { teamId: { in: teamIds } } } },
         ],
       },
-      select: { id: true, name: true, provider: true },
+      select: { id: true, name: true, phoneNumber: true, provider: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -145,8 +220,16 @@ export async function getInboxDashboard(session, filters = {}) {
       { ...channel, ...emptyCounts() },
     ]),
   );
+  const leadsByChannel = new Map(
+    scopedChannels.map((channel) => [
+      channel.id,
+      { ...channel, ...emptyLeadCounts() },
+    ]),
+  );
   const byAgent = new Map();
   const byStatus = Object.fromEntries(STATUS_ORDER.map((status) => [status, 0]));
+  const byLeadStage = Object.fromEntries(LEAD_STAGE_ORDER.map((stage) => [stage, 0]));
+  const leadTotals = emptyLeadCounts();
 
   for (const member of members) {
     if (!member.userId || byAgent.has(member.userId)) continue;
@@ -164,20 +247,26 @@ export async function getInboxDashboard(session, filters = {}) {
 
   for (const row of conversations) {
     byStatus[row.status] = (byStatus[row.status] || 0) + 1;
+    const stage = row.commercialStage || LEAD_STAGES.NEW;
+    byLeadStage[stage] = (byLeadStage[stage] || 0) + 1;
+    bumpLead(leadTotals, stage);
+
     const team = byTeam.get(row.teamId);
     if (team) bump(team, row.status, row.agentId);
 
     if (row.channelId) {
       if (!byChannel.has(row.channelId)) {
-        byChannel.set(row.channelId, {
+        const channelMeta = {
           id: row.channelId,
           name: row.channel?.name || "Canal",
           provider: row.channel?.provider || "",
           providerLabel: INBOX_PROVIDER_LABELS[row.channel?.provider] || row.channel?.provider || "Canal",
-          ...emptyCounts(),
-        });
+        };
+        byChannel.set(row.channelId, { ...channelMeta, ...emptyCounts() });
+        leadsByChannel.set(row.channelId, { ...channelMeta, ...emptyLeadCounts() });
       }
       bump(byChannel.get(row.channelId), row.status, row.agentId);
+      bumpLead(leadsByChannel.get(row.channelId), stage);
     }
 
     if (row.agentId) {
@@ -198,6 +287,36 @@ export async function getInboxDashboard(session, filters = {}) {
     }
   }
 
+  const conversationIds = conversations.map((row) => row.id);
+  const channelByConversation = new Map(conversations.map((row) => [row.id, row.channelId]));
+
+  if (conversationIds.length) {
+    const soldItems = await prisma.saleOrderItem.findMany({
+      where: {
+        status: SALE_ORDER_ITEM_STATUSES.SOLD,
+        saleOrder: { conversationId: { in: conversationIds } },
+      },
+      select: {
+        cashPrice: true,
+        sale: { select: { cashPrice: true } },
+        saleOrder: { select: { conversationId: true } },
+      },
+    });
+
+    for (const item of soldItems) {
+      const amount = itemSoldAmount(item);
+      const conversationId = item.saleOrder?.conversationId;
+      const itemChannelId = channelByConversation.get(conversationId);
+      leadTotals.amount += amount;
+      leadTotals.soldItems += 1;
+      if (itemChannelId && leadsByChannel.has(itemChannelId)) {
+        const bucket = leadsByChannel.get(itemChannelId);
+        bucket.amount += amount;
+        bucket.soldItems += 1;
+      }
+    }
+  }
+
   const waiting = byStatus[CONVERSATION_STATUSES.WAITING_AGENT] || 0;
   const replied = byStatus[CONVERSATION_STATUSES.AGENT_REPLIED] || 0;
   const closed = byStatus[CONVERSATION_STATUSES.CLOSED] || 0;
@@ -215,15 +334,34 @@ export async function getInboxDashboard(session, filters = {}) {
       unassigned: unassigned.open,
       closedToday,
       avgWait,
+      leads: leadTotals.leads,
+      converted: leadTotals.converted,
+      inSale: leadTotals.inSale,
+      lost: leadTotals.lost,
+      conversionRate: conversionRate(leadTotals.converted, leadTotals.leads),
+      convertedAmount: leadTotals.amount,
+      ticket: averageTicket(leadTotals.amount, leadTotals.converted),
     },
     byStatus: STATUS_ORDER.map((status) => ({
       status,
       label: STATUS_SHORT_LABELS[status] || CONVERSATION_STATUS_LABELS[status],
       count: byStatus[status] || 0,
     })),
+    byLeadStage: LEAD_STAGE_ORDER.map((stage) => ({
+      stage,
+      label: LEAD_STAGE_LABELS[stage] || stage,
+      count: byLeadStage[stage] || 0,
+    })).filter((row) => row.count > 0 || LEAD_STAGE_ORDER.includes(row.stage)),
     byTeam: [...byTeam.values()].sort((a, b) => b.open - a.open || a.name.localeCompare(b.name, "pt-BR")),
     byAgent: agents,
     byChannel: [...byChannel.values()].sort((a, b) => b.open - a.open || a.name.localeCompare(b.name, "pt-BR")),
+    leadsByChannel: [...leadsByChannel.values()]
+      .map((row) => ({
+        ...row,
+        conversionRate: conversionRate(row.converted, row.leads),
+        ticket: averageTicket(row.amount, row.converted),
+      }))
+      .sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name, "pt-BR")),
     channels: channelOptions,
   };
 }
