@@ -211,7 +211,8 @@ export async function listSoldCommercialRows(session, range) {
         reserverName: reservedBy.name,
         saleNumber: item.saleOrder?.number || null,
         invoiceNumber: item.invoiceNumber || item.sale?.invoiceNumber || null,
-        customerName: item.saleOrder?.customer?.name || "—",
+        customerId: item.saleOrder?.customer?.id || 0,
+        customerName: item.saleOrder?.customer?.name || "Sem cliente",
         origin: "Comercial",
         product: item.product,
       });
@@ -231,11 +232,141 @@ export async function listSoldCommercialRows(session, range) {
       reserverName: sale.createdBy?.name || "Sem reserva",
       saleNumber: null,
       invoiceNumber: sale.invoiceNumber || null,
-      customerName: sale.customer?.name || "—",
+      customerId: sale.customer?.id || 0,
+      customerName: sale.customer?.name || "Sem cliente",
       origin: "Baixa avulsa",
       product: sale.product,
     })),
   ].sort((a, b) => new Date(b.soldAt) - new Date(a.soldAt));
+}
+
+async function priorCustomerIdSet(unitId, customerIds, before) {
+  const ids = [...new Set(customerIds.filter(Boolean))];
+  if (!ids.length) return new Set();
+
+  const [fromOrders, fromStandalone] = await Promise.all([
+    prisma.saleOrder.findMany({
+      where: {
+        unitId,
+        customerId: { in: ids },
+        items: {
+          some: {
+            status: SALE_ORDER_ITEM_STATUSES.SOLD,
+            soldAt: { lt: before },
+          },
+        },
+      },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    }),
+    prisma.sale.findMany({
+      where: {
+        unitId,
+        customerId: { in: ids },
+        soldAt: { lt: before },
+        saleOrderItems: { none: {} },
+      },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    }),
+  ]);
+
+  return new Set(
+    [...fromOrders, ...fromStandalone]
+      .map((row) => row.customerId)
+      .filter(Boolean),
+  );
+}
+
+function buildCustomerInsights(rows, priorIds, totalAmount) {
+  const map = new Map();
+
+  for (const row of rows) {
+    const id = row.customerId || 0;
+    const key = id || `name:${row.customerName || "Sem cliente"}`;
+    const current = map.get(key) || {
+      id,
+      name: row.customerName || "Sem cliente",
+      amount: 0,
+      itemCount: 0,
+      orders: new Set(),
+    };
+    current.amount += row.amount;
+    current.itemCount += 1;
+    current.orders.add(row.saleNumber || row.id);
+    if (row.customerName && current.name === "Sem cliente") current.name = row.customerName;
+    map.set(key, current);
+  }
+
+  const customers = [...map.values()].map((row) => {
+    const orderCount = row.orders.size;
+    const ticket = orderCount ? row.amount / orderCount : 0;
+    const returning = Boolean(row.id && priorIds.has(row.id));
+    return {
+      id: row.id,
+      name: row.name,
+      amount: row.amount,
+      itemCount: row.itemCount,
+      orderCount,
+      ticket,
+      recurring: orderCount >= 2,
+      returning,
+      segment: returning ? "recorrente" : "novo",
+      share: totalAmount ? row.amount / totalAmount : 0,
+    };
+  });
+
+  customers.sort((a, b) => b.amount - a.amount || b.orderCount - a.orderCount || a.name.localeCompare(b.name, "pt-BR"));
+
+  const activeCount = customers.length;
+  const recurringCount = customers.filter((row) => row.recurring).length;
+  const returningCount = customers.filter((row) => row.returning).length;
+  const newCount = customers.filter((row) => !row.returning).length;
+  const returningAmount = customers.filter((row) => row.returning).reduce((sum, row) => sum + row.amount, 0);
+  const newAmount = totalAmount - returningAmount;
+  const topSlice = Math.max(1, Math.ceil(customers.length * 0.2));
+  const topAmount = customers.slice(0, topSlice).reduce((sum, row) => sum + row.amount, 0);
+
+  return {
+    cards: {
+      activeCustomers: activeCount,
+      recurringCustomers: recurringCount,
+      recurringShare: activeCount ? recurringCount / activeCount : 0,
+      returningCustomers: returningCount,
+      newCustomers: newCount,
+      ticketPerCustomer: activeCount ? totalAmount / activeCount : 0,
+      top20Share: totalAmount ? topAmount / totalAmount : 0,
+      returningAmount,
+      newAmount,
+      returningShare: totalAmount ? returningAmount / totalAmount : 0,
+      newShare: totalAmount ? newAmount / totalAmount : 0,
+    },
+    byRevenue: customers.slice(0, 15),
+    byFrequency: [...customers]
+      .filter((row) => row.orderCount >= 2)
+      .sort((a, b) => b.orderCount - a.orderCount || b.amount - a.amount)
+      .slice(0, 15),
+    byTicket: [...customers]
+      .filter((row) => row.orderCount >= 1)
+      .sort((a, b) => b.ticket - a.ticket || b.amount - a.amount)
+      .slice(0, 15),
+    segments: [
+      {
+        id: "returning",
+        name: "Recorrentes (já compraram antes)",
+        count: returningCount,
+        amount: returningAmount,
+        share: totalAmount ? returningAmount / totalAmount : 0,
+      },
+      {
+        id: "new",
+        name: "Novos no período",
+        count: newCount,
+        amount: newAmount,
+        share: totalAmount ? newAmount / totalAmount : 0,
+      },
+    ],
+  };
 }
 
 export async function getSaleDashboard(session, { period = "30d", from, to } = {}) {
@@ -264,6 +395,12 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
       _count: { _all: true },
     }),
   ]);
+
+  const priorIds = await priorCustomerIdSet(
+    unitId,
+    rows.map((row) => row.customerId),
+    range.start,
+  );
 
   const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
   const totalCount = rows.length;
@@ -327,6 +464,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
     byAttendant: ranked(byAttendant, totalAmount),
     byReserver: ranked(byReserver, totalAmount),
     byPayment: ranked(byPayment, totalAmount),
+    customers: buildCustomerInsights(rows, priorIds, totalAmount),
     daily: days,
     recent: rows.slice(0, 8),
   };
