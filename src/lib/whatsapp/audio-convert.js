@@ -49,8 +49,7 @@ export async function convertToWhatsAppVoice(buffer) {
   await fs.promises.writeFile(inputPath, buffer);
   try {
     const stderr = await new Promise((resolve, reject) => {
-      const proc = spawn(
-        ffmpeg,
+      const proc = spawn(/* turbopackIgnore: true */ ffmpeg,
         [
           "-hide_banner",
           "-y",
