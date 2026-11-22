@@ -29,13 +29,28 @@ function errorMessage(error) {
 
 function carePayment(payment) {
   const methods = (payment?.methods || []).map((value) => String(value || "").trim());
-  const count = Number(payment?.installmentCount || 0);
+  const count = Number(payment?.installmentCount || methods.length || 0);
   const filled = methods.filter(Boolean);
-  const unique = new Set(filled.map((value) => value.toLocaleLowerCase("pt-BR")));
-  if (!count || filled.length !== count || unique.size !== 1) {
+  if (!filled.length) {
     return { paymentMethod: null, installmentCount: null };
   }
-  return { paymentMethod: filled[0], installmentCount: count };
+  const scores = new Map();
+  for (const value of filled) {
+    const key = value.toLocaleLowerCase("pt-BR");
+    const current = scores.get(key) || { value, count: 0 };
+    current.count += 1;
+    scores.set(key, current);
+  }
+  const ranked = [...scores.values()].sort((left, right) => right.count - left.count);
+  const top = ranked[0];
+  const tied = ranked.length > 1 && ranked[1].count === top.count;
+  const paymentMethod = ranked.length === 1 || !tied
+    ? top.value
+    : "Misto";
+  return {
+    paymentMethod,
+    installmentCount: count > 0 ? count : filled.length,
+  };
 }
 
 function normalizeName(value) {
@@ -332,7 +347,8 @@ export async function importCareSales(entries, user, onStep = () => {}) {
                 where: { id: order.id },
                 data: {
                   ov,
-                  ...(paymentMethod && installmentCount ? { paymentMethod, installmentCount } : {}),
+                  ...(paymentMethod ? { paymentMethod } : {}),
+                  ...(installmentCount ? { installmentCount } : {}),
                 },
               });
             } catch (error) {

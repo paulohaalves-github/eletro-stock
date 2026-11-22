@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -39,6 +39,33 @@ import { MAX_TRANSFER_BATCH } from "@/lib/validations";
 import { MultiSelect } from "@/components/multi-select";
 
 const EMPTY_FILTERS = EMPTY_ESTOQUE_FILTERS;
+
+const ADVANCED_FILTER_KEYS = [
+  "voltage",
+  "minPrice",
+  "maxPrice",
+  "from",
+  "priceUpdatedOn",
+  "stalePriceDays",
+  "locationTypeId",
+  "locationId",
+  "commercialPhoto",
+];
+
+function hasAdvancedFilters(filters) {
+  return ADVANCED_FILTER_KEYS.some((key) => String(filters?.[key] || "").trim());
+}
+
+function multiLabel(value, options, emptyLabel) {
+  const ids = parseFilterList(value);
+  if (!ids.length) return emptyLabel;
+  const labels = ids
+    .map((id) => options.find((item) => String(item.value) === String(id))?.label || id)
+    .filter(Boolean);
+  if (!labels.length) return emptyLabel;
+  if (labels.length === 1) return labels[0];
+  return `${labels[0]} +${labels.length - 1}`;
+}
 
 function buildQuery(pageNumber, q, filters, sortState) {
   const search = new URLSearchParams({
@@ -134,6 +161,7 @@ function EstoqueContent() {
   const [exporting, setExporting] = useState(false);
   const [trashing, setTrashing] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(() => hasAdvancedFilters(filtersFromParams(params)));
 
   const fetchPage = useCallback(async (pageNumber, { append = false, qValue, filterValue, sortValue } = {}) => {
     const searchQ = qValue !== undefined ? qValue : q;
@@ -183,8 +211,11 @@ function EstoqueContent() {
         setQ(qValue);
         setFilters(filterValue);
         setSort(sortValue);
+        if (hasAdvancedFilters(filterValue)) setMoreFiltersOpen(true);
         router.replace(estoqueListPath(qValue, filterValue, sortValue));
       }
+    } else if (hasAdvancedFilters(filterValue)) {
+      setMoreFiltersOpen(true);
     }
     void fetchPage(1, { qValue, filterValue, sortValue });
     // Carga inicial: URL, ou últimos filtros da sessão se a listagem vier limpa.
@@ -197,11 +228,157 @@ function EstoqueContent() {
   const canTrash = me ? can(me, PERMISSIONS.PRODUCT_TRASH) : false;
   const canImportPrices = me ? can(me, PERMISSIONS.PRICE_IMPORT) : false;
 
-  function searchNow(qValue) {
+  function searchNow(qValue, filterValue) {
     const nextQ = qValue !== undefined ? qValue : q;
+    const nextFilters = filterValue || filters;
     if (qValue !== undefined) setQ(qValue);
-    router.replace(estoqueListPath(nextQ, filters, sort));
-    void fetchPage(1, { qValue: nextQ, filterValue: filters, sortValue: sort });
+    if (filterValue) setFilters(filterValue);
+    router.replace(estoqueListPath(nextQ, nextFilters, sort));
+    void fetchPage(1, { qValue: nextQ, filterValue: nextFilters, sortValue: sort });
+  }
+
+  const categoryOptions = useMemo(
+    () => categories.map((item) => ({ value: item.id, label: item.name })),
+    [categories],
+  );
+  const manufacturerOptions = useMemo(
+    () => manufacturers.map((item) => ({ value: item.id, label: item.name })),
+    [manufacturers],
+  );
+  const conditionOptions = useMemo(
+    () => Object.entries(CONDITION_LABELS).map(([value, label]) => ({ value, label })),
+    [],
+  );
+  const statusOptions = useMemo(
+    () => Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
+    [],
+  );
+  const voltageOptions = useMemo(
+    () => Object.entries(VOLTAGE_LABELS).map(([value, label]) => ({ value, label })),
+    [],
+  );
+  const locationTypeOptions = useMemo(
+    () => locationTypes.map((item) => ({ value: item.id, label: item.name })),
+    [locationTypes],
+  );
+  const locationOptions = useMemo(
+    () => locations
+      .filter((item) => parseFilterList(filters.locationTypeId).includes(String(item.locationTypeId)))
+      .map((item) => ({ value: item.id, label: item.name })),
+    [locations, filters.locationTypeId],
+  );
+
+  const filterChips = useMemo(() => {
+    const chips = [];
+    if (String(applied.q || "").trim()) {
+      chips.push({ key: "q", label: `Busca: ${applied.q}`, clear: () => ({ q: "", filters: applied.filters }) });
+    }
+    const f = applied.filters || EMPTY_FILTERS;
+    if (f.categoryId) {
+      chips.push({
+        key: "categoryId",
+        label: `Categoria: ${multiLabel(f.categoryId, categoryOptions, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, categoryId: "" } }),
+      });
+    }
+    if (f.manufacturerId) {
+      chips.push({
+        key: "manufacturerId",
+        label: `Fabricante: ${multiLabel(f.manufacturerId, manufacturerOptions, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, manufacturerId: "" } }),
+      });
+    }
+    if (f.status) {
+      chips.push({
+        key: "status",
+        label: `Status: ${multiLabel(f.status, statusOptions, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, status: "" } }),
+      });
+    }
+    if (f.condition) {
+      chips.push({
+        key: "condition",
+        label: `Condição: ${multiLabel(f.condition, conditionOptions, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, condition: "" } }),
+      });
+    }
+    if (f.voltage) {
+      chips.push({
+        key: "voltage",
+        label: `Tensão: ${multiLabel(f.voltage, voltageOptions, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, voltage: "" } }),
+      });
+    }
+    if (f.commercialPhoto === "with") {
+      chips.push({ key: "commercialPhoto", label: "Com foto comercial", clear: () => ({ q: applied.q, filters: { ...f, commercialPhoto: "" } }) });
+    }
+    if (f.commercialPhoto === "without") {
+      chips.push({ key: "commercialPhoto", label: "Sem foto comercial", clear: () => ({ q: applied.q, filters: { ...f, commercialPhoto: "" } }) });
+    }
+    if (f.minPrice) {
+      chips.push({ key: "minPrice", label: `Preço mín.: ${f.minPrice}`, clear: () => ({ q: applied.q, filters: { ...f, minPrice: "" } }) });
+    }
+    if (f.maxPrice) {
+      chips.push({ key: "maxPrice", label: `Preço máx.: ${f.maxPrice}`, clear: () => ({ q: applied.q, filters: { ...f, maxPrice: "" } }) });
+    }
+    if (f.from) {
+      chips.push({ key: "from", label: `Entrada: ${formatDate(f.from)}`, clear: () => ({ q: applied.q, filters: { ...f, from: "" } }) });
+    }
+    if (f.priceUpdatedOn) {
+      chips.push({
+        key: "priceUpdatedOn",
+        label: `Preço atualizado: ${formatDate(f.priceUpdatedOn)}`,
+        clear: () => ({ q: applied.q, filters: { ...f, priceUpdatedOn: "" } }),
+      });
+    }
+    if (f.stalePriceDays) {
+      const stale = PRICE_STALE_DAYS.find((item) => item.value === f.stalePriceDays)?.label || f.stalePriceDays;
+      chips.push({
+        key: "stalePriceDays",
+        label: `Desatualizado: ${stale}`,
+        clear: () => ({ q: applied.q, filters: { ...f, stalePriceDays: "" } }),
+      });
+    }
+    if (f.locationTypeId) {
+      chips.push({
+        key: "locationTypeId",
+        label: `Tipo local: ${multiLabel(f.locationTypeId, locationTypeOptions, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, locationTypeId: "", locationId: "" } }),
+      });
+    }
+    if (f.locationId) {
+      const allLocations = locations.map((item) => ({ value: item.id, label: item.name }));
+      chips.push({
+        key: "locationId",
+        label: `Local: ${multiLabel(f.locationId, allLocations, "—")}`,
+        clear: () => ({ q: applied.q, filters: { ...f, locationId: "" } }),
+      });
+    }
+    return chips;
+  }, [
+    applied,
+    categoryOptions,
+    manufacturerOptions,
+    statusOptions,
+    conditionOptions,
+    voltageOptions,
+    locationTypeOptions,
+    locations,
+  ]);
+
+  function clearAllFilters() {
+    setQ("");
+    setFilters(EMPTY_FILTERS);
+    setSort(EMPTY_ESTOQUE_SORT);
+    setMoreFiltersOpen(false);
+    clearEstoqueListState();
+    router.replace("/estoque");
+    void fetchPage(1, { qValue: "", filterValue: EMPTY_FILTERS, sortValue: EMPTY_ESTOQUE_SORT });
+  }
+
+  function removeChip(chip) {
+    const next = chip.clear();
+    searchNow(next.q, next.filters);
   }
 
   function sortBy(key) {
@@ -359,7 +536,7 @@ function EstoqueContent() {
         }
       />
 
-      <Card className="mb-4 space-y-3">
+      <Card className="mb-4 space-y-4">
         <ScanField
           value={q}
           onChange={setQ}
@@ -369,111 +546,77 @@ function EstoqueContent() {
           }}
           placeholder="ID, Serial Onyx, EAN, model code, categoria..."
         />
-        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <MultiSelect
-            placeholder="Categoria"
-            emptyLabel="Todas as categorias"
-            value={filters.categoryId}
-            onChange={(categoryId) => setFilters({ ...filters, categoryId })}
-            options={categories.map((item) => ({ value: item.id, label: item.name }))}
-          />
-          <MultiSelect
-            placeholder="Fabricante"
-            emptyLabel="Todos os fabricantes"
-            value={filters.manufacturerId}
-            onChange={(manufacturerId) => setFilters({ ...filters, manufacturerId })}
-            options={manufacturers.map((item) => ({ value: item.id, label: item.name }))}
-          />
-          <MultiSelect
-            placeholder="Condição"
-            emptyLabel="Todas as condições"
-            value={filters.condition}
-            onChange={(condition) => setFilters({ ...filters, condition })}
-            options={Object.entries(CONDITION_LABELS).map(([value, label]) => ({ value, label }))}
-          />
-          <MultiSelect
-            placeholder="Status"
-            emptyLabel="Todos os status"
-            value={filters.status}
-            onChange={(status) => setFilters({ ...filters, status })}
-            options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
-          />
-          <Select value={filters.commercialPhoto || ""} onChange={(e) => setFilters({ ...filters, commercialPhoto: e.target.value })}>
-            <option value="">Foto comercial</option>
-            <option value="with">Com foto comercial</option>
-            <option value="without">Sem foto comercial</option>
-          </Select>
-          <MultiSelect
-            placeholder="Tensão"
-            emptyLabel="Todas as tensões"
-            value={filters.voltage}
-            onChange={(voltage) => setFilters({ ...filters, voltage })}
-            options={Object.entries(VOLTAGE_LABELS).map(([value, label]) => ({ value, label }))}
-          />
-          <Input placeholder="Preço mín." value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} />
-          <Input placeholder="Preço máx." value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
-          <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
-          <Field label="Preço atualizado em">
-            <Input
-              type="date"
-              value={filters.priceUpdatedOn}
-              onChange={(e) => setFilters({ ...filters, priceUpdatedOn: e.target.value })}
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Field label="Categoria">
+            <MultiSelect
+              placeholder="Todas as categorias"
+              emptyLabel="Todas as categorias"
+              value={filters.categoryId}
+              onChange={(categoryId) => setFilters({ ...filters, categoryId })}
+              options={categoryOptions}
             />
           </Field>
-          <Select
-            value={filters.stalePriceDays}
-            onChange={(e) => setFilters({ ...filters, stalePriceDays: e.target.value })}
-          >
-            <option value="">Preço desatualizado</option>
-            {PRICE_STALE_DAYS.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </Select>
-          <MultiSelect
-            placeholder="Tipo de localização"
-            emptyLabel="Todos os tipos"
-            value={filters.locationTypeId}
-            onChange={(locationTypeId) => {
-              const typeIds = new Set(parseFilterList(locationTypeId));
-              const allowed = new Set(
-                locations.filter((item) => typeIds.has(String(item.locationTypeId))).map((item) => String(item.id)),
-              );
-              const locationId = parseFilterList(filters.locationId).filter((id) => allowed.has(id)).join(",");
-              setFilters({ ...filters, locationTypeId, locationId });
-            }}
-            options={locationTypes.map((item) => ({ value: item.id, label: item.name }))}
-          />
-          <MultiSelect
-            placeholder={filters.locationTypeId ? "Localização" : "Selecione o tipo"}
-            emptyLabel="Todas as localizações"
-            value={filters.locationId}
-            onChange={(locationId) => setFilters({ ...filters, locationId })}
-            disabled={!filters.locationTypeId}
-            options={locations
-              .filter((item) => parseFilterList(filters.locationTypeId).includes(String(item.locationTypeId)))
-              .map((item) => ({ value: item.id, label: item.name }))}
-          />
+          <Field label="Fabricante">
+            <MultiSelect
+              placeholder="Todos os fabricantes"
+              emptyLabel="Todos os fabricantes"
+              value={filters.manufacturerId}
+              onChange={(manufacturerId) => setFilters({ ...filters, manufacturerId })}
+              options={manufacturerOptions}
+            />
+          </Field>
+          <Field label="Status">
+            <MultiSelect
+              placeholder="Todos os status"
+              emptyLabel="Todos os status"
+              value={filters.status}
+              onChange={(status) => setFilters({ ...filters, status })}
+              options={statusOptions}
+            />
+          </Field>
+          <Field label="Condição">
+            <MultiSelect
+              placeholder="Todas as condições"
+              emptyLabel="Todas as condições"
+              value={filters.condition}
+              onChange={(condition) => setFilters({ ...filters, condition })}
+              options={conditionOptions}
+            />
+          </Field>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {data.items.length ? (
-            <button type="button" className="text-sm text-accent" onClick={() => toggleVisible(!allVisibleSelected)}>
-              {allVisibleSelected ? "Limpar seleção visível" : "Selecionar visíveis"}
-            </button>
-          ) : <span />}
+
+        {filterChips.length ? (
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setQ("");
-                setFilters(EMPTY_FILTERS);
-                setSort(EMPTY_ESTOQUE_SORT);
-                clearEstoqueListState();
-                router.replace("/estoque");
-                void fetchPage(1, { qValue: "", filterValue: EMPTY_FILTERS, sortValue: EMPTY_ESTOQUE_SORT });
-              }}
-              disabled={loading}
-            >
+            {filterChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={() => removeChip(chip)}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-muted hover:border-accent/40 hover:text-text"
+              >
+                <span className="truncate">{chip.label}</span>
+                <span className="text-accent" aria-hidden>×</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setMoreFiltersOpen((open) => !open)}
+            className="gap-1.5"
+          >
+            {moreFiltersOpen ? "Ocultar filtros" : "Mais filtros"}
+            <ChevronDown className={cn("h-4 w-4 transition", moreFiltersOpen ? "rotate-180" : "")} />
+            {hasAdvancedFilters(filters) && !moreFiltersOpen ? (
+              <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">ativo</span>
+            ) : null}
+          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={clearAllFilters} disabled={loading}>
               Limpar filtros
             </Button>
             <Button type="button" onClick={() => searchNow()} disabled={loading}>
@@ -481,7 +624,102 @@ function EstoqueContent() {
             </Button>
           </div>
         </div>
+
+        {moreFiltersOpen ? (
+          <div className="space-y-4 border-t border-border pt-4">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Preço</p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <Field label="Preço mín.">
+                  <Input type="number" min="0" step="0.01" value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} />
+                </Field>
+                <Field label="Preço máx.">
+                  <Input type="number" min="0" step="0.01" value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
+                </Field>
+                <Field label="Preço atualizado em">
+                  <Input type="date" value={filters.priceUpdatedOn} onChange={(e) => setFilters({ ...filters, priceUpdatedOn: e.target.value })} />
+                </Field>
+                <Field label="Preço desatualizado">
+                  <Select value={filters.stalePriceDays} onChange={(e) => setFilters({ ...filters, stalePriceDays: e.target.value })}>
+                    <option value="">Qualquer</option>
+                    {PRICE_STALE_DAYS.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Localização</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Tipo de localização">
+                  <MultiSelect
+                    placeholder="Todos os tipos"
+                    emptyLabel="Todos os tipos"
+                    value={filters.locationTypeId}
+                    onChange={(locationTypeId) => {
+                      const typeIds = new Set(parseFilterList(locationTypeId));
+                      const allowed = new Set(
+                        locations.filter((item) => typeIds.has(String(item.locationTypeId))).map((item) => String(item.id)),
+                      );
+                      const locationId = parseFilterList(filters.locationId).filter((id) => allowed.has(id)).join(",");
+                      setFilters({ ...filters, locationTypeId, locationId });
+                    }}
+                    options={locationTypeOptions}
+                  />
+                </Field>
+                <Field label="Localização">
+                  <MultiSelect
+                    placeholder={filters.locationTypeId ? "Todas as localizações" : "Selecione o tipo"}
+                    emptyLabel="Todas as localizações"
+                    value={filters.locationId}
+                    onChange={(locationId) => setFilters({ ...filters, locationId })}
+                    disabled={!filters.locationTypeId}
+                    options={locationOptions}
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Outros</p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <Field label="Tensão">
+                  <MultiSelect
+                    placeholder="Todas as tensões"
+                    emptyLabel="Todas as tensões"
+                    value={filters.voltage}
+                    onChange={(voltage) => setFilters({ ...filters, voltage })}
+                    options={voltageOptions}
+                  />
+                </Field>
+                <Field label="Foto comercial">
+                  <Select value={filters.commercialPhoto || ""} onChange={(e) => setFilters({ ...filters, commercialPhoto: e.target.value })}>
+                    <option value="">Qualquer</option>
+                    <option value="with">Com foto comercial</option>
+                    <option value="without">Sem foto comercial</option>
+                  </Select>
+                </Field>
+                <Field label="Entrada a partir de">
+                  <Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
+                </Field>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </Card>
+
+      {data.items.length ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" className="text-sm text-accent" onClick={() => toggleVisible(!allVisibleSelected)}>
+            {allVisibleSelected ? "Limpar seleção visível" : "Selecionar visíveis"}
+          </button>
+          {selected.size ? (
+            <p className="text-xs text-muted">{selected.size} selecionado(s)</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading && !data.items.length ? (
         <p className="text-sm text-muted">Carregando produtos...</p>

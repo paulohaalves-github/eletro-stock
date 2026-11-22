@@ -256,32 +256,73 @@ async function readCareProducts(page) {
 async function readCarePayment(page) {
   await page.waitForFunction(() => {
     const label = (cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const isMethod = (text) => text.includes("forma") && (text.includes("pagamento") || text.includes("pagto"));
     const fieldset = [...document.querySelectorAll("fieldset")].find((node) => /dados do recebimento/i.test(node.querySelector("legend")?.textContent || ""));
     const root = fieldset || document.querySelector("#dados_recebimento") || document;
-    return [...root.querySelectorAll("td, th")].some((cell) => label(cell) === "forma de pagamento");
-  }, { timeout: 8000 }).catch(() => null);
+    if ([...root.querySelectorAll("td, th")].some((cell) => isMethod(label(cell)))) return true;
+    return [...document.querySelectorAll("select[id*='recebimento_forma'], select[name*='recebimento_forma']")]
+      .some((select) => String(select.value || "").trim());
+  }, { timeout: 12000 }).catch(() => null);
   return page.evaluate(() => {
     const label = (cell) => (cell.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const isMethodHeader = (text) => text.includes("forma") && (text.includes("pagamento") || text.includes("pagto"));
+    const isParcelHeader = (text) => text.includes("parcela");
+    const cellMethod = (cell) => {
+      if (!cell) return "";
+      const select = cell.querySelector("select");
+      if (select) {
+        const selected = select.options?.[select.selectedIndex];
+        const fromOption = (selected?.textContent || selected?.label || select.value || "").replace(/\s+/g, " ").trim();
+        if (fromOption && !/^0+$/.test(fromOption) && !/^selecione/i.test(fromOption)) return fromOption;
+      }
+      const input = cell.querySelector("input:not([type='hidden'])");
+      if (input) {
+        const fromInput = String(input.value || "").replace(/\s+/g, " ").trim();
+        if (fromInput) return fromInput;
+      }
+      return (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim();
+    };
+
     const fieldset = [...document.querySelectorAll("fieldset")].find((node) => /dados do recebimento/i.test(node.querySelector("legend")?.textContent || ""));
     const root = fieldset || document.querySelector("#dados_recebimento") || document;
     const table = [...root.querySelectorAll("table")].find((candidate) => {
-      const headers = [...candidate.querySelectorAll("thead td, thead th")];
-      const hasMethod = headers.some((cell) => label(cell) === "forma de pagamento");
-      const hasParcel = headers.some((cell) => label(cell) === "parcela");
+      const headers = [...candidate.querySelectorAll("thead td, thead th, tr:first-child td, tr:first-child th")];
+      const hasMethod = headers.some((cell) => isMethodHeader(label(cell)));
+      const hasParcel = headers.some((cell) => isParcelHeader(label(cell)));
       const rows = [...candidate.querySelectorAll("tbody tr")].filter((row) => (row.innerText || row.textContent || "").trim());
       return hasMethod && hasParcel && rows.length;
     });
-    if (!table) return { methods: [], installmentCount: 0 };
-    const headers = [...table.querySelectorAll("thead td, thead th")];
-    const methodHeader = headers.find((cell) => label(cell) === "forma de pagamento");
-    if (!methodHeader || methodHeader.cellIndex < 0) return { methods: [], installmentCount: 0 };
+
+    if (table) {
+      const headers = [...table.querySelectorAll("thead td, thead th")];
+      const headerRow = headers.length
+        ? headers
+        : [...(table.querySelector("tr")?.cells || [])];
+      const methodHeader = [...headerRow].find((cell) => isMethodHeader(label(cell)));
+      if (methodHeader && methodHeader.cellIndex >= 0) {
+        const methods = [];
+        for (const row of table.querySelectorAll("tbody tr")) {
+          const rowText = (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim();
+          if (!rowText || !/\d/.test(rowText)) continue;
+          if (/estorno/i.test(rowText) && !cellMethod(row.cells?.[methodHeader.cellIndex])) continue;
+          methods.push(cellMethod(row.cells?.[methodHeader.cellIndex]));
+        }
+        if (methods.length) return { methods, installmentCount: methods.length };
+      }
+    }
+
+    const selects = [...document.querySelectorAll("select[id*='recebimento_forma'], select[name*='recebimento_forma']")]
+      .filter((select) => {
+        const id = String(select.id || select.name || "");
+        return /recebimento_forma/i.test(id) && !/estorno/i.test(id);
+      });
     const methods = [];
-    for (const row of table.querySelectorAll("tbody tr")) {
-      const rowText = (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim();
-      if (!rowText || !/\d/.test(rowText)) continue;
-      const cell = row.cells?.[methodHeader.cellIndex];
-      const method = (cell?.innerText || cell?.textContent || "").replace(/\s+/g, " ").trim();
-      methods.push(method);
+    for (const select of selects) {
+      if (select.offsetParent === null && select.getAttribute("type") === "hidden") continue;
+      const selected = select.options?.[select.selectedIndex];
+      const value = (selected?.textContent || selected?.label || select.value || "").replace(/\s+/g, " ").trim();
+      if (!value || /^0+$/.test(value) || /^selecione/i.test(value) || /^--/.test(value)) continue;
+      methods.push(value);
     }
     return { methods, installmentCount: methods.length };
   }).catch(() => ({ methods: [], installmentCount: 0 }));
@@ -648,8 +689,10 @@ export async function collectCareFinalizedSales(onStep = () => {}, { skipOvs = [
           payment,
           soldAt,
         });
+        const filledMethods = (payment.methods || []).map((value) => String(value || "").trim()).filter(Boolean);
+        const uniqueMethods = [...new Set(filledMethods.map((value) => value.toLocaleLowerCase("pt-BR")))];
         const paymentLabel = payment.installmentCount
-          ? `${payment.methods[0] || "sem forma"}, ${payment.installmentCount}x`
+          ? `${uniqueMethods.length > 1 ? "Misto" : (filledMethods[0] || "sem forma")}, ${payment.installmentCount}x`
           : "sem recebimento";
         const soldLabel = soldAt
           ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(soldAt))
