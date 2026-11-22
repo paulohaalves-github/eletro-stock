@@ -98,7 +98,7 @@ export function SalesDashboard({ embedded = false }) {
         title={embedded ? null : "Dashboard comercial"}
         subtitle={
           data.unit
-            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Desconto compara com à vista (1x) ou parcelado (2x+), conforme o recebimento. Vendedor é o responsável pela venda; atendente é quem concluiu a baixa.`
+            ? `Faturamento pelo valor vendido na baixa, em ${data.unit.name}. Desconto compara com à vista (1x) ou parcelado (2x+), conforme o recebimento. Vendedor é o responsável pela venda; quem reservou é quem fez a reserva; atendente é quem concluiu a baixa.`
             : "Faturamento pelo valor vendido na baixa."
         }
         actions={
@@ -183,6 +183,7 @@ export function SalesDashboard({ embedded = false }) {
       <div className="mt-6 grid gap-4 xl:grid-cols-2">
         <BreakdownTable title="Por tipo de produto" empty="Nenhuma baixa por categoria no período." rows={data.byType} />
         <BreakdownTable title="Por vendedor" empty="Nenhuma baixa por vendedor no período." rows={data.bySeller} />
+        <BreakdownTable title="Por quem reservou" empty="Nenhuma baixa com reserva no período." rows={data.byReserver || []} />
         <BreakdownTable title="Por atendente" empty="Nenhuma baixa por atendente no período." rows={data.byAttendant} />
         <BreakdownTable title="Por forma de pagamento" empty="Nenhuma baixa com forma de pagamento no período." rows={data.byPayment} />
       </div>

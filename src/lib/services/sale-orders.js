@@ -317,7 +317,11 @@ function deriveStatus(order, items = order.items || []) {
   if (sold.length && (ordered.length || reserved.length || active.length > sold.length)) {
     return SALE_ORDER_STATUSES.PARTIAL;
   }
-  if (order.orderedAt || ordered.length) return SALE_ORDER_STATUSES.ORDER;
+  if (ordered.length) return SALE_ORDER_STATUSES.ORDER;
+  if (!sold.length && !ordered.length && !reserved.length && order.orderedAt) {
+    return SALE_ORDER_STATUSES.RESERVE_EXPIRED;
+  }
+  if (order.orderedAt) return SALE_ORDER_STATUSES.ORDER;
   if (reserved.length) return SALE_ORDER_STATUSES.RESERVED;
   return SALE_ORDER_STATUSES.INTEREST;
 }
@@ -432,13 +436,18 @@ export async function listSaleOrders(filters, session) {
   const soldEnd = saoPauloDayRange(filters.soldTo);
   if (soldStart) soldRange.gte = soldStart.start;
   if (soldEnd) soldRange.lte = soldEnd.end;
-  if (soldStart || soldEnd) {
-    where.items = {
-      some: {
-        status: { not: SALE_ORDER_ITEM_STATUSES.REMOVED },
-        OR: [{ soldAt: soldRange }, { sale: { soldAt: soldRange } }],
-      },
+  const attendantId = filters.attendantId && canViewAllSaleOrders(session)
+    ? parseId(filters.attendantId)
+    : null;
+  if (soldStart || soldEnd || attendantId) {
+    const itemSome = {
+      status: { not: SALE_ORDER_ITEM_STATUSES.REMOVED },
     };
+    if (soldStart || soldEnd) {
+      itemSome.OR = [{ soldAt: soldRange }, { sale: { soldAt: soldRange } }];
+    }
+    if (attendantId) itemSome.soldById = attendantId;
+    where.items = { some: itemSome };
   }
 
   const pagination = parsePagination(filters);
@@ -496,6 +505,26 @@ export async function listSaleSellers(session) {
   const withPermissions = await attachEffectivePermissions(users);
   return withPermissions
     .filter((user) => user.active && can(user, PERMISSIONS.SALE_CREATE))
+    .map(({ id, name }) => ({ id, name }));
+}
+
+export async function listSaleAttendants(session) {
+  if (!canViewAllSaleOrders(session)) {
+    return [{ id: Number(session.id), name: session.name }];
+  }
+  const users = await prisma.user.findMany({
+    where: {
+      OR: [
+        { active: true },
+        { saleOrderItemsSold: { some: {} } },
+      ],
+    },
+    select: { ...userNameSelect, role: true, active: true },
+    orderBy: { name: "asc" },
+  });
+  const withPermissions = await attachEffectivePermissions(users);
+  return withPermissions
+    .filter((user) => user.active && can(user, PERMISSIONS.SALE_CHECKOUT))
     .map(({ id, name }) => ({ id, name }));
 }
 

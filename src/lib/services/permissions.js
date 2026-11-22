@@ -184,7 +184,7 @@ export async function updateRolePermissions(role, permissions, actor) {
     userId: actor.id,
     action: "ROLE_PERMISSIONS_UPDATED",
     entity: "role_permission",
-    entityId: role,
+    entityId: 0,
     oldData: { role, permissions: previous },
     newData: { role, permissions: next },
   });

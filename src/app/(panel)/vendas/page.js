@@ -22,6 +22,7 @@ const COLUMN_TONES = {
   PEDIDO: "border-violet-500/40",
   PARCIAL: "border-orange-500/40",
   CONCRETIZADA: "border-emerald-500/40",
+  RESERVA_EXPIRADA: "border-rose-500/40",
   PERDIDA: "border-rose-500/40",
   CANCELADA: "border-slate-500/40",
 };
@@ -96,9 +97,11 @@ export default function VendasPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [sellerId, setSellerId] = useState("");
+  const [attendantId, setAttendantId] = useState("");
   const [soldFrom, setSoldFrom] = useState("");
   const [soldTo, setSoldTo] = useState("");
   const [sellers, setSellers] = useState([]);
+  const [attendants, setAttendants] = useState([]);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncSteps, setSyncSteps] = useState([]);
@@ -107,7 +110,7 @@ export default function VendasPage() {
   const stepsRef = useRef(null);
 
   function currentFilters() {
-    return { q, status, sellerId, soldFrom, soldTo };
+    return { q, status, sellerId, attendantId, soldFrom, soldTo };
   }
 
   function loader(page, pageSize, filters = currentFilters()) {
@@ -118,15 +121,26 @@ export default function VendasPage() {
     setQ("");
     setStatus("");
     setSellerId("");
+    setAttendantId("");
     setSoldFrom("");
     setSoldTo("");
-    void list.search((page, pageSize) => loader(page, pageSize, { q: "", status: "", sellerId: "", soldFrom: "", soldTo: "" }));
+    void list.search((page, pageSize) => loader(page, pageSize, {
+      q: "",
+      status: "",
+      sellerId: "",
+      attendantId: "",
+      soldFrom: "",
+      soldTo: "",
+    }));
   }
 
   useEffect(() => {
     api("/api/auth/me").then((auth) => setMe(auth.user)).catch((error) => toast.error(error.message));
     api("/api/sale-orders/sellers")
       .then((data) => setSellers(data.items || []))
+      .catch((error) => toast.error(error.message));
+    api("/api/sale-orders/attendants")
+      .then((data) => setAttendants(data.items || []))
       .catch((error) => toast.error(error.message));
     void list.search(loader);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,6 +262,14 @@ export default function VendasPage() {
               <option value="">{me && canViewAllSaleOrders(me) ? "Todos os vendedores" : (me?.name || "Meu usuário")}</option>
               {sellers.map((seller) => (
                 <option key={seller.id} value={seller.id}>{seller.name}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Atendente">
+            <Select value={attendantId} onChange={(e) => setAttendantId(e.target.value)} disabled={!me || !canViewAllSaleOrders(me)}>
+              <option value="">{me && canViewAllSaleOrders(me) ? "Todos os atendentes" : (me?.name || "Meu usuário")}</option>
+              {attendants.map((attendant) => (
+                <option key={attendant.id} value={attendant.id}>{attendant.name}</option>
               ))}
             </Select>
           </Field>

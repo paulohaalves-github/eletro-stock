@@ -188,6 +188,7 @@ const SALE_ORDER_STYLES = {
   PEDIDO: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
   PARCIAL: "bg-orange-500/15 text-orange-300 ring-orange-500/30",
   CONCRETIZADA: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  RESERVA_EXPIRADA: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
   PERDIDA: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
   CANCELADA: "bg-slate-500/20 text-slate-300 ring-slate-500/30",
 };

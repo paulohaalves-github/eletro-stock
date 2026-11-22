@@ -17,6 +17,15 @@ function Metric({ label, value, hint }) {
   );
 }
 
+function OpsStat({ label, value }) {
+  return (
+    <div className="min-w-[7rem] flex-1">
+      <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
 function percent(value) {
   return `${((Number(value) || 0) * 100).toFixed(1).replace(".", ",")}%`;
 }
@@ -283,28 +292,37 @@ export function InboxDashboard({ embedded = false }) {
         ) : null}
       </div>
 
-      <div className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-4", loading ? "opacity-70" : "")}>
-        <Metric label="Leads" value={data.cards.leads ?? 0} hint="Conversas no filtro" />
-        <Metric label="Convertidos" value={data.cards.converted ?? 0} hint="Etapa Convertida" />
-        <Metric
-          label="Valor convertido"
-          value={formatCurrency(data.cards.convertedAmount || 0)}
-          hint="Vendas vinculadas ao inbox"
-        />
-        <Metric
-          label="Ticket médio"
-          value={formatCurrency(data.cards.ticket || 0)}
-          hint="Valor ÷ leads convertidos"
-        />
-        <Metric label="Em venda" value={data.cards.inSale ?? 0} />
-        <Metric label="Taxa de conversão" value={percent(data.cards.conversionRate)} hint={`${data.cards.lost ?? 0} sem retorno/descartados`} />
-        <Metric label="Abertas" value={data.cards.open} />
-        <Metric label="Aguardando agente" value={data.cards.waiting} />
-        <Metric label="Agente respondeu" value={data.cards.replied} />
-        <Metric label="Encerradas" value={data.cards.closed} />
-        <Metric label="Sem agente" value={data.cards.unassigned} />
-        <Metric label="Encerradas hoje" value={data.cards.closedToday} />
-        <Metric label="Espera média" value={data.cards.avgWait} />
+      <div className={cn("space-y-4", loading ? "opacity-70" : "")}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Leads" value={data.cards.leads ?? 0} hint="Conversas no filtro" />
+          <Metric
+            label="Convertidos"
+            value={data.cards.converted ?? 0}
+            hint={`${data.cards.inSale ?? 0} em venda · ticket ${formatCurrency(data.cards.ticket || 0)}`}
+          />
+          <Metric
+            label="Valor convertido"
+            value={formatCurrency(data.cards.convertedAmount || 0)}
+            hint="Vendas vinculadas ao inbox"
+          />
+          <Metric
+            label="Taxa de conversão"
+            value={percent(data.cards.conversionRate)}
+            hint={`${data.cards.lost ?? 0} sem retorno/descartados`}
+          />
+        </div>
+
+        <Card className="p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Operação agora</p>
+          <div className="flex flex-wrap gap-4 sm:gap-6">
+            <OpsStat label="Abertas" value={data.cards.open} />
+            <OpsStat label="Aguardando" value={data.cards.waiting} />
+            <OpsStat label="Sem agente" value={data.cards.unassigned} />
+            <OpsStat label="Espera média" value={data.cards.avgWait} />
+            <OpsStat label="Encerradas hoje" value={data.cards.closedToday} />
+            <OpsStat label="Encerradas" value={data.cards.closed} />
+          </div>
+        </Card>
       </div>
 
       <div className="mt-6 grid gap-4 xl:grid-cols-2">

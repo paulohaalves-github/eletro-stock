@@ -265,6 +265,7 @@ export const SALE_ORDER_STATUSES = {
   ORDER: "PEDIDO",
   PARTIAL: "PARCIAL",
   COMPLETED: "CONCRETIZADA",
+  RESERVE_EXPIRED: "RESERVA_EXPIRADA",
   LOST: "PERDIDA",
   CANCELLED: "CANCELADA",
 };
@@ -275,6 +276,7 @@ export const SALE_ORDER_STATUS_LABELS = {
   PEDIDO: "Pedido gerado",
   PARCIAL: "Parcialmente concretizada",
   CONCRETIZADA: "Concretizada",
+  RESERVA_EXPIRADA: "Reserva Expirada",
   PERDIDA: "Perdida",
   CANCELADA: "Cancelada",
 };

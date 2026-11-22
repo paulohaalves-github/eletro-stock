@@ -1,6 +1,11 @@
 import { prisma } from "../db";
-import { SALE_ORDER_CLOSED_STATUSES, SALE_ORDER_ITEM_STATUSES, SALE_ORDER_STATUS_LABELS } from "../constants";
-import { calendarDayKey, eachSaoPauloDay, formatCurrency, formatDateTime, periodRange } from "../format";
+import {
+  SALE_ORDER_CLOSED_STATUSES,
+  SALE_ORDER_EVENT_TYPES,
+  SALE_ORDER_ITEM_STATUSES,
+  SALE_ORDER_STATUS_LABELS,
+} from "../constants";
+import { calendarDayKey, eachSaoPauloDay, formatCurrency, formatDateTime, formatProductId, periodRange } from "../format";
 import { canViewAllSaleOrders } from "../permissions";
 import { requireActiveUnit, serializeUnit } from "../units";
 import { saleOrderAccessWhere } from "./sale-orders";
@@ -30,6 +35,13 @@ function amountOf(item) {
 function paymentMethodName(method) {
   const name = String(method || "").trim();
   return name || "Não informado";
+}
+
+function reservedByFromEvents(events, productId) {
+  const token = `Produto ${formatProductId(productId)} reservado`;
+  const match = [...(events || [])].reverse().find((event) => String(event.message || "").startsWith(token));
+  if (!match?.user) return { id: 0, name: "Sem reserva" };
+  return { id: match.user.id || 0, name: match.user.name || "Sem reserva" };
 }
 
 function paymentLabel(method, count) {
@@ -151,6 +163,11 @@ export async function listSoldCommercialRows(session, range) {
             sellerId: true,
             seller: { select: { id: true, name: true } },
             customer: { select: { id: true, name: true } },
+            events: {
+              where: { type: SALE_ORDER_EVENT_TYPES.RESERVE },
+              orderBy: { createdAt: "asc" },
+              select: { message: true, user: { select: { id: true, name: true } } },
+            },
           },
         },
         soldBy: { select: { id: true, name: true } },
@@ -178,6 +195,7 @@ export async function listSoldCommercialRows(session, range) {
     ...items.map((item) => {
       const paymentMethod = item.sale?.paymentMethod || item.saleOrder?.paymentMethod || null;
       const installmentCount = item.sale?.installmentCount ?? item.saleOrder?.installmentCount ?? null;
+      const reservedBy = reservedByFromEvents(item.saleOrder?.events, item.productId);
       return enrichRow({
         id: `item-${item.id}`,
         soldAt: item.soldAt,
@@ -189,6 +207,8 @@ export async function listSoldCommercialRows(session, range) {
         sellerName: item.saleOrder?.seller?.name || "Sem vendedor",
         attendantId: item.soldBy?.id || 0,
         attendantName: item.soldBy?.name || "Sem atendente",
+        reserverId: reservedBy.id,
+        reserverName: reservedBy.name,
         saleNumber: item.saleOrder?.number || null,
         invoiceNumber: item.invoiceNumber || item.sale?.invoiceNumber || null,
         customerName: item.saleOrder?.customer?.name || "—",
@@ -207,6 +227,8 @@ export async function listSoldCommercialRows(session, range) {
       sellerName: sale.createdBy?.name || "Sem vendedor",
       attendantId: sale.createdBy?.id || 0,
       attendantName: sale.createdBy?.name || "Sem atendente",
+      reserverId: sale.createdBy?.id || 0,
+      reserverName: sale.createdBy?.name || "Sem reserva",
       saleNumber: null,
       invoiceNumber: sale.invoiceNumber || null,
       customerName: sale.customer?.name || "—",
@@ -254,6 +276,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
   const byType = new Map();
   const bySeller = new Map();
   const byAttendant = new Map();
+  const byReserver = new Map();
   const byPayment = new Map();
   const days = emptyDays(range.start, range.end);
   const dayMap = Object.fromEntries(days.map((day) => [day.date, day]));
@@ -262,6 +285,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
     bump(byType, row.categoryId, row.categoryName, row.amount);
     bump(bySeller, row.sellerId, row.sellerName, row.amount);
     bump(byAttendant, row.attendantId, row.attendantName, row.amount);
+    bump(byReserver, row.reserverId || 0, row.reserverName || "Sem reserva", row.amount);
     const methodName = paymentMethodName(row.paymentMethod);
     bump(byPayment, methodName.toLocaleLowerCase("pt-BR"), methodName, row.amount);
     const key = row.soldAt ? dayKey(row.soldAt) : null;
@@ -301,6 +325,7 @@ export async function getSaleDashboard(session, { period = "30d", from, to } = {
     byType: ranked(byType, totalAmount),
     bySeller: ranked(bySeller, totalAmount),
     byAttendant: ranked(byAttendant, totalAmount),
+    byReserver: ranked(byReserver, totalAmount),
     byPayment: ranked(byPayment, totalAmount),
     daily: days,
     recent: rows.slice(0, 8),
